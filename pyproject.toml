@@ -1,0 +1,29 @@
+[project]
+name = "secop-analytics"
+version = "0.1.0"
+description = "Plataforma de datos que convierte la contratación pública colombiana en inteligencia comercial"
+readme = "README.md"
+authors = [
+    { name = "Cristian", email = "ccordobac@unicauca.edu.co" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.5.5",
+    "pandas>=3.0.5",
+    "pyarrow>=25.0.1",
+    "python-dotenv>=1.2.3",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+secop-analytics = "secop_analytics:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.3",
+]

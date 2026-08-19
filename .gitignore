@@ -1,0 +1,30 @@
+# Entorno virtual — se reconstruye desde uv.lock
+.venv/
+__pycache__/
+*.py[cod]
+
+# Secretos — jamás al repo
+.env
+
+# Datos — el repo guarda código, no datos
+data/
+exploration/output/
+*.parquet
+*.csv
+*.duckdb
+*.duckdb.wal
+
+# dbt
+target/
+dbt_packages/
+logs/
+
+# Herramientas
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Sistema operativo / editor
+.DS_Store
+.vscode/
+.idea/
