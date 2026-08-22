@@ -3,7 +3,90 @@
 > Registro de evaluación de las fuentes candidatas del ecosistema SECOP.
 > Cada hallazgo va acompañado de la consulta que lo demuestra, para que sea
 > reproducible por cualquiera.
-> Última actualización: 18 de agosto de 2026
+> **Alcance:** este documento cubre la fuente principal (`jbjy-vk9h`), con los
+> hallazgos H1 a H9. Los datasets hermanos del ecosistema y sus hallazgos
+> H17–H33 están en `02_ecosistema_secop.md`; acá se listan en la sección 2
+> con su veredicto. Las **decisiones de diseño** que salieron de estos hallazgos
+> tampoco viven acá: se las referencia con →.
+>
+> **Cómo leerlo:** empezá por el glosario si no venís del dominio. Después los
+> hallazgos en orden: cada uno abre con *por qué se validó*, sigue con la
+> consulta exacta y su resultado, y cierra con la conclusión.
+>
+> Última verificación contra la API: 21 de agosto de 2026.
+
+---
+
+## Glosario
+
+Términos que este documento usa constantemente. Si ya los conocés, saltealos.
+
+**Grano** — qué representa una fila. "Una fila = un contrato" es distinto de
+"una fila = una versión de un contrato", y confundirlos infla todos los totales.
+Es la primera pregunta de cualquier modelo de datos.
+
+**Watermark** (marca de agua) — una columna que dice *cuándo cambió cada fila*.
+Sirve para pedirle a la fuente solo lo nuevo, en vez de descargar todo cada vez.
+Sin watermark no hay carga incremental posible.
+
+**Carga incremental** — traer solo lo que cambió desde la última corrida, en
+lugar de rehacer todo. Es lo que hace que un pipeline diario sea barato.
+
+**Backfill** — reprocesar el pasado. Se usa cuando se agrega una fuente nueva o
+se corrige un error: en vez de esperar a mañana, se recorre el histórico por
+pedazos.
+
+**SCD tipo 2** (*slowly changing dimension*) — técnica para guardar **versiones**
+en vez de sobrescribir. Cada versión lleva desde cuándo y hasta cuándo fue
+válida, así se puede preguntar "¿cómo estaba esto en marzo?".
+
+**Capas de dbt** — el pipeline transforma en tres pasos, cada uno un conjunto de
+consultas SQL:
+  - `staging` — limpieza mecánica: renombrar, normalizar, convertir tipos.
+  - `intermediate` — lógica de negocio: derivar columnas, cruzar tablas.
+  - `marts` — las tablas finales que consume el tablero.
+
+**Freshness** (frescura) — test que verifica que la fuente no esté vieja. Si el
+dato más reciente tiene más de X horas, algo se rompió río arriba.
+
+**Columna material** — una columna cuyo cambio significa que el contrato cambió
+de verdad, y por eso genera una versión nueva. Se opone a *cosmética*, donde
+cambió el registro y no el contrato (una tilde corregida). El detalle está en
+`03_decisiones_capa_raw.md`.
+
+**Vista derivada** — un dataset del portal que no es una fuente propia, sino un
+recorte o una copia de otro. Usarla en vez del maestro trae datos incompletos
+sin avisar.
+
+**ETL / ELT** — el proceso de mover datos de un lado a otro transformándolos.
+*Extract, Transform, Load*; en ELT se transforma después de cargar.
+
+**ESE** — Empresa Social del Estado. Son los hospitales públicos colombianos.
+
+**PGN, SGP, SGR** — las tres grandes bolsas del presupuesto público colombiano:
+Presupuesto General de la Nación, Sistema General de Participaciones (lo que la
+nación transfiere a municipios y departamentos) y Sistema General de Regalías
+(lo que produce la explotación de recursos naturales).
+
+**Dígito de verificación** — el último número del NIT colombiano, separado por un
+guion. Sirve para detectar errores de tipeo. La fuente a veces lo incluye y a
+veces no, así que el mismo NIT aparece escrito de dos formas.
+
+**UNSPSC** — clasificador internacional de bienes y servicios, con una jerarquía
+de cuatro niveles. Es lo que permite preguntar "¿quién compra lo que yo vendo?".
+
+⚠ **"Partición" significa dos cosas distintas** y conviene no mezclarlas:
+  - **Ventana de backfill** — un pedazo del histórico, normalmente un mes. Se
+    usa para reprocesar el pasado sin bajar todo de una vez.
+  - **Partición de paralelismo** — un pedazo del universo vivo que se reparte
+    entre varios procesos **de la misma noche**, para que terminen antes.
+
+  Confundirlas tiene consecuencias: darle una ventana de backfill al flujo 3
+  hace que parezca que se está reprocesando el pasado, y no es así. Por eso el
+  código lo rechaza (ver *El flujo 3 no se puede reejecutar hacia atrás* en
+  `03_decisiones_capa_raw.md`).
+
+---
 
 **Endpoint base usado en todas las consultas:**
 
@@ -12,6 +95,7 @@ https://www.datos.gov.co/resource/jbjy-vk9h.json
 ```
 
 **Documentación oficial consultada:**
+
 Diccionario de Datos y Ficha Técnica – Registros Administrativos, ANCP-CCE,
 Subdirección de Información y Desarrollo Tecnológico, versión 1.0, agosto 2025.
 `https://www.colombiacompra.gov.co/wp-content/uploads/2026/03/GES215ABCDEFH_Ficha-tecnica-de-RA.pdf`
@@ -28,9 +112,10 @@ Subdirección de Información y Desarrollo Tecnológico, versión 1.0, agosto 20
 | Tipo | Dataset maestro (no vista derivada) |
 | Publica | Agencia Nacional de Contratación Pública – Colombia Compra Eficiente |
 | Filas | 5.958.553 |
-| Columnas | 87 según el diccionario oficial; 85 visibles en una fila de muestra (ver H6) |
+| Columnas | **85 en el esquema real**, enumeradas contra el endpoint de metadatos el 20/08/2026. El diccionario declara 87 (ver pregunta abierta 4) |
 | Frecuencia declarada | Diaria |
 | Rezago real de publicación | ~1 día (máximo observado: 2026-08-17) |
+| Hora de regeneración | ~04:41 hora de Colombia (ver H8) |
 | Rango temporal | 2015-06-11 a 2026-08-17 |
 | Licencia | Datos abiertos (Ley 1712 de 2014) |
 
@@ -59,6 +144,10 @@ de 2025. Se eligió **SODA2** para la v1 por tres razones:
 
 **Mitigación:** toda la lógica que conoce `$limit` / `$offset` vive aislada en una
 sola función del extractor. Migrar a SODA3 es cambiar esa función.
+
+La decisión se pagó sola: media docena de verificaciones posteriores se
+resolvieron pegando URLs en el navegador, incluida la que demostró que
+Suspensiones es una vista derivada (H25).
 
 ---
 
@@ -135,6 +224,9 @@ noche. Coherente con la metodología declarada en el diccionario, que describe u
 proceso ETL nocturno que genera las vistas publicadas. `:updated_at` es inútil
 como watermark.
 
+**Reconfirmado el 21/08/2026:** `min = max = 2026-08-20T09:41:20.358Z`. Tres días
+después de la primera medición, mismo comportamiento.
+
 #### Etapa 2 — Sí existe un watermark de negocio (aportado por el diccionario)
 
 El diccionario documenta una columna que **no apareció en la fila de muestra**:
@@ -157,7 +249,8 @@ Rango de diez años → **el campo sí distingue**. Pero está nulo en 2.509.704
 
 #### Etapa 3 — Hay un tercer mecanismo que ninguna columna registra
 
-Ver H9.
+Los pagos avanzan sin que ninguna fecha lo registre. Está desarrollado en H9,
+que es donde se cuantifica.
 
 #### Conclusión consolidada
 
@@ -171,24 +264,36 @@ Ver H9.
 
 1. **Nuevos** — ventana diaria sobre `fecha_de_firma`.
 2. **Eventos** — ventana diaria sobre `ultima_actualizacion`.
-3. **Deriva financiera** — refresco periódico (semanal) del conjunto
-   "En ejecución". No hay atajo: hay que reextraer y comparar. 1,7M de filas son
-   ~350 peticiones de 5.000, unos veinte minutos. Los pagos estatales no son
-   intradía, así que la periodicidad semanal es defendible.
+3. **Deriva financiera** — refresco del universo vivo. No hay atajo: hay que
+   reextraer y comparar.
+
+   Barre los **cuatro estados vivos** —`En ejecución`, `Modificado`,
+   `Suspendido`, `Prorrogado`— que suman **2.825.685** contratos, y lo hace
+   **cada noche**.
+
+   ⚠ Es tentador acotarlo a `En ejecución` y correrlo semanal: son 1,7M de filas
+   en vez de 2,8M. No alcanza. Un contrato `Modificado` o `Suspendido` sigue
+   recibiendo pagos, y una semana de resolución pierde el orden de los eventos
+   dentro de ese lapso.
+
+   Los parámetros de fecha de `refresco_de_vivos()` son una **partición de
+   paralelismo** —un reparto entre procesos de la misma noche— y **no** una
+   ventana de backfill. Ver el glosario.
+
+   ⚠ **Este flujo no admite backfill.** Pregunta por el estado actual, y el
+   estado de una fecha pasada ya se destruyó. Reejecutarlo hacia atrás
+   escribiría el hoy con fecha de ayer. → *Ver* El flujo 3 no se puede reejecutar hacia atrás *(R1) en*
+   `03_decisiones_capa_raw.md`.
 
 Los flujos 1 y 2 suman ~5.000 filas diarias: una sola petición. El DAG diario es
-liviano.
+liviano; todo el peso está en el flujo 3.
 
-**Consecuencia de fondo — la razón de ser del proyecto:**
+**Consecuencia de fondo:** el historial no existe en el origen. Cada noche la
+fuente sobrescribe su propio estado anterior, y nadie puede consultar cuánto
+valía un contrato antes de una adición.
 
-El historial no existe en el origen. Cada noche la fuente sobrescribe su propio
-estado anterior, y además hay una dimensión completa del cambio —cuánto se ha
-pagado de cada contrato a lo largo del tiempo— que no está registrada en ninguna
-parte, ni en los datos ni en el diccionario.
-
-Esta plataforma construirá esa serie tomando snapshots. **El SCD tipo 2 deja de
-ser un requisito de tutorial y pasa a ser lo único que justifica que la
-plataforma exista.**
+El argumento completo —por qué esto justifica la plataforma entera— está en H9,
+que es donde se cuantifica.
 
 ---
 
@@ -229,8 +334,9 @@ pierden 309.176 filas (5,2%) y se gana validez. Los años previos permanecen en 
 capa raw.
 
 **Conclusión 2:** el volumen reciente es de ~2.900 contratos firmados por día.
-El backfill son ~80 particiones mensuales de 2020 a 2026, ninguna superior a
-~100.000 filas.
+El backfill son ~80 **ventanas de backfill** mensuales de 2020 a 2026, ninguna
+superior a ~100.000 filas. (Ventana de backfill, no partición de paralelismo:
+ver el glosario.)
 
 **Conclusión 3 — lección de método:** `min()` y `max()` habían reportado el rango
 2015–2026 sin mencionar las 423.975 filas nulas. **Las funciones de agregación
@@ -241,8 +347,9 @@ parezca redundante frente a un `min/max` ya ejecutado.
 
 ### H4 — Los nulos de fecha de firma son todos pre-firma
 
-**Por qué se validó:** particionar el backfill por año de firma dejaría 423.975
-filas huérfanas sin que ningún error lo advirtiera.
+**Por qué se validó:** partir el backfill por año de firma dejaría 423.975 filas
+huérfanas —las que no tienen fecha de firma— sin que ningún error lo advirtiera.
+Simplemente no entrarían en ninguna ventana.
 
 **Consulta:**
 
@@ -263,7 +370,7 @@ Suma: 423.975 — coincide exactamente con el grupo nulo de H3.
 **Conclusión:** los cinco estados son anteriores a la firma. **No hay ni un solo
 contrato "En ejecución", "Cerrado" o "terminado" sin fecha de firma.** El filtro
 de negocio que excluye lo que no es un contrato ejecutable resuelve el problema
-técnico de partición como efecto colateral. Cuando una decisión de modelado
+técnico de las ventanas como efecto colateral. Cuando una decisión de modelado
 limpia dos problemas a la vez, normalmente está bien elegida.
 
 ---
@@ -306,10 +413,9 @@ arriba es la única fuente de verdad disponible.
 
 Un contrato en ejecución que fue modificado tiene dos verdades, pero la columna
 solo guarda una. `Modificado` (1,08M filas) probablemente esconde el estado real.
-
-Esta hipótesis quedó reforzada por H8: los contratos `Modificado` casi siempre
-tienen `ultima_actualizacion` poblada, lo que sugiere que el estado cambia
-cuando ocurre el evento y se lleva la fecha consigo.
+H8 refuerza la hipótesis: esos contratos casi siempre tienen fecha de evento, lo
+que sugiere que el estado cambia cuando el evento ocurre y se lleva la fecha
+consigo.
 
 **Decisión:** derivar en la capa `intermediate` columnas propias
 (`esta_vigente`, `fue_modificado`) con la lógica documentada. No usar
@@ -318,6 +424,9 @@ cuando ocurre el evento y se lleva la fecha consigo.
 **Inconsistencia de formato:** `terminado`, `cedido` y `enviado Proveedor` no
 respetan la capitalización de los demás, lo que sugiere orígenes o épocas
 distintas dentro del sistema fuente. Se normaliza en `staging`.
+
+→ *Esta inconsistencia tuvo consecuencias de diseño: fue uno de los argumentos
+que decidieron dónde corre la comparación de cambios. Ver `03_decisiones_capa_raw.md`, D1.*
 
 **Anomalía menor:** `Borrador` suma 245.385 en total pero solo 244.947 tienen
 fecha de firma nula. Quedan **438 contratos en Borrador con fecha de firma**, lo
@@ -333,16 +442,33 @@ el diccionario oficial.
 
 #### Lección de método: una fila no revela el esquema
 
-La fila de muestra trajo 85 claves; el diccionario documenta 87 columnas.
-**Socrata omite del JSON las claves cuyo valor es nulo**, así que una fila
-individual subestima el esquema.
+La fila de muestra trajo 81 claves de las 85 reales. **Socrata omite del JSON las
+claves cuyo valor es nulo**, así que una fila individual subestima el esquema.
 
-Columnas documentadas que no aparecieron en la muestra:
-
+Columnas documentadas en el diccionario que no aparecieron en la muestra:
 `fecha_de_inicio_de_ejecucion`, `fecha_de_fin_de_ejecucion`, `estado_bpin`,
 `c_digo_bpin`, `anno_bpin`, **`ultima_actualizacion`**,
 `fecha_inicio_liquidacion`, `fecha_fin_liquidacion`,
 `fecha_de_notificaci_n_de_prorrogaci_n`.
+
+**Resuelto parcialmente** al enumerar el esquema completo contra el endpoint de
+metadatos, en vez de inferirlo de una muestra:
+
+| Columna | Veredicto |
+|---|---|
+| `ultima_actualizacion` | **Existe.** Estaba nula en esa fila. Material |
+| `fecha_inicio_liquidacion` | **Existe.** Material |
+| `fecha_fin_liquidacion` | **Existe.** Material |
+| `fecha_de_notificaci_n_de_prorrogaci_n` | **Existe.** Material |
+| `fecha_de_inicio_de_ejecucion` | **No existe en la API** |
+| `fecha_de_fin_de_ejecucion` | **No existe en la API** |
+| `estado_bpin` | **No existe en la API** |
+| `c_digo_bpin` | **No existe en la API** |
+| `anno_bpin` | **No existe en la API** |
+
+⚠ **Contradicción sin resolver, ver pregunta abierta 4.** Son **cinco** columnas
+documentadas y ausentes, pero la diferencia declarada entre diccionario (87) y
+esquema real (85) es de **dos**. Alguno de los dos números está mal.
 
 La omitida más importante era `ultima_actualizacion`: ninguna cantidad de
 exploración sobre esa fila la habría revelado, y es la columna sobre la que se
@@ -356,6 +482,11 @@ Ejemplos: `"valor_del_contrato":"8959088"`, `"es_pyme":"No"`.
 
 Se descargará todo como string a propósito: si pandas infiere tipos, convierte a
 `NaN` los valores mal formados y esconde la suciedad.
+
+Cuidado con leer esto de más: lo que se prohíbe es que la herramienta **adivine**
+el tipo en silencio, no convertir de forma explícita cuando hace falta.
+
+→ *Ver `03_decisiones_capa_raw.md`, D6, para qué implica esto al comparar valores monetarios.*
 
 #### Nombres de columna deformados por Socrata
 
@@ -372,6 +503,13 @@ documentación.
 `{"url": "https://..."}`, no un escalar como las otras 84 columnas. Hay que
 extraer `urlproceso.url` explícitamente o rompe la conversión a Parquet.
 
+→ *Esta rareza terminó decidiendo el formato de archivo de la capa raw. Ver
+`03_decisiones_capa_raw.md`, D2.*
+
+La URL trae además un `noticeUID=CO1.NTC.xxx` que **no se puede reconstruir**
+desde `proceso_de_compra` (que es `CO1.BDOS.xxx`). Es un tercer identificador y
+probablemente la llave hacia el dataset de Procesos de Contratación.
+
 #### Suciedad detectable en una sola fila
 
 - `nit_entidad` sin dígito de verificación — requiere normalización
@@ -387,6 +525,14 @@ extraer `urlproceso.url` explícitamente o rompe la conversión a Parquet.
   coincide exactamente con `proveedor_adjudicado` (una persona natural). O la
   definición está mal, o el campo se usa mal en la práctica. Refuerza la decisión
   de H7.
+
+**Los nulos también vienen como centinela de texto**, con dos capitalizaciones:
+`"No definido"` y `"No Definido"`. No son nulos de verdad, así que la omisión de
+claves no los cubre. Se normalizan en `staging`.
+
+El centinela no se limita a columnas de detalle: también aparece en columnas
+**categóricas**, donde es más dañino porque parece una categoría legítima. En el
+dataset de Adiciones es el 22% de los tipos de modificación (H28).
 
 #### Columna clave para el caso de uso comercial
 
@@ -407,8 +553,10 @@ traducir códigos a nombres legibles en la dimensión de categoría.
 `recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_`,
 `recursos_de_credito`, `recursos_propios`.
 
-En la fila inspeccionada suman exactamente `valor_del_contrato`. Base de la regla
-de negocio RN1.
+**Son seis, no cinco.** La sexta se descubrió al enumerar el esquema completo;
+este documento decía cinco. En la fila inspeccionada las seis suman exactamente
+`valor_del_contrato`: es la base de RN1, que **queda pendiente de revisión**
+hasta decidir si la sexta entra en la suma.
 
 ---
 
@@ -423,6 +571,12 @@ decisión distinta a consultarlos.
 
 **Decisión:** estas columnas se excluyen del modelo desde el diseño. Se documenta
 en el README como criterio explícito.
+
+Son **18 columnas** y el filtro corre en el `$select`, no después: la exclusión
+más barata de auditar es la que hace que el dato no viaje. Es la única exclusión
+que vive en la extracción; el corte de 2020 y los estados pre-firma son filtros
+de negocio y viven en dbt, donde son reversibles. Acá la irreversibilidad es la
+característica buscada.
 
 ---
 
@@ -490,6 +644,14 @@ registraron eventos posteriores.
 debe alertar a las **48 horas**, no a las 24, o va a dar falsos positivos todos
 los días.
 
+**Hora de regeneración (H24).** El `:updated_at` del 21/08/2026 marcaba
+`2026-08-20T09:41:20.358Z`, es decir **04:41 hora de Colombia**. Es el primer
+dato duro sobre *cuándo* se rehace la fuente, y define el `schedule` del DAG:
+programarlo a medianoche leería el corte del día anterior todas las noches.
+
+Es una observación de una corrida, **no un horario publicado**. Confirmar en dos
+o tres días distintos antes de escribirlo en Airflow.
+
 ---
 
 ### H9 — La ejecución financiera cambia sin dejar rastro ⚠️
@@ -514,11 +676,22 @@ el dataset no lo dice.
 **Consecuencias:**
 
 1. Ningún watermark puede capturar el avance de ejecución financiera. Requiere el
-   flujo 3 de H2: refresco periódico completo del conjunto "En ejecución".
+   flujo 3 de H2: refresco nocturno del universo vivo.
 2. **Este es el hallazgo que más justifica la plataforma.** La serie temporal de
    ejecución financiera por contrato —cuánto se había pagado en cada momento— no
    existe en ninguna fuente pública. Solo puede construirse tomando snapshots a
    lo largo del tiempo, que es precisamente lo que hará el pipeline.
+
+   Dicho de otro modo: el SCD tipo 2 deja de ser un requisito de tutorial y pasa
+   a ser lo único que justifica que la plataforma exista.
+
+**Se buscó esta serie en todo el ecosistema y no está**: no hay columna de valor
+en el dataset de modificaciones (H17), su única fecha está corrupta (H33), y la
+publicación en OCDS que sí conservaba enmiendas se apagó en abril de 2022 (H21).
+Tres verificaciones independientes que endurecen la afirmación.
+
+El único candidato del ecosistema que queda sin evaluar es
+`SECOP II – Ejecución de Contratos` (pregunta abierta 8).
 
 ---
 
@@ -526,12 +699,33 @@ el dataset no lo dice.
 
 Derivadas de los hallazgos, no inventadas para llenar el requisito.
 
+> **La lista canónica vive en `01_modelo_dimensional.md` §10.** Acá se listan
+> con su origen; si las dos se desincronizan, manda el modelo dimensional.
+
 | ID | Regla | Origen |
 |---|---|---|
-| RN1 | La suma de las fuentes de financiación iguala `valor_del_contrato` | H6 |
+| RN1 | La suma de las **seis** fuentes de financiación iguala `valor_del_contrato` | H6 |
 | RN2 | Ningún registro de la tabla de hechos tiene estado pre-firma | H4, H5 |
 | RN3 | Ningún registro de la tabla de hechos tiene `fecha_de_firma` nula | H3, H4 |
 | RN4 | La fuente no tiene más de 48 horas de rezago (`freshness`) | H8 |
+| RN5 | `valor_pagado` no decrece entre versiones consecutivas | H9 — es un acumulado |
+| RN6 | RN1 se cumple en toda versión histórica, no solo en la fila actual | RN1 + diseño SCD2 |
+| RN7 | `dias_adicionados` y `fecha_de_fin_del_contrato` cambian juntos | Dominio — son el mismo evento |
+| RN8 | `valor_de_pago_adelantado = valor_amortizado + valor_pendiente_de` | Diccionario oficial |
+| RN9 | Si `el_contrato_puede_ser_prorrogado = "No"`, entonces `dias_adicionados = 0` | Coherencia interna |
+| RN10 | Si `habilita_pago_adelantado = "No"`, entonces `valor_de_pago_adelantado = 0` | Coherencia interna |
+| RN11 | Las adiciones no superan el 50% del valor inicial, en SMLMV al momento de la firma | Ley 80 art. 40 |
+
+RN5 es interesante en los dos resultados posibles: si decrece, o hubo reversión
+de un pago o la fuente tiene un error. Ambos casos valen la pena.
+
+⚠ **RN5 protege `valor_pagado`, que es acumulado. No generalizar a
+`valor_del_contrato`**, que sí puede bajar: el dataset oficial de modificaciones
+tiene un tipo `REDUCCION EN EL VALOR` (H27).
+
+⚠ **RN9 y RN10 tienen una trampa:** `habilita_pago_adelantado` **no es
+booleana**. Se observó en `"No Definido"` — tres estados, y `"No Definido"` no
+equivale a `"No"`.
 
 ---
 
@@ -549,12 +743,32 @@ Aplicables a cualquier fuente futura, no solo a esta.
    `GROUP BY` completo.
 3. **Una fila no revela el esquema** cuando la API omite las claves nulas. Contar
    columnas desde una muestra individual subestima la estructura real.
+   Corolario: **enumerar el esquema contra el endpoint de metadatos**, no
+   inferirlo de los datos. Fue así como apareció la sexta fuente de
+   financiación, que ninguna muestra había mostrado.
 4. **Probá la hipótesis obvia y aceptá cuando falla.** En H8 la explicación
    intuitiva de los nulos era la opuesta a la real. Verificarla fue lo que reveló
    la semántica verdadera del campo.
 5. **El diccionario oficial puede estar equivocado.** Se contradice sobre el
    grano (H1) y define mal `nombre_representante_legal` (H6). La evidencia
    empírica prevalece, pero hay que dejar constancia de la discrepancia.
+6. **Buscá la misma realidad publicada dos veces.** Si el mismo
+   hecho aparece en dos datasets, compararlos revela defectos que ninguno
+   confiesa por separado. H33 —una fecha con el mes y el día truncados— solo fue
+   visible cruzando Adiciones contra Suspensiones.
+
+   Y si al compararlos los conteos coinciden **exactamente**, no es
+   coincidencia: son las mismas filas. Catorce números iguales fueron la pista;
+   la verificación fila a fila vino después.
+7. **Los tipos declarados no garantizan nada.** `fecharegistro`
+   está declarada como fecha, parsea sin error, y está sistemáticamente mal. Un
+   tipo válido no es un valor correcto.
+8. **Las etiquetas de la fuente no son de fiar, ni las de afuera ni las de
+   adentro.** Afuera: "Adiciones" es un log de modificaciones donde
+   las adiciones son una minoría, y la ficha de Suspensiones no declara que sea
+   una vista derivada, siéndolo. Adentro: el tipo `ADICION EN EL VALOR` existe
+   como categoría pero no sirve como filtro, porque hay adiciones escondidas en
+   el tipo genérico. Que una categoría exista no significa que sea exhaustiva.
 
 ---
 
@@ -564,9 +778,17 @@ Aplicables a cualquier fuente futura, no solo a esta.
 
 - ~~¿Qué es `valor_pendiente_de`?~~ → **Valor Pendiente de Amortización**, según
   el diccionario oficial. Coherente con la existencia de `valor_amortizado`.
-- ~~¿Cómo se representan las modificaciones?~~ → Parcialmente: `dias_adicionados`
-  registra el tiempo añadido y `ultima_actualizacion` la fecha del evento (H8),
-  pero el valor previo del contrato no se conserva. De ahí el SCD tipo 2.
+- ~~¿Cómo se representan las modificaciones?~~ → Sí existe un registro de
+  eventos, en un dataset aparte que no es evidente desde la fuente principal: el
+  dataset `SECOP II – Adiciones` (`cb9c-h8sn`), una fila por modificación, con
+  tipo y justificación. Pero **no tiene ninguna columna de valor** —el monto está
+  en prosa dentro del texto libre (H17)— y su única fecha, `fecharegistro`, está
+  **corrupta**: mes y día truncados al primer dígito significativo, solo el año
+  sobrevive (H33). El evento existe; ni su monto ni su fecha son utilizables.
+- ~~¿Qué contienen `fecha_de_inicio_de_ejecucion`, `fecha_fin_liquidacion` y
+  `estado_bpin`?~~ → `fecha_fin_liquidacion` existe y está clasificada como
+  material; `fecha_de_inicio_de_ejecucion` y `estado_bpin` **no existen en la
+  API**. Ver la tabla de H6.
 
 **Pendientes:**
 
@@ -578,29 +800,83 @@ Aplicables a cualquier fuente futura, no solo a esta.
    ("Orden entidad del estado que publica el contrato"). Los valores observados
    no coinciden con la intuición: un hospital departamental figura como
    "Nacional".
-3. **¿Qué contienen las columnas de liquidación y ejecución** que el diccionario
-   documenta pero no aparecieron en la muestra (`fecha_de_inicio_de_ejecucion`,
-   `fecha_fin_liquidacion`, `estado_bpin`)? Requiere perfilarlas
-   explícitamente.
+3. **¿Los estados terminales realmente no cambian?** `ESTADOS_VIVOS` excluye
+   Cerrado, terminado y Cancelado del flujo 3. Es razonable pero no está
+   probado: un contrato Cerrado podría recibir pagos rezagados, y si el supuesto
+   es falso el flujo 3 es ciego a esos pagos.
+4. **¿Cuántas columnas documenta realmente el diccionario?** ⚠ *Contradicción
+   sin resolver.* La ficha dice 87 documentadas contra 85 reales, o sea dos
+   ausentes. Pero H6 identifica **cinco** columnas documentadas que no
+   existen en la API: `fecha_de_inicio_de_ejecucion`, `fecha_de_fin_de_ejecucion`,
+   `estado_bpin`, `c_digo_bpin`, `anno_bpin`. Y `columnas.py` afirma —con un test
+   que lo verifica— que sus cuatro conjuntos cubren las 85 sin solaparse, así que
+   esas cinco no están clasificadas en ninguna parte.
+
+   Cinco ausentes contra una diferencia declarada de dos. O el conteo de 87 está
+   mal, o el diccionario documenta más campos de los contados, o alguna de esas
+   columnas existe bajo un nombre que Socrata deformó y no se reconoció. Se
+   cierra recontando el PDF contra el endpoint de metadatos.
+5. **¿`origen_de_los_recursos` es redundante con las seis fuentes de
+   financiación?** En una fila coincidía; una fila genera hipótesis, no
+   conclusión. Requiere un cruce sobre el dataset completo.
+6. **¿Por qué `saldo_cdp` no se consume con la ejecución?**
+7. **¿La llave de `dim_proveedor` es `documento_proveedor` o `codigo_proveedor`?**
+8. **¿Aporta algo `SECOP II – Ejecución de Contratos`?** Sin evaluar. Es el
+   candidato obvio para la serie de pagos que H9 demostró que no existe.
+9. **¿Por qué la ANCP-CCE dejó de publicar OCDS en abril de 2022?** Si hay un
+   anuncio público, es una cita valiosa para el README.
 
 ---
 
-## 2. Otras fuentes del ecosistema — pendientes de evaluar
+## 2. Otras fuentes del ecosistema
+
+### Evaluadas
+
+| Dataset | ID | Veredicto |
+|---|---|---|
+| SECOP II – Adiciones | `cb9c-h8sn` | **Evaluado, fuera de la v1.** Log de modificaciones, >6M filas (más grande que la fuente principal). Cinco columnas, **ninguna de valor**. `fecharegistro` corrupta (H33). La llave `id_contrato` empata sin trabajo |
+| SECOP II – Suspensiones | `u99c-7mfm` | **Es una vista derivada de Adiciones** (H25), con las mismas filas y las etiquetas corregidas. No es fuente independiente. ~734.759 filas |
+| SECOP II – Ejecución de Contratos | — | **Sin evaluar.** Candidato prioritario: es el único lugar donde podría estar la serie de pagos de H9 |
+| SECOP II – Rubros Presupuestales | — | Sin evaluar |
+| OCDS (Open Contracting Data Standard) | `ocds-k50g02` | **Existió y se apagó.** 3.008.861 enmiendas, enero 2011 – abril 2022, marcado como no actualizado por el publicador. La API devuelve 404 |
+
+**Por qué los hermanos no entran a la v1.** Su valor ya se capturó como hallazgos
+—H17 a H33 son material de README— sin cargar una sola fila. Incorporarlos
+duplicaría el tamaño del proyecto y exigiría un **segundo patrón de ingesta**:
+se actualizan en continuo y tienen watermark propio (H23), a diferencia de la
+fuente principal que se regenera entera. La v1 se define por hacer una cosa
+impecablemente.
+
+### Pendientes de evaluar
 
 | Dataset | Etapa del ciclo | Decisión preliminar |
 |---|---|---|
-| SECOP II – Procesos de Contratación | Proceso previo al contrato | **Candidato v2** — son oportunidades abiertas, no contratos ya perdidos. Más valioso comercialmente. Fuera del alcance v1 por tener múltiples etapas y estados, y porque cruzarlo con contratos es un problema de llaves no trivial. |
-| SECOP II – Facturas | Ejecución y pago | Por evaluar. **Sube de prioridad tras H9:** podría contener la granularidad de pagos que Contratos Electrónicos no registra. |
-| TVEC – Tienda Virtual del Estado Colombiano | Compra por acuerdo marco | Nuevo candidato detectado en el diccionario oficial. ~150.673 órdenes de compra. Llave: `identificador_de_la_orden`. Volumen pequeño pero es un canal de compra distinto. |
+| SECOP II – Procesos de Contratación | Proceso previo al contrato | **Candidato v2** — son oportunidades abiertas, no contratos ya perdidos. Más valioso comercialmente. Fuera del alcance v1 por tener múltiples etapas y estados. El problema de llaves quedó resuelto: el `noticeUID` de `urlproceso` es la llave (H6) |
+| SECOP II – Facturas | Ejecución y pago | Por evaluar. **Sube de prioridad tras H9:** podría contener la granularidad de pagos que Contratos Electrónicos no registra |
+| TVEC – Tienda Virtual del Estado Colombiano | Compra por acuerdo marco | Candidato detectado en el diccionario oficial. ~150.673 órdenes de compra. Llave: `identificador_de_la_orden`. Volumen pequeño pero es un canal de compra distinto |
 | Plan Anual de Adquisiciones | Planeación | Por evaluar |
 | SECOP I – Proponentes | Registro de proveedores | Por evaluar |
 
-**Advertencia sobre el catálogo:** muchos datasets de `datos.gov.co` son vistas
-derivadas, no fuentes distintas. Si la ficha dice "Vista en función de X" o
-"creado por un miembro del público", hay que ignorarlo e ir al maestro. Ejemplos
-de vistas encontradas: "…PYMES", "…ACTIVOS", "…del Departamento de Sucre",
-"…INVIAS", "CONTRATOS ELECTRONISHBSE", "SECOP II – Contratos – 2017".
+### Advertencia sobre el catálogo
 
-**SECOP I vs SECOP II** son dos generaciones, no alternativas. SECOP I era un
-tablón de anuncios (datos pobres, ya no crece); SECOP II es transaccional. Se usa
-SECOP II.
+Muchos datasets de `datos.gov.co` son vistas derivadas, no fuentes distintas. Si
+la ficha dice "Vista en función de X" o "creado por un miembro del público", hay
+que ignorarlo e ir al maestro. Ejemplos de vistas encontradas: "…PYMES",
+"…ACTIVOS", "…del Departamento de Sucre", "…INVIAS", "CONTRATOS ELECTRONISHBSE",
+"SECOP II – Contratos – 2017".
+
+⚠ **La señal no siempre está.** La ficha de `SECOP II – Suspensiones` **no
+declara** que sea derivado, y lo es: las mismas filas de
+Adiciones, con las etiquetas corregidas (H25). Se descubrió comparando conteos
+anuales entre los dos datasets, no leyendo fichas. Cuando dos datasets cubren el
+mismo hecho, hay que compararlos aunque ninguno se declare derivado.
+
+### SECOP I vs SECOP II
+
+Son dos generaciones, no alternativas. SECOP I era un tablón de anuncios (datos
+pobres, ya no crece); SECOP II es transaccional. Se usa SECOP II.
+
+Y son dos **plataformas**, no dos agencias: Colombia Compra Eficiente es la
+agencia que las administra. La tercera plataforma es TVEC. Marco normativo en
+tres capas: Ley 80 de 1993 (estatuto de contratación), Ley 1150 de 2007 (crea el
+SECOP), Ley 1712 de 2014 (obliga a publicarlo como dato abierto).
