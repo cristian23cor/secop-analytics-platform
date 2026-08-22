@@ -13,16 +13,33 @@ raw, que dbt resuelve tomando la última observación por contrato.
 
 ## Por qué se lee todo al arrancar y se escribe todo al cerrar
 
-DuckDB admite **muchos lectores** simultáneos y **un solo escritor**. El flujo 3
-se paraleliza lanzando varias particiones a la vez (`refresco_de_vivos()`), así
-que si cada una escribiera durante el recorrido, pelearían por el archivo.
+El flujo 3 se paraleliza lanzando varias particiones a la vez
+(`refresco_de_vivos()`), así que si cada una escribiera durante el recorrido,
+pelearían por el archivo todo el tiempo. Leer al arrancar y escribir al cerrar
+reduce la ventana de conflicto a unos segundos por proceso.
 
-Leer al arrancar y escribir al cerrar serializa solo las escrituras. Funciona
-porque las particiones del flujo 3 son rangos **disjuntos** de `fecha_de_firma`:
-dos procesos nunca compiten por el mismo `id_contrato`, así que una foto del
-índice tomada al inicio alcanza.
+Funciona porque las particiones del flujo 3 son rangos **disjuntos** de
+`fecha_de_firma`: dos procesos nunca compiten por el mismo `id_contrato`, así
+que una foto del índice tomada al inicio alcanza.
 
-Medido el 21/08/2026 con 2.825.685 contratos (ver §8 del registro de hallazgos):
+### El bloqueo de DuckDB es más estricto de lo que parece
+
+Medido con procesos reales, no con hilos del mismo proceso:
+
+- Dos escritores simultáneos: el segundo recibe `IOException` — *"Could not set
+  lock on file"*.
+- **Un lector mientras hay un escritor: también falla.** Esto contradice la
+  intuición de "muchos lectores, un escritor": mientras alguien tiene el
+  archivo abierto para escribir, **nadie más puede ni siquiera leerlo**.
+
+Por eso `_abrir()` reintenta con espera creciente en vez de fallar de una. Sin
+reintento, una partición que arranca justo cuando otra está volcando no podría
+ni cargar el índice, y moriría por una colisión de dos segundos.
+
+El reintento es la razón por la que este esquema funciona en paralelo. No es un
+detalle defensivo: es lo que hace cierto el párrafo de arriba.
+
+Medición de carga, con 2.825.685 contratos (ver I4):
 
 | | Memoria | Tiempo |
 |---|---|---|
@@ -38,7 +55,7 @@ el dataset se duplica, reevaluar.
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Final
 
@@ -47,6 +64,10 @@ import duckdb
 from .hashing import ALGORITMO_HASH
 
 TABLA: Final[str] = "indice_hashes"
+
+# Reintentos al abrir. Ver `_abrir()`.
+_INTENTOS_DE_APERTURA: Final[int] = 6
+_ESPERA_INICIAL: Final[float] = 0.5
 
 _ESQUEMA: Final[str] = f"""
 create table if not exists {TABLA} (
@@ -81,7 +102,6 @@ class IndiceHashes:
         self.verboso = verboso
         self._conocidos: dict[str, str] = {}
         self._pendientes: dict[str, tuple[str, str, str]] = {}
-        self._conexion: duckdb.DuckDBPyConnection | None = None
 
     # -- ciclo de vida ----------------------------------------------------
 
@@ -92,23 +112,57 @@ class IndiceHashes:
     def __exit__(self, tipo, valor, traza) -> None:
         # Se vuelca incluso si hubo excepción: lo ya escrito a disco tiene que
         # quedar reflejado, o la próxima corrida lo duplica.
-        try:
-            self.volcar()
-        finally:
-            if self._conexion is not None:
-                self._conexion.close()
-                self._conexion = None
+        #
+        # Este objeto no mantiene una conexión abierta entre llamadas: cada
+        # operación abre, hace lo suyo y cierra. Es lo que mantiene corta la
+        # ventana en que otro proceso encuentra el archivo bloqueado.
+        self.volcar()
 
     def _abrir(self, *, solo_lectura: bool) -> duckdb.DuckDBPyConnection:
+        """Abre el índice, esperando si otro proceso lo tiene tomado.
+
+        El reintento no es defensivo, es necesario: con varias particiones en
+        paralelo, la que llega mientras otra vuelca encuentra el archivo
+        bloqueado — y para **leer** también, no solo para escribir.
+
+        Espera creciente: 0,5 s, 1 s, 2 s, 4 s... Un volcado típico dura menos
+        de un segundo (0,2 s para ~30.000 hashes), así que con dos o tres
+        intentos alcanza. Los seis intentos cubren hasta ~30 s de espera, que
+        es más que el peor volcado medido (13,9 s, cuando cambia todo).
+        """
         self.ruta.parent.mkdir(parents=True, exist_ok=True)
-        if solo_lectura and not self.ruta.exists():
-            # No se puede abrir en solo lectura algo que no existe: primera
-            # corrida. Se crea vacío y se cierra.
-            duckdb.connect(str(self.ruta)).execute(_ESQUEMA).close()
-        conexion = duckdb.connect(str(self.ruta), read_only=solo_lectura)
-        if not solo_lectura:
-            conexion.execute(_ESQUEMA)
-        return conexion
+
+        ultimo: Exception | None = None
+        for intento in range(_INTENTOS_DE_APERTURA):
+            try:
+                if solo_lectura and not self.ruta.exists():
+                    # No se puede abrir en solo lectura algo que no existe:
+                    # primera corrida. Se crea vacío y se cierra.
+                    duckdb.connect(str(self.ruta)).execute(_ESQUEMA).close()
+                conexion = duckdb.connect(str(self.ruta), read_only=solo_lectura)
+                if not solo_lectura:
+                    conexion.execute(_ESQUEMA)
+                return conexion
+            except (duckdb.IOException, duckdb.ConnectionException) as error:
+                ultimo = error
+                if intento == _INTENTOS_DE_APERTURA - 1:
+                    break
+                espera = _ESPERA_INICIAL * (2 ** intento)
+                if self.verboso:
+                    modo = "lectura" if solo_lectura else "escritura"
+                    print(
+                        f"  índice ocupado por otro proceso ({modo}); "
+                        f"reintento en {espera:.1f}s",
+                        flush=True,
+                    )
+                time.sleep(espera)
+
+        raise RuntimeError(
+            f"No se pudo abrir el índice {self.ruta} tras "
+            f"{_INTENTOS_DE_APERTURA} intentos. Otro proceso lo tiene tomado "
+            f"hace demasiado tiempo, o quedó un bloqueo huérfano de una corrida "
+            f"que murió. Último error: {ultimo}"
+        ) from ultimo
 
     # -- lectura ----------------------------------------------------------
 
@@ -197,7 +251,10 @@ class IndiceHashes:
     # -- recuperación -----------------------------------------------------
 
     def reconstruir_desde_raw(
-        self, observaciones: Iterator[dict[str, Any]]
+        self,
+        observaciones: Iterable[dict[str, Any]],
+        *,
+        desde_cero: bool = False,
     ) -> int:
         """Rearma el índice desde los archivos de raw.
 
@@ -207,10 +264,26 @@ class IndiceHashes:
         Espera las observaciones en orden cronológico; la última gana. Se
         confía en `hash` tal como quedó escrito en el archivo, sin recalcularlo:
         el objetivo es reproducir el estado del índice, no reauditar raw. Para
-        lo segundo hay un test que rehashea `datos` y compara.
+        eso segundo está `hashing.verificar_linea()`.
+
+        ⚠ **`desde_cero` cambia el significado de la operación.**
+
+        En `False` —el defecto— esto es una **fusión**: los contratos que estén
+        en la tabla y no en las observaciones **sobreviven**. Es lo correcto si
+        se está alimentando el índice partición por partición.
+
+        En `True` se vacía la tabla antes de escribir, y el resultado refleja
+        exactamente lo que traen las observaciones. Es lo correcto si se está
+        rehaciendo el índice entero desde todo raw, y es la única forma de
+        sacar entradas equivocadas de un índice corrupto: una fusión las
+        conservaría.
+
+        Elegir mal no falla ni avisa. Deja un índice que dice conocer contratos
+        que raw no respalda, y esos contratos no se vuelven a guardar nunca.
         """
         self._conocidos.clear()
         self._pendientes.clear()
+
         for observacion in observaciones:
             datos = observacion["datos"]
             self._pendientes[str(datos["id_contrato"])] = (
@@ -218,7 +291,18 @@ class IndiceHashes:
                 observacion["fecha_extraccion"],
                 observacion["flujo"],
             )
+
+        if desde_cero:
+            self._vaciar()
         return self.volcar()
+
+    def _vaciar(self) -> None:
+        """Borra la tabla. Solo lo llama `reconstruir_desde_raw(desde_cero=True)`."""
+        conexion = self._abrir(solo_lectura=False)
+        try:
+            conexion.execute(f"delete from {TABLA}")
+        finally:
+            conexion.close()
 
     # -- introspección ----------------------------------------------------
 
