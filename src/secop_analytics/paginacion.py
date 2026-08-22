@@ -26,6 +26,17 @@ para ser correcto.
 Lo que se pierde: keyset es estrictamente secuencial. La paralelización se
 recupera un nivel más arriba, partiendo por rango de fechas y corriendo varias
 particiones a la vez; cada una pagina secuencialmente adentro.
+
+## Reanudar a mitad de camino
+
+`paginar()` acepta `desde_cursor`, que es lo que permite retomar un recorrido
+interrumpido sin volver a bajar lo ya bajado. La capa raw guarda ese valor en
+el manifiesto de cada partición cada vez que confirma una página.
+
+Sirve porque el cursor es el mismo mecanismo que hace avanzar la paginación
+normal: retomar desde el último `id_contrato` confirmado es idéntico a pedir la
+página siguiente. No hay un camino especial de reanudación que pueda pudrirse
+sin que nadie lo note.
 """
 
 from __future__ import annotations
@@ -93,6 +104,7 @@ def paginar(
     limite: int = LIMITE_POR_DEFECTO,
     sesion: requests.Session | None = None,
     tiempo_limite: int = 60,
+    desde_cursor: str | None = None,
 ) -> Iterator[list[Fila]]:
     """Recorre el dataset en páginas, aplicando un filtro SoQL opcional.
 
@@ -109,6 +121,9 @@ def paginar(
         sesion: `requests.Session` para reusar la conexión TCP entre páginas.
             Sobre cientos de peticiones seguidas la diferencia se nota.
         tiempo_limite: segundos antes de abandonar una petición.
+        desde_cursor: último `id_contrato` ya procesado. El recorrido arranca
+            **después** de él. Es lo que permite retomar una partición
+            interrumpida sin volver a bajar lo que ya se bajó.
 
     Yields:
         Listas de filas. Los valores vienen como texto a propósito: si se
@@ -124,7 +139,7 @@ def paginar(
 
     http = sesion or requests.Session()
     cabeceras = {"X-App-Token": _token()}
-    cursor: str | None = None
+    cursor: str | None = desde_cursor
 
     while True:
         parametros: dict[str, str | int] = {
@@ -149,6 +164,16 @@ def paginar(
 
         # Una página incompleta significa que no hay más: evita una petición
         # de más por cada recorrido.
+        #
+        # ⚠ Esto asume que la API devuelve exactamente `limite` filas cuando
+        # hay al menos esas. Si algún día capara el `$limit` por debajo de lo
+        # pedido —por ejemplo a 1.000 cuando se piden 5.000— **cada página
+        # parecería la última** y el recorrido terminaría tras la primera, sin
+        # error y sin aviso.
+        #
+        # La red que cubre eso es `scripts/verificar_extraccion.py`, que
+        # compara el total recorrido contra un `count(*)` del servidor. Si esa
+        # verificación se borra, este atajo se queda sin respaldo.
         if len(pagina) < limite:
             return
 
@@ -171,6 +196,7 @@ def contar(
     parametros: dict[str, str] = {"$select": "count(*) as n"}
     if filtro:
         parametros["$where"] = filtro
+
     respuesta = http.get(
         URL_BASE,
         params=parametros,
@@ -181,7 +207,14 @@ def contar(
     return int(respuesta.json()[0]["n"])
 
 
-# TODO(pieza 3): reintentos con espera creciente ante 429 y 5xx. Se deja
-# afuera a propósito por ahora: un reintento mal hecho convierte un fallo
-# ruidoso en una corrida lenta que nadie mira. Se agrega cuando exista un
-# flujo real que lo ejercite y se pueda medir con qué frecuencia hace falta.
+# TODO(pieza 3): reintentos con espera creciente ante 429 y 5xx.
+#
+# El argumento para postergarlo era que un reintento mal hecho convierte un
+# fallo ruidoso en una corrida lenta que nadie mira. Sigue en pie, pero ahora
+# hay un contrapeso: sin reintento, un solo 429 en la página 550 aborta la
+# corrida. Con `desde_cursor` ya implementado eso cuesta mucho menos que antes
+# —se retoma desde el manifiesto— así que la urgencia bajó, no subió.
+#
+# Cuando se agregue, mirar `indice.py::_abrir()`: ahí ya hay un reintento con
+# espera creciente que resolvió el mismo problema para los bloqueos de DuckDB,
+# y conviene que los dos se comporten igual.
