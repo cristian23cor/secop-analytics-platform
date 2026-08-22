@@ -6,19 +6,25 @@ veces y se desincronizan:
 1. **Qué se le pide a la API.** `COLUMNAS_EXTRAIDAS` arma el `$select`. Lo que
    no está acá no se descarga.
 2. **Cómo se compara cada columna** entre dos observaciones consecutivas, según
-   la clasificación de la sección 5 del modelo dimensional.
+   la clasificación de `01_modelo_dimensional.md` §5.
 
 Advertencia sobre la palabra "cosmética": no quiere decir excluida. Una columna
 cosmética se descarga, se guarda y alimenta las dimensiones. Lo único que no
 hace es generar una versión nueva en `fct_contratos_snapshot`. El conjunto que
 no se descarga es `PERSONALES`, y es un eje aparte.
 
-Los 85 nombres se verificaron el 20/08/2026 contra el endpoint de metadatos del
-dataset. Los cuatro conjuntos son una partición exacta: cubren las 85 sin
-solaparse, y `test_columnas.py` lo verifica.
+Los 85 nombres se verificaron contra el endpoint de metadatos del dataset, no
+contra una muestra de filas: la API omite las claves nulas, así que una muestra
+subestima el esquema.
 
-Referencias: `exploration/01_modelo_dimensional.md` §5,
-`00_inventario_fuentes.md` (H6, H7).
+Los cuatro conjuntos cubren las 85 sin solaparse, y `tests/test_columnas.py` lo
+verifica. Ese test importa más de lo que parece: una columna puesta en dos
+conjuntos no rompe nada visible —el `$select` funciona igual— pero cambia con
+qué criterio se compara, según el orden de los `if` en `clasificacion()`.
+
+Referencias: `exploration/01_modelo_dimensional.md` §5 (la clasificación),
+`00_inventario_fuentes.md` (H6 el esquema, H7 los datos personales) y
+`03_decisiones_capa_raw.md` (D1 y D6, cómo se usa esta clasificación).
 
 Dos advertencias para quien construya la detección de cambios encima:
 
@@ -84,8 +90,8 @@ MATERIALES: Final[frozenset[str]] = frozenset({
     # `valor_del_contrato`; si el valor sube por una adición y las fuentes no
     # versionan, quedan versiones históricas donde RN1 no se cumple (RN6).
     #
-    # ⚠ H6 documentó CINCO. El esquema real tiene SEIS: la última se descubrió
-    # el 20/08/2026 al enumerar el dataset completo. Se clasifica como material
+    # ⚠ Son SEIS, no cinco. La última solo aparece enumerando el esquema
+    # completo: ninguna muestra de filas la mostró. Se clasifica como material
     # por el mismo criterio que las otras cinco, pero la definición de RN1
     # queda pendiente de revisión (ver `00_inventario_fuentes.md`).
     "presupuesto_general_de_la_nacion_pgn",
@@ -127,7 +133,9 @@ COSMETICAS: Final[frozenset[str]] = frozenset({
     "sector",
     "entidad_centralizada",
     # --- dim_proveedor. `tipodocproveedor` se conserva como evidencia pero no
-    # se usa para derivar `tipo_persona`: falla en las dos direcciones (H9).
+    # se usa para derivar `tipo_persona`: falla en las dos direcciones — hay
+    # S.A.S. marcadas como "Cédula de Ciudadanía" y personas naturales marcadas
+    # como "NIT". Ver `01_modelo_dimensional.md` §6, `dim_proveedor`.
     "tipodocproveedor",
     "es_pyme",
     "es_grupo",
@@ -157,10 +165,11 @@ COSMETICAS: Final[frozenset[str]] = frozenset({
     "obligaci_n_ambiental",
     "obligaciones_postconsumo",
     "reversion",
-    # --- REVISADAS CONTRA UNA FILA REAL (20/08/2026) -------------------
-    # Las seis siguientes venían de la frase "el resto es cosmética", escrita
-    # sin la lista de 85 delante. Se evaluaron una por una y todas quedan
-    # cosméticas, pero por razones distintas y con dos pendientes.
+    # --- LAS QUE HUBO QUE EVALUAR UNA POR UNA --------------------------
+    # No clasificar por descarte: "el resto es cosmética" es una frase que se
+    # escribe sin la lista de 85 delante. Las seis siguientes quedaron
+    # cosméticas, pero **por razones distintas entre sí**, y dos con pendientes
+    # abiertos. Una categoría definida como "todo lo demás" no está definida.
     #
     # `origen_de_los_recursos`: en la fila inspeccionada vale "Recursos
     #   Propios" y la única de las seis fuentes con valor es `recursos_propios`.
@@ -195,7 +204,12 @@ COSMETICAS: Final[frozenset[str]] = frozenset({
     #   `CO1.BDOS.xxx`. Es un tercer identificador que no aparece en ninguna
     #   otra columna, y probablemente la llave hacia el dataset de Procesos de
     #   Contratación (candidato v2). Se extrae; en `staging` se parsea el
-    #   `noticeUID` a columna propia y se aplana antes de escribir Parquet.
+    #   `noticeUID` a columna propia y se aplana el objeto.
+    #
+    #   ⚠ Raw NO aplana: guarda el objeto tal como llegó. Fue justamente esta
+    #   columna la que descartó Parquet como formato de raw — aplanarla habría
+    #   sido normalizar, y D1 prohíbe normalizar antes de comparar. Por eso raw
+    #   es JSONL comprimido. Ver `03_decisiones_capa_raw.md`, D2.
     "urlproceso",
 })
 
