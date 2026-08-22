@@ -89,7 +89,7 @@ mismo criterio del `$select` explícito .
 
 ## Arquitectura: D1 a D8
 
-### ✅ D1 DECIDIDA — Opción A (raw fiel, comparación en SQL después de staging)
+###  D1 DECIDIDA — Opción A (raw fiel, comparación en SQL después de staging)
 
 
 Raw guarda lo que devolvió la API sin tocar un carácter. El relleno (H13), los
@@ -132,13 +132,13 @@ cambia velocidad de construcción por capacidad de corregir el pasado. En este
 proyecto la moneda es correcta, porque el pasado que se guarda **es el
 producto**.
 
-⚠ **CONDICIÓN ABIERTA — revisar al decidir D3.** Todo el argumento se apoya en
+ **CONDICIÓN ABIERTA — revisar al decidir D3.** Todo el argumento se apoya en
 "podés reprocesar desde raw". Si el volumen obliga a una retención corta (por
 ejemplo 30 días), esa promesa vale 30 días y la ventaja de A se achica mucho.
 **Si D3 termina en retención corta, hay que volver sobre D1.** Queda anotado en
 vez de resuelto en silencio.
 
-### ✅ D2 DECIDIDA — formato, particionado y punto de control
+###  D2 DECIDIDA — formato, particionado y punto de control
 
 **Formato: JSONL comprimido con `zstd`.** Casi forzado por D1=A, no es
 preferencia:
@@ -207,7 +207,7 @@ aparece al final. dbt lee únicamente particiones que la tengan. Sin eso, un
 `dbt run` disparado mientras la ingesta corre lee media noche y produce números
 que nadie va a poder explicar.
 
-### ⚠ D2 REVISADA — el compresor pasa de `zstd` a `gzip`
+###  D2 REVISADA — el compresor pasa de `zstd` a `gzip`
 
 D2 eligió `zstd` "por mejor ratio y velocidad". Dos cosas aparecieron después:
 
@@ -227,7 +227,7 @@ idénticos en cada línea, así que comprimen extraordinariamente bien:
 | zstd nivel 3 | 1,44 MB | 60× | 0,05 s | ~1,0 GB |
 | zstd nivel 10 | 1,30 MB | 66× | 0,26 s | ~0,9 GB |
 
-⚠ **Corrige la estimación de D3.** Se había escrito "~5 GB/año". El total real
+ **Corrige la estimación de D3.** Se había escrito "~5 GB/año". El total real
 ronda **1 GB/año**, y la primera corrida completa (2.825.685 filas) son
 **~140 MB**. Pesimista por un factor de cinco.
 
@@ -250,7 +250,7 @@ anidado, claves ausentes y tipado inútil — ninguna depende del compresor),
 `flujo/fecha_extraccion` como particionado, y trozos numerados con manifiesto.
 
 
-### ⚠ D2 CORREGIDA (segunda vez) — la ruta necesita un nivel `particion=`
+###  D2 CORREGIDA (segunda vez) — la ruta necesita un nivel `particion=`
 
 Es un defecto de diseño, no de implementación: la ruta que fijó D2 **colisiona en dos casos
 reales, y sin fallar ruidosamente**.
@@ -310,9 +310,9 @@ serializados al final.
 `test_el_backfill_no_reanuda_la_particion_equivocada`,
 `test_una_particion_que_rompe_la_ruta_falla_temprano`.
 
-### ✅ D3 DECIDIDA — Opción (c): deduplicación por bytes antes de persistir
+###  D3 DECIDIDA — Opción (c): deduplicación por bytes antes de persistir
 
-⚠ Las letras (a)-(d) de D3 son un eje distinto de las A/B/C de D1. No se
+ Las letras (a)-(d) de D3 son un eje distinto de las A/B/C de D1. No se
 corresponden.
 
 **El problema.** El flujo 3 barre los ~2,8M de contratos vivos por corrida —
@@ -363,7 +363,7 @@ días — mata la premisa con la que se eligió A. (d) bajar el flujo 3 a semana
 queda en el bolsillo como plan B; divide por siete pero le baja resolución a la
 serie que **es** el producto.
 
-### ✅ D4 CERRADA POR ARRASTRE — la comparación corre en SQL
+###  D4 CERRADA POR ARRASTRE — la comparación corre en SQL
 
 No fue una decisión propia: D1=A la determina. La comparación material /
 cosmética / imposible vive en dbt, sobre `staging`.
@@ -383,7 +383,7 @@ Beneficio colateral: dbt pasa de procesar 2,8M de filas por noche a decenas de
 miles. `dbt build` corre en segundos y los tests corren sobre un volumen
 manejable en un portátil.
 
-### ✅ D5 DECIDIDA — se compara contra la observación anterior en raw
+###  D5 DECIDIDA — se compara contra la observación anterior en raw
 
 Para cada contrato, las observaciones se
 ordenan por fecha de extracción y cada una se compara con la que la precede
@@ -431,7 +431,7 @@ históricas de ese contrato? Las dos son defendibles y dicen cosas distintas:
 "así se llamaba entonces" contra "así se llama, y el nombre no es parte de la
 historia".
 
-### ✅ D6 DECIDIDA — comparación columna por columna, con `IS DISTINCT FROM`
+###  D6 DECIDIDA — comparación columna por columna, con `IS DISTINCT FROM`
 
 Se comparan las 28 materiales una por
 una y se guarda **qué** cambió, no solo que algo cambió. Se descarta el hash de
@@ -482,7 +482,7 @@ rendimiento del hash no aplica a este volumen.**
 un motivo falso. Lo resuelve `staging` por D1, pero hay que tenerlo presente al
 escribir el modelo.
 
-### ✅ D7 DECIDIDA — cargar igual, registrar y alertar (severidad `warn` al inicio)
+###  D7 DECIDIDA — cargar igual, registrar y alertar (severidad `warn` al inicio)
 
 Cuando una columna imposible cambia: la
 fila entra normalmente, la discrepancia se guarda en una tabla de alertas con
@@ -523,7 +523,7 @@ Ese ejercicio tiene valor propio: contar cuántos contratos cambian de
 `nit_entidad` es en sí mismo un hallazgo. Si la entidad contratante de un
 contrato cambia, eso es una historia.
 
-### ✅ D8 DECIDIDA — `observado_desde` / `observado_hasta`, intervalos semiabiertos
+###  D8 DECIDIDA — `observado_desde` / `observado_hasta`, intervalos semiabiertos
 
 Cierra el mapa: las ocho resueltas.
 
@@ -595,17 +595,17 @@ Las ocho decisiones de diseño (D1–D8) no cubren estas. Se numeran I1–I4.
 
 | # | Decisión | Estado |
 |---|---|---|
-| I1 | Cómo se representa la fila para hashear | ✅ **JSON canónico, los mismos bytes que se escriben** |
+| I1 | Cómo se representa la fila para hashear |  **JSON canónico, los mismos bytes que se escriben** |
 | I2 | Qué algoritmo de hash | abierta |
 | I3 | Dónde vive el manifiesto | abierta |
 | I4 | Cómo se estructura el módulo | abierta |
 
-⚠ **I1 e I2 juntas definen el contrato del índice de hashes.** Si cambian
+ **I1 e I2 juntas definen el contrato del índice de hashes.** Si cambian
 después de la primera corrida, todos los hashes guardados quedan inservibles.
 No es catastrófico —el índice es derivado y se reconstruye desde raw (D3)— pero
 conviene fijarlas antes de la primera corrida y no descubrirlo en tres meses.
 
-### ✅ I1 DECIDIDA — JSON canónico, y esos mismos bytes se escriben
+###  I1 DECIDIDA — JSON canónico, y esos mismos bytes se escriben
 
 **La propiedad que se busca:** que el hash sea el hash de los bytes que quedan
 en disco. Se serializa **una sola vez**; esa cadena se hashea y esa misma cadena
@@ -653,14 +653,14 @@ noche la API omite `ultima_actualizacion` y a la siguiente la manda como `null`
 sin que nada haya cambiado, el hash cambia y se guarda una fila de más. Es el
 error que sobra, o sea el aceptable.
 
-⚠ **Esto va como comentario en el código.** El instinto de cualquiera que lo lea
+ **Esto va como comentario en el código.** El instinto de cualquiera que lo lea
 después va a ser "arreglarlo" rellenando antes de hashear — y eso **sí** rompería
 D1.
 
 **3. Si `json.dumps` falla, falla ruidosamente** con el `id_contrato` en el
 mensaje. No se salta la fila.
 
-### ✅ I2 DECIDIDA — BLAKE2b truncado a 128 bits
+###  I2 DECIDIDA — BLAKE2b truncado a 128 bits
 
 `hashlib.blake2b(linea, digest_size=16)`, de la biblioteca estándar. Se guarda
 en **hexadecimal** (32 caracteres), no en bytes crudos: legible al depurar en
@@ -691,7 +691,7 @@ espacio efectivo son decenas de versiones, no 20 millones.
 
 #### Medición real, sobre una fila de ejemplo
 
-⚠ **Corrige una suposición previa.** Se había dicho que BLAKE2b se elegía en
+ **Corrige una suposición previa.** Se había dicho que BLAKE2b se elegía en
 parte por ser más rápido que MD5. Medido, la diferencia es del 5%: irrelevante.
 
 | Operación | Velocidad | 2.825.685 filas |
@@ -728,7 +728,7 @@ cambiarlo, hay que poder distinguir hashes viejos de nuevos sin adivinar.
  `sort_keys=True`, la **cadena idéntica**. La canonicalización de I1 funciona.
 - Salida de ejemplo: `20c3a9e4fe5f274b53317978e305d840` (32 caracteres hex).
 
-### ✅ I3 DECIDIDA — manifiesto como archivo JSON dentro de cada partición
+###  I3 DECIDIDA — manifiesto como archivo JSON dentro de cada partición
 
 ```
 raw/flujo=3/fecha_extraccion=2026-08-21/
@@ -760,7 +760,7 @@ la partición, el trozo y el manifiesto viven en el mismo directorio y el orden
 es local: cerrar el trozo → actualizar el manifiesto → recién ahí tocar el
 índice.
 
-**2. DuckDB no admite dos escritores simultáneos.** ⚠ *Este punto apareció al
+**2. DuckDB no admite dos escritores simultáneos.**  *Este punto apareció al
 discutir I3 y no se había visto antes.* El flujo 3 se paraleliza lanzando varias
 particiones a la vez — para eso existen los parámetros de fecha de
 `refresco_de_vivos`. Con el manifiesto en DuckDB, cada partición paralela
@@ -778,13 +778,13 @@ progreso sigue en disco.
 | Índice de hashes | Global, por `id_contrato` | DuckDB, uno solo |
 | Manifiesto | Local a una partición | JSON en el directorio |
 
-⚠ **PREGUNTA QUE ESTO DEJA ABIERTA.** Si varias particiones del flujo 3 corren
+ **PREGUNTA QUE ESTO DEJA ABIERTA.** Si varias particiones del flujo 3 corren
 en paralelo y todas necesitan **escribir** en el índice de hashes, vuelve el
 problema del escritor único de DuckDB. No se resuelve acá: depende de I4 (la
 estructura del módulo), que podría cambiar la respuesta. Queda señalado en vez
 de resuelto en silencio.
 
-### ✅ I4 DECIDIDA — tres módulos, y el índice completo en memoria
+###  I4 DECIDIDA — tres módulos, y el índice completo en memoria
 
 #### Estructura
 
@@ -811,7 +811,7 @@ escriben en el índice, pelean por el mismo archivo. Tres salidas evaluadas:
 2. **Un índice por partición, fusionado al final.** No funciona: el índice es
  **global por contrato**, y uno parcial no puede responder "¿cuál fue el
  último hash de este contrato?". Rompe la deduplicación.
-3. **Separar lectura de escritura.** ✅ Cada proceso **lee** al arrancar (DuckDB
+3. **Separar lectura de escritura.**  Cada proceso **lee** al arrancar (DuckDB
  admite muchos lectores), acumula en memoria, y **escribe su tanda al
  cerrar**. La escritura se serializa; la lectura no.
 
@@ -827,7 +827,7 @@ Otra vez el error que sobra.
 
 #### Medición: cargar todo en memoria contra consultar por lotes
 
-⚠ **El resultado salió al revés de lo esperado y cambió la recomendación.**
+ **El resultado salió al revés de lo esperado y cambió la recomendación.**
 Se iba a proponer consulta por lotes por prudencia de memoria.
 
 | Estrategia | Memoria | Tiempo (flujo 3, 566 páginas) |
@@ -845,7 +845,7 @@ hashes nuevos en un dict aparte, escribir la tanda al cerrar.
 **Escritura final medida:** 0,2 s para los ~30.000 que cambian en una noche
 típica. Los 13,9 s del caso extremo (cambia todo) solo ocurren la primera vez.
 
-⚠ **Vigilar si el dataset crece.** Cuatro particiones en paralelo son cuatro
+ **Vigilar si el dataset crece.** Cuatro particiones en paralelo son cuatro
 copias del índice: **740 MB**. Manejable hoy; si el dataset se duplica, hay que
 volver a mirar los lotes.
 

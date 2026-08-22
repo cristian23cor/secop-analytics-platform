@@ -75,7 +75,7 @@ veces no, así que el mismo NIT aparece escrito de dos formas.
 **UNSPSC** — clasificador internacional de bienes y servicios, con una jerarquía
 de cuatro niveles. Es lo que permite preguntar "¿quién compra lo que yo vendo?".
 
-⚠ **"Partición" significa dos cosas distintas** y conviene no mezclarlas:
+ **"Partición" significa dos cosas distintas** y conviene no mezclarlas:
   - **Ventana de backfill** — un pedazo del histórico, normalmente un mes. Se
     usa para reprocesar el pasado sin bajar todo de una vez.
   - **Partición de paralelismo** — un pedazo del universo vivo que se reparte
@@ -102,7 +102,7 @@ Subdirección de Información y Desarrollo Tecnológico, versión 1.0, agosto 20
 
 ---
 
-## 1. SECOP II — Contratos Electrónicos ✅ ELEGIDA
+## 1. SECOP II — Contratos Electrónicos (ELEGIDA)
 
 ### Ficha
 
@@ -191,7 +191,7 @@ prórrogas, cesiones) pero no aparecen filas nuevas. Por lo tanto la fuente
 
 ---
 
-### H2 — La fuente tiene tres mecanismos de cambio y solo dos son detectables ⚠️ CRÍTICO
+### H2 — La fuente tiene tres mecanismos de cambio y solo dos son detectables (CRÍTICO)
 
 > Este hallazgo se construyó en tres etapas. Se documenta el recorrido completo
 > porque las hipótesis descartadas son parte del razonamiento.
@@ -398,7 +398,7 @@ limpia dos problemas a la vez, normalmente está bien elegida.
 | Suspendido | 6.650 |
 | Prorrogado | 120 |
 
-Suma: 5.958.553 ✅
+Suma: 5.958.553 
 
 El diccionario define el campo como "Estado del contrato, frente a su ejecución,
 firma o liquidación" y **no enumera los valores posibles**, así que la lista de
@@ -466,7 +466,7 @@ metadatos, en vez de inferirlo de una muestra:
 | `c_digo_bpin` | **No existe en la API** |
 | `anno_bpin` | **No existe en la API** |
 
-⚠ **Contradicción sin resolver, ver pregunta abierta 4.** Son **cinco** columnas
+ **Contradicción sin resolver, ver pregunta abierta 4.** Son **cinco** columnas
 documentadas y ausentes, pero la diferencia declarada entre diccionario (87) y
 esquema real (85) es de **dos**. Alguno de los dos números está mal.
 
@@ -608,7 +608,7 @@ terminal, dado que ~43% del dataset está en Cerrado / terminado / Cancelado.
 | cedido | 846 | 28.557 | 3,0% |
 | Suspendido | 126 | 6.650 | 1,9% |
 
-Suma: 2.509.704 ✅
+Suma: 2.509.704 
 
 **La hipótesis era exactamente al revés.** Los contratos que llegaron a un
 desenlace (Cerrado, terminado, Modificado, cedido) casi todos tienen fecha. Los
@@ -654,7 +654,7 @@ o tres días distintos antes de escribirlo en Airflow.
 
 ---
 
-### H9 — La ejecución financiera cambia sin dejar rastro ⚠️
+### H9 — La ejecución financiera cambia sin dejar rastro 
 
 **Por qué se validó:** los campos `valor_facturado`, `valor_pagado`,
 `valor_pendiente_de_pago` y `valor_amortizado` son acumulados que se mueven
@@ -723,7 +723,7 @@ de un pago o la fuente tiene un error. Ambos casos valen la pena.
 `valor_del_contrato`**, que sí puede bajar: el dataset oficial de modificaciones
 tiene un tipo `REDUCCION EN EL VALOR` (H27).
 
-⚠ **RN9 y RN10 tienen una trampa:** `habilita_pago_adelantado` **no es
+ **RN9 y RN10 tienen una trampa:** `habilita_pago_adelantado` **no es
 booleana**. Se observó en `"No Definido"` — tres estados, y `"No Definido"` no
 equivale a `"No"`.
 
@@ -804,7 +804,7 @@ Aplicables a cualquier fuente futura, no solo a esta.
    Cerrado, terminado y Cancelado del flujo 3. Es razonable pero no está
    probado: un contrato Cerrado podría recibir pagos rezagados, y si el supuesto
    es falso el flujo 3 es ciego a esos pagos.
-4. **¿Cuántas columnas documenta realmente el diccionario?** ⚠ *Contradicción
+4. **¿Cuántas columnas documenta realmente el diccionario?**  *Contradicción
    sin resolver.* La ficha dice 87 documentadas contra 85 reales, o sea dos
    ausentes. Pero H6 identifica **cinco** columnas documentadas que no
    existen en la API: `fecha_de_inicio_de_ejecucion`, `fecha_de_fin_de_ejecucion`,
@@ -865,7 +865,7 @@ que ignorarlo e ir al maestro. Ejemplos de vistas encontradas: "…PYMES",
 "…ACTIVOS", "…del Departamento de Sucre", "…INVIAS", "CONTRATOS ELECTRONISHBSE",
 "SECOP II – Contratos – 2017".
 
-⚠ **La señal no siempre está.** La ficha de `SECOP II – Suspensiones` **no
+ **La señal no siempre está.** La ficha de `SECOP II – Suspensiones` **no
 declara** que sea derivado, y lo es: las mismas filas de
 Adiciones, con las etiquetas corregidas (H25). Se descubrió comparando conteos
 anuales entre los dos datasets, no leyendo fichas. Cuando dos datasets cubren el

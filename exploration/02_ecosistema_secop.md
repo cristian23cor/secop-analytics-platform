@@ -24,7 +24,7 @@
 El log de modificaciones contractuales. Es el dataset que podría haber
 respondido la pregunta 7 —cuánto cuesta una prórroga en pesos— y no puede.
 
-### H17 — `SECOP II – Adiciones` existe y NO trae el monto ✅ verificado en muestra
+### H17 — `SECOP II – Adiciones` existe y NO trae el monto - verificado en muestra
 
 Dataset `cb9c-h8sn`. Cinco columnas:
 
@@ -64,7 +64,7 @@ Se llama "Adiciones" pero incluye `CONCLUSION`, un cierre de expediente sin
 plata. Es un **log de modificaciones contractuales** en general. El nombre
 induce al error de creer que todas las filas son adiciones de valor.
 
-### H26 — `tipo = 'ADICION EN EL VALOR'` es un piso, no un filtro ✅ verificado
+### H26 — `tipo = 'ADICION EN EL VALOR'` es un piso, no un filtro - verificado
 
 El tipo existe (141.217 filas hasta 2022). Pero la fila de muestra
 `CO1.CTRMOD.499720` está clasificada como `MODIFICACION GENERAL` y su
@@ -114,7 +114,7 @@ lo que sugiere que OCDS se alimentaba de esta misma tabla.
 
 Parecía una segunda fuente y resultó ser una vista del mismo dataset.
 
-### H25 — `Suspensiones` es una versión CORREGIDA de las mismas filas de `Adiciones` ✅ verificado
+### H25 — `Suspensiones` es una versión CORREGIDA de las mismas filas de `Adiciones` - verificado
 
 Conteos por año, uno al lado del otro:
 
@@ -157,7 +157,7 @@ Es justo la advertencia del propio inventario sobre vistas derivadas en
 datos.gov.co — salvo que la ficha de este no lo declara, y hay que
 descubrirlo comparando conteos.
 
-### H20 — Suspensiones podría conservar un valor pasado ⚠ hipótesis de una fila
+### H20 — Suspensiones podría conservar un valor pasado - hipótesis de una fila
 
 `SECOP II – Suspensiones` (`u99c-7mfm`) tiene siete columnas, y dos de
 ellas son fechas del contrato, no de la modificación:
@@ -180,7 +180,7 @@ propio**, que en un README vale más que otra métrica.
 
 Una fila genera hipótesis, no conclusión. Lo prueba la FASE 4.
 
-⚠ **Suspendido por H25.** Si Suspensiones resulta ser una vista derivada de
+ **Suspendido por H25.** Si Suspensiones resulta ser una vista derivada de
 Adiciones, este hallazgo cambia de significado: no sería "un segundo dataset
 conserva historia", sino "la vista expone dos columnas que la tabla base no
 publica". Sigue siendo útil, pero deja de ser una fuente independiente y no
@@ -210,7 +210,7 @@ un contrato tiene dos suspensiones aprobadas el mismo día, colisiona y el
 
 ## 3. El defecto que solo se vio cruzando los dos
 
-### H33 — `fecharegistro` de Adiciones está corrupta: mes y día truncados al primer dígito ⚠ 8/8, falta la prueba a escala
+### H33 — `fecharegistro` de Adiciones está corrupta: mes y día truncados al primer dígito - 8/8, falta la prueba a escala
 
 Tomando la fecha real de Suspensiones y truncando mes y día a su **primer
 dígito significativo**:
@@ -266,7 +266,7 @@ publicación, y cambia el proyecto entero.
 
 ## 4. Cómo se publican y se actualizan
 
-### H23 — Los hermanos se actualizan en continuo; la fuente principal no ✅ verificado
+### H23 — Los hermanos se actualizan en continuo; la fuente principal no - verificado
 
 Resultado de la FASE 3:
 
@@ -283,17 +283,17 @@ Los mínimos revelan otra cosa: Adiciones contiene filas con `fecharegistro`
 de 2018 pero ninguna con `:updated_at` anterior a octubre de 2024. Hubo una
 **carga masiva** en esa fecha y desde entonces las filas se tocan de a una.
 
-⚠ **`:updated_at` acá no es fecha de negocio**, es cuándo Socrata escribió
+ **`:updated_at` acá no es fecha de negocio**, es cuándo Socrata escribió
 la fila. Sirve como watermark de ingesta y para nada más. No confundir con
 `fecharegistro`.
 
-⚠ **Esto NO prueba que sean append-only.** Es compatible con append puro,
+ **Esto NO prueba que sean append-only.** Es compatible con append puro,
 con inserción más edición posterior, y con upsert de sincronización. Las
 tres sirven como watermark; lo que rompería el esquema es el **borrado**,
 invisible para cualquier watermark. Lo separa una consulta:
 `$where=:created_at != :updated_at`. Pendiente.
 
-⚠ Un resultado append-only **no abre una opción de arquitectura nueva** para
+ Un resultado append-only **no abre una opción de arquitectura nueva** para
 D1, aunque lo parezca. Lo que aparece es una **restricción** sobre las tres
 existentes. La capa raw tendría que alojar dos patrones de ingesta
 incompatibles — `jbjy-vk9h` por comparación de snapshots (no tiene
@@ -463,13 +463,13 @@ Script: `scripts/verificar_datasets_hermanos.py`. En orden de impacto:
 
 | Fase | Pregunta | Qué decide | Estado |
 |---|---|---|---|
-| 0 | Esquema real de ambos datasets | Cierra H17 | ✅ **hecho** — 5 y 7 columnas, sin medidas |
-| 1 | Grano y volumen | Si `identificador` es llave | ❌ timeout, repetir |
+| 0 | Esquema real de ambos datasets | Cierra H17 |  **hecho** — 5 y 7 columnas, sin medidas |
+| 1 | Grano y volumen | Si `identificador` es llave |  timeout, repetir |
 | 1b | Llave compuesta de Suspensiones | Idempotencia del `MERGE` | pendiente (→ H31) |
-| 2 | Tipos de modificación | Estructura del dataset | ✅ **hecho** — → H25 a H29, H32 |
-| 3 | ¿`:updated_at` difiere? | Watermark | ✅ **hecho** → H23, H24 |
+| 2 | Tipos de modificación | Estructura del dataset |  **hecho** — → H25 a H29, H32 |
+| 3 | ¿`:updated_at` difiere? | Watermark |  **hecho** → H23, H24 |
 | 3b | `:created_at != :updated_at` | Append puro vs. edición | pendiente |
-| **V** | **¿Suspensiones es vista de Adiciones?** | Si sobra medio ecosistema | ✅ **hecho** → H25, H33 |
+| **V** | **¿Suspensiones es vista de Adiciones?** | Si sobra medio ecosistema |  **hecho** → H25, H33 |
 | **T** | **Truncamiento de `fecharegistro` a escala** | Confirma H33 sobre 2,7M filas | **pendiente — LA PRÓXIMA** |
 | 4 | ¿Suspensiones conserva el fin viejo? | Confirma o mata H20 | pendiente |
 | 5 | Cobertura del cruce | Si son usables juntos | pendiente |

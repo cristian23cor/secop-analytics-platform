@@ -248,7 +248,7 @@ El segundo filtro sigue siendo imprescindible: una fila puede cambiar en bytes
 sin cambiar materialmente — una tilde corregida en `nombre_entidad` es
 cosmética. Esa distinción solo la sabe `columnas.py`.
 
-⚠ **La trampa del `BETWEEN`.** Escribir esa consulta como
+ **La trampa del `BETWEEN`.** Escribir esa consulta como
 `WHERE '2026-03-01' BETWEEN observado_desde AND observado_hasta` es el reflejo
 natural, y está **mal**: `BETWEEN` incluye los dos extremos, y los intervalos de
 D8 son **semiabiertos**. El día de frontera aparecería en dos versiones y
@@ -358,7 +358,7 @@ sepa cuántas veces se disparan de verdad.
 
 → *Razonamiento completo en `03_decisiones_capa_raw.md`, D7.*
 
-⚠ `id_contrato` es distinta de las otras seis: es la llave por la que se unen
+ `id_contrato` es distinta de las otras seis: es la llave por la que se unen
 las observaciones, así que su modo de fallo no es la mutación sino la
 **duplicación**. Lo captura un test de unicidad, no la comparación de cambios.
 
@@ -377,7 +377,7 @@ Las 32 restantes, agrupadas por lo que alimentan. El detalle está en
 | Marcas de política pública | 6 | `espostconflicto`, `obligaci_n_ambiental`, `reversion` |
 | Casos que hubo que evaluar uno por uno | 6 | `origen_de_los_recursos`, `destino_gasto`, `urlproceso` |
 
-⚠ **No clasificar por descarte.** La tentación es escribir "material e imposible
+ **No clasificar por descarte.** La tentación es escribir "material e imposible
 son estas, el resto es cosmética" y seguir. Las seis del último grupo parecían
 obviamente cosméticas y al mirarlas una por una resultaron serlo **por razones
 distintas entre sí**, y dos quedaron con pendientes abiertos. Una categoría
@@ -684,7 +684,7 @@ línea, pero el `lag()` sigue haciendo falta — el motivo dice *qué* columna
 cambió, no *cuánto*. La consulta se deja como está: es el artefacto del ejercicio
 que encontró los tres hallazgos de abajo, y reescribirla borraría ese registro.
 
-⚠ `delta_valor` **puede ser negativo**: existe el tipo `REDUCCION EN EL VALOR`
+ `delta_valor` **puede ser negativo**: existe el tipo `REDUCCION EN EL VALOR`
 en el dataset oficial de modificaciones (H27). El `having` filtra los positivos
 para la pregunta del sobrecosto, pero ninguna lógica de deltas debe asumir
 monotonía en `valor_del_contrato`.
@@ -763,7 +763,7 @@ una columna de `dim_tiempo`.
 decrece, o hubo reversión de un pago o la fuente tiene un error. Los dos casos
 valen la pena.
 
-⚠ Pero protege `valor_pagado`, que es **acumulado**. No generalizar a
+ Pero protege `valor_pagado`, que es **acumulado**. No generalizar a
 `valor_del_contrato`, que sí puede bajar: existe el tipo `REDUCCION EN EL VALOR`
 en el dataset oficial de modificaciones (H27).
 
@@ -810,7 +810,7 @@ Heredadas del inventario, más las nuevas:
    metadatos: `fecha_fin_liquidacion` existe y está clasificada como material;
    `fecha_de_inicio_de_ejecucion` y `estado_bpin` **no existen en la API**.
 
-   ⚠ Pero **cuántas columnas documenta el diccionario sigue sin resolverse**: se
+    Pero **cuántas columnas documenta el diccionario sigue sin resolverse**: se
    habla de 87 contra 85 reales, o sea dos ausentes, y son cinco las que se
    identificaron. Ver la pregunta abierta 4 del inventario.
 6. ¿`origen_de_los_recursos` es redundante con las seis fuentes de financiación?
