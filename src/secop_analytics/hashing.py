@@ -15,7 +15,17 @@ Por eso `envolver()` **empalma bytes** en vez de volver a serializar: si armara
 el diccionario completo y lo pasara por `json.dumps`, habría dos
 serializaciones y la promesa se rompería justo donde nadie la va a mirar.
 
-Referencias: `exploration/02_hallazgos_sesion_5.md` §5 (D1, D3) y §8 (I1, I2).
+## Lo que este módulo NO promete
+
+La promesa es sobre `datos`, no sobre la línea entera. La línea envuelta lleva
+las claves en orden `fecha_extraccion, flujo, hash, datos`, y alfabéticamente
+`datos` iría primero: **la línea completa no está canonicalizada**, aunque su
+carga útil sí. Quien quiera deduplicar líneas enteras, o releerlas y compararlas
+byte a byte tras un `sort_keys=True`, va a obtener algo distinto de lo que hay
+en disco.
+
+Referencias: `exploration/03_decisiones_capa_raw.md` — D1 (raw no normaliza),
+D3 (deduplicación por bytes), I1 (la forma canónica) e I2 (el algoritmo).
 """
 
 from __future__ import annotations
@@ -86,6 +96,10 @@ def hashear(linea_canonica: bytes) -> str:
     En hexadecimal y no en bytes crudos: 90 MB contra 45 MB para 2,8M de
     contratos —irrelevante— a cambio de poder leerlo en una consulta de DuckDB
     mientras se depura.
+
+    No comprueba que la entrada sea canónica: espera la salida de
+    `canonicalizar()`. Hashear cualquier otra cosa produce un hash válido y
+    sin sentido.
     """
     return hashlib.blake2b(linea_canonica, digest_size=_TAMANO_DIGEST).hexdigest()
 
@@ -116,8 +130,33 @@ def envolver(
         {"fecha_extraccion": fecha_extraccion, "flujo": flujo, "hash": huella},
         **_OPCIONES_JSON,
     )
-    # `cabecera[:-1]` quita la llave de cierre para poder pegar el resto.
+    # Se le quita la llave de cierre para pegarle `datos` y cerrarla al final.
+    # El assert documenta la suposición: si alguien cambia la cabecera por algo
+    # que no termine en `}`, el resultado sería JSON inválido en disco y solo
+    # se descubriría al leerlo.
+    assert cabecera.endswith("}"), f"cabecera inesperada: {cabecera!r}"
     return cabecera[:-1].encode("utf-8") + b',"datos":' + linea_canonica + b"}"
+
+
+def verificar_linea(linea: bytes) -> bool:
+    """¿La línea escrita tiene el hash que dice tener?
+
+    Relee la línea, vuelve a canonicalizar `datos` y compara contra el `hash`
+    guardado. Es la comprobación que sostiene D3: si falla, la deduplicación
+    está construida sobre arena.
+
+    Vive acá y no en el script de verificación porque el invariante es de este
+    módulo. Reimplementarla afuera crea dos definiciones de lo mismo.
+
+    ⚠ **Depende de que todos los valores sean texto** (H6). El viaje de ida y
+    vuelta por `json.loads` preserva los strings exactamente, pero no
+    necesariamente los números: un `1.10` volvería como `1.1` y esta función
+    reportaría una discrepancia sin que nada esté roto. Hoy la fuente entrega
+    todo como texto; si eso cambiara, hay que revisar esta comprobación antes
+    de creerle.
+    """
+    observacion = json.loads(linea)
+    return hashear(canonicalizar(observacion["datos"])) == observacion["hash"]
 
 
 def preparar(
