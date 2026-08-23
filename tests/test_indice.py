@@ -240,3 +240,63 @@ def test_acepta_una_lista_ademas_de_un_generador(ruta):
     """El tipo es Iterable: no hace falta envolver en `iter()`."""
     with IndiceHashes(ruta, verboso=False) as i:
         assert i.reconstruir_desde_raw([_observacion("A", "h")]) == 1
+
+
+# --------------------------------------------------------------------------
+# `conoce()`: separar "es nuevo" de "cambió"
+# --------------------------------------------------------------------------
+
+def test_no_conoce_un_contrato_que_nunca_vio(indice):
+    assert indice.conoce("CO1.PCCNTR.1") is False
+
+
+def test_conoce_lo_registrado_en_esta_corrida(indice):
+    """Mira los pendientes, igual que `cambio()`: el flujo 1 y el flujo 2 se
+    solapan dentro de la misma corrida."""
+    indice.registrar("CO1.PCCNTR.1", "abc", fecha_extraccion=FECHA, flujo="f")
+    assert indice.conoce("CO1.PCCNTR.1") is True
+
+
+def test_conoce_lo_registrado_en_corridas_anteriores(ruta):
+    with IndiceHashes(ruta, verboso=False) as primera:
+        primera.registrar("CO1.PCCNTR.1", "abc", fecha_extraccion=FECHA, flujo="f")
+    with IndiceHashes(ruta, verboso=False) as segunda:
+        assert segunda.conoce("CO1.PCCNTR.1") is True
+
+
+def test_lo_conoce_aunque_la_huella_haya_cambiado(indice):
+    """La distinción entera. `cambio()` dice True en los dos casos de abajo;
+    `conoce()` es lo que permite saber cuál de los dos es.
+
+    Un descarte bajo sobre contratos conocidos significa que los hashes
+    guardados dejaron de servir — la fuente cambió. Sobre contratos nuevos no
+    significa nada: la partición nunca se había barrido. El canario de
+    `cargar_raw.py` avisaba en los dos casos hasta que existió este método.
+    """
+    indice.registrar("CO1.PCCNTR.1", "v1", fecha_extraccion=FECHA, flujo="f")
+
+    assert indice.cambio("CO1.PCCNTR.1", "v2") is True   # cambió
+    assert indice.cambio("CO1.PCCNTR.2", "v2") is True   # es nuevo
+    assert indice.conoce("CO1.PCCNTR.1") is True         # ...pero solo uno
+    assert indice.conoce("CO1.PCCNTR.2") is False        #    se conocía
+
+
+def test_una_particion_nueva_no_conoce_nada_aunque_el_indice_no_este_vacio(ruta):
+    """El falso positivo que se vio en la primera corrida real.
+
+    El flujo 3 se paraleliza en particiones disjuntas por `fecha_de_firma`. Al
+    barrer la segunda, el índice ya tiene los contratos de la primera — que son
+    otros. Preguntar "¿el índice está vacío?" da que no, y el canario cantaba;
+    la pregunta correcta es si conoce **estos** contratos.
+    """
+    with IndiceHashes(ruta, verboso=False) as primera_particion:
+        for n in range(10):
+            primera_particion.registrar(
+                f"CO1.PCCNTR.{n}", "h", fecha_extraccion=FECHA, flujo="refresco_de_vivos"
+            )
+
+    with IndiceHashes(ruta, verboso=False) as segunda_particion:
+        assert segunda_particion.conocidos == 10, "el índice NO está vacío"
+        assert not any(
+            segunda_particion.conoce(f"CO1.PCCNTR.{n}") for n in range(100, 110)
+        ), "y aun así no conoce ninguno de los contratos de esta partición"

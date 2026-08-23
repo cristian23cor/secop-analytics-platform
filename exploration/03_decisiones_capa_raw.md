@@ -6,7 +6,8 @@
 >
 > **Cómo leerlo:** las decisiones tienen identificadores estables. **D1 a D8**
 > son de arquitectura —dónde vive cada cosa— y se tomaron antes de escribir
-> código. **I1 a I4** son de implementación y salieron al escribir el cargador.
+> código. **I1 a I5** son de implementación y salieron al escribir el cargador;
+> I5 salió más tarde todavía, releyendo el código ya escrito.
 > Cada una lleva su alternativa descartada; eso es deliberado, porque una
 > decisión sin alternativa no es una decisión.
 >
@@ -76,8 +77,8 @@ mismo criterio del `$select` explícito .
 
 **Lo que queda por construir** (ya sin decisiones pendientes):
 
-1. El cargador con deduplicación por bytes, trozos y manifiesto.
-2. El índice de hashes en DuckDB, con su reconstrucción desde raw.
+1. ~~El cargador con deduplicación por bytes, trozos y manifiesto.~~ Escrito.
+2. ~~El índice de hashes en DuckDB, con su reconstrucción desde raw.~~ Escrito.
 3. El generador `columnas.py` → dbt, con el test de deriva en CI.
 4. `stg_contratos`: relleno H13, centinelas, tipos, `urlproceso`, `noticeUID`.
 5. El modelo SCD2 propio, incremental, con `motivo_del_cambio` y
@@ -159,7 +160,7 @@ contenido; más maquinaria de la que hace falta hoy.
 **Particionado: por flujo, después por fecha de extracción.**
 
 ```
-raw/flujo=3/fecha_extraccion=2026-08-21/parte-0001.jsonl.zst
+raw/flujo=refresco_de_vivos/fecha_extraccion=2026-08-21/particion=2020-01/parte-0001.jsonl.gz
 ```
 
 Flujo primero porque los tres tienen volúmenes y cadencias distintas y podrían
@@ -176,11 +177,14 @@ cursor de keyset confirmado. Al reiniciar se descarta el trozo incompleto y se
 retoma desde el cursor del último trozo cerrado.
 
 *Argumento decisivo: la compresión.* Los límites de los trozos son los puntos
-donde el stream de `zstd` se cierra, así que nunca queda un archivo a medio
+donde el stream de compresión se cierra, así que nunca queda un archivo a medio
 comprimir. Eso es exactamente lo que descarta la opción 2 (apéndice con
-cursor): un `.zst` cortado a la mitad tiene la cola corrupta y el archivo
-entero se vuelve sospechoso — habría que dejar raw sin comprimir y multiplicar
-el volumen por diez.
+cursor): un archivo comprimido cortado a la mitad tiene la cola corrupta y el
+archivo entero se vuelve sospechoso — habría que dejar raw sin comprimir y
+multiplicar el volumen por diez.
+
+*(Este párrafo se escribió cuando el compresor elegido era `zstd`. El argumento
+no depende del compresor y vale igual con `gzip`; ver D2 revisada.)*
 
 Opción 1 (todo o nada, con directorio temporal y renombrado atómico) era
 perfectamente defendible: más simple y ningún lector ve datos a medias. Se
@@ -222,7 +226,7 @@ idénticos en cada línea, así que comprimen extraordinariamente bien:
 
 | Compresor | 30.000 filas | Ratio | Tiempo | Proyección anual |
 |---|---|---|---|---|
-| gzip nivel 6 | 1,81 MB | 47× | 0,40 s | **~1,2 GB** |
+| gzip nivel 6 | 1,81 MB | 47× | 0,40 s | **~1,2 GB** | 
 | gzip nivel 9 | 1,77 MB | 48× | 0,74 s | ~1,2 GB |
 | zstd nivel 3 | 1,44 MB | 60× | 0,05 s | ~1,0 GB |
 | zstd nivel 10 | 1,30 MB | 66× | 0,26 s | ~0,9 GB |
@@ -230,6 +234,20 @@ idénticos en cada línea, así que comprimen extraordinariamente bien:
  **Corrige la estimación de D3.** Se había escrito "~5 GB/año". El total real
 ronda **1 GB/año**, y la primera corrida completa (2.825.685 filas) son
 **~140 MB**. Pesimista por un factor de cinco.
+
+ **Esta tabla no reproduce, y hay que decirlo.** El barrido completo del
+2026-08-23 midió **324 bytes por fila** comprimidos sobre 2.824.446 filas, no
+los 63 que se deducen de 1,81 MB / 30.000. Son cinco veces más, y las mediciones
+intermedias —269 y 342 bytes por fila, sobre muestras de 18.746 y 5.331 filas—
+coinciden con la grande, no con esta.
+
+La hipótesis es que las 30.000 filas de esta tabla vinieron de una consulta con
+mucha más redundancia que una muestra representativa: una sola entidad, o un
+solo día. **No está confirmada** — habría que revisar qué consulta las trajo.
+
+La decisión de D2 no cambia: el argumento decisivo fue la biblioteca estándar,
+no el ratio. Pero la comparación entre compresores de esta tabla queda sin
+respaldo, y los números absolutos de la columna "al año" están mal.
 
 #### La decisión
 
@@ -335,9 +353,32 @@ solo puede sobrar es seguro; mismo criterio que el `$select` explícito.
 Tampoco pierde fidelidad: si la fila de hoy es byte por byte igual a la última
 guardada, guardarla otra vez no agrega información.
 
-**Volumen resultante:** ~12 MB comprimidos por noche, **~5 GB/año**. Cincuenta
-veces menos, con el histórico completo intacto. La primera corrida sí escribe
-los 2,8M (~700 MB, una sola vez).
+**Volumen resultante, medido sobre el primer barrido completo** (2026-08-23,
+2.824.446 filas escritas):
+
+| | Medido |
+|---|---|
+| Comprimido por fila | **324 bytes** |
+| Ratio de gzip sobre el JSONL crudo | **8,8×** |
+| La primera corrida completa | **916 MB** |
+| Noche típica, si cambian ~30.000 | ~9,7 MB |
+| Al año, a ese ritmo | ~3,6 GB |
+
+Las dos últimas filas son **proyecciones, no mediciones**: dependen de cuántos
+contratos cambian por noche, y eso todavía no se midió — hace falta una segunda
+noche de barrido completo. Ver la pregunta abierta al final de esta sección.
+
+Frente a guardar la foto entera cada noche sin comprimir —8,1 GB por noche,
+2,9 TB al año— la deduplicación reduce el almacenamiento **unas 800 veces**. Ese
+número mezcla dos efectos distintos y conviene enunciarlo partido:
+
+- **Compresión: 8,8×.** Es gzip haciendo su trabajo.
+- **Deduplicación: el resto.** Es el diseño. Depende de la tasa real de cambio.
+
+ **Este párrafo reemplaza dos estimaciones anteriores, las dos equivocadas.**
+La original decía 12 MB por noche y 5 GB al año; la corrección de D2 revisada
+decía 2 MB y 1 GB. La segunda estaba mal por un factor de cinco en la dirección
+opuesta a la primera.
 
 **Consecuencia sobre D1:** la condición abierta **se disuelve**. Hay retención
 completa sin retención corta, así que "puedo reprocesar el pasado" sigue en pie
@@ -351,7 +392,8 @@ entero. **D1 no hay que revisarla.**
  claves en el mismo orden. Se ordenan antes de hashear. Ordenar claves no es
  transformar valores, así que no rompe A.
 - *Índice de estado.* Hace falta el último hash por contrato: 2,8M hashes,
- ~100 MB en DuckDB.
+ **171 MB** en DuckDB, medido: la estimación de 90 MB no contaba
+ el índice de la llave primaria.
 
 **Propiedad de diseño importante:** el índice de hashes es **derivado, no
 autoritativo**. Si se pierde o se corrompe, se reconstruye releyendo los
@@ -589,16 +631,17 @@ Un nulo que significa tres cosas distintas es un fallo silencioso esperando.
 
 ---
 
-## Implementación: I1 a I4
+## Implementación: I1 a I5
 
-Las ocho decisiones de diseño (D1–D8) no cubren estas. Se numeran I1–I4.
+Las ocho decisiones de diseño (D1–D8) no cubren estas. Se numeran I1–I5.
 
 | # | Decisión | Estado |
 |---|---|---|
 | I1 | Cómo se representa la fila para hashear |  **JSON canónico, los mismos bytes que se escriben** |
-| I2 | Qué algoritmo de hash | abierta |
-| I3 | Dónde vive el manifiesto | abierta |
-| I4 | Cómo se estructura el módulo | abierta |
+| I2 | Qué algoritmo de hash |  **BLAKE2b truncado a 128 bits** |
+| I3 | Dónde vive el manifiesto |  **JSON dentro de cada partición** |
+| I4 | Cómo se estructura el módulo |  **Tres módulos; el índice completo en memoria** |
+| I5 | Cuándo se cierra el trozo y cuándo avanza el cursor |  **Por líneas o por páginas; el cursor solo si el buffer está vacío** |
 
  **I1 e I2 juntas definen el contrato del índice de hashes.** Si cambian
 después de la primera corrida, todos los hashes guardados quedan inservibles.
@@ -731,10 +774,10 @@ cambiarlo, hay que poder distinguir hashes viejos de nuevos sin adivinar.
 ###  I3 DECIDIDA — manifiesto como archivo JSON dentro de cada partición
 
 ```
-raw/flujo=3/fecha_extraccion=2026-08-21/
+raw/flujo=refresco_de_vivos/fecha_extraccion=2026-08-21/particion=2020-01/
  _manifiesto.json ← progreso: cursor, trozos cerrados, algoritmo
- parte-0001.jsonl.zst
- parte-0002.jsonl.zst
+ parte-0001.jsonl.gz
+ parte-0002.jsonl.gz
  _COMPLETO ← única señal de "terminado"
 ```
 
@@ -845,6 +888,15 @@ hashes nuevos en un dict aparte, escribir la tanda al cerrar.
 **Escritura final medida:** 0,2 s para los ~30.000 que cambian en una noche
 típica. Los 13,9 s del caso extremo (cambia todo) solo ocurren la primera vez.
 
+ **El caso extremo real fue 55,7 s, no 13,9.** Medido en el primer barrido
+completo: 2.824.446 hashes volcados. Eso rompe el presupuesto de reintentos de
+`_abrir()`, que suma 15,5 s de espera — no los ~30 que dice su docstring, porque
+el último intento no duerme. Con particiones en paralelo, la que llegue mientras
+otra vuelca **no alcanza a esperar y muere con `RuntimeError`**.
+
+Hoy no muerde porque las particiones se corren en serie. Hay que rehacer el
+cálculo antes de paralelizar.
+
  **Vigilar si el dataset crece.** Cuatro particiones en paralelo son cuatro
 copias del índice: **740 MB**. Manejable hoy; si el dataset se duplica, hay que
 volver a mirar los lotes.
@@ -856,8 +908,147 @@ volver a mirar los lotes.
 colgado — lección .
 
 **El archivo del índice pesa 171 MB, no 90.** La estimación de I2 no contaba el
-índice de la llave primaria. Irrelevante frente a los ~5 GB anuales de raw, pero
+índice de la llave primaria. Irrelevante frente a los ~3,6 GB anuales de raw, pero
 el número correcto es 171.
+
+
+###  I5 DECIDIDA — el trozo se cierra por líneas o por páginas; el cursor solo avanza si el buffer está vacío
+
+**Encontrado leyendo el código, no corriéndolo.** Es un defecto de la
+interacción entre dos piezas que por separado están bien.
+
+#### El defecto
+
+El punto de control y el cierre del trozo iban a ritmos distintos: el cursor se
+guardaba en el manifiesto **en cada página**, y el trozo se escribía a disco
+**cada 5.000 líneas**. En el flujo 3, de cada página de 5.000 filas cambian
+unas 50, así que llenar un trozo lleva ~100 páginas — y durante esas cien
+páginas el manifiesto ya anunciaba el avance mientras las líneas seguían en
+memoria.
+
+Una muerte **dura** —`SIGKILL`, corte de luz, OOM; no una excepción, que el
+`with` sí alcanza a cubrir— dejaba el manifiesto diciendo "ya pasé por acá" con
+las filas evaporadas. La reanudación arrancaba después de ellas y **no las
+volvía a pedir nunca.** La fuente ya se había sobrescrito.
+
+Invierte la asimetría sobre la que está construido todo el diseño: de los tres
+lugares donde vivía una fila —buffer, índice y cursor— el único que sobrevivía
+al fallo era el que no debía.
+
+#### La decisión
+
+Dos cotas para cerrar el trozo, la que ocurra primero: **líneas acumuladas**
+(5.000) y **páginas desde el último cierre** (20). Y una regla para el cursor:
+**solo pasa al manifiesto si el buffer está vacío.**
+
+La regla vive en `_guardar_manifiesto()`, que es el único punto donde el cursor
+llega al disco. Así el manifiesto no puede anunciar un avance mayor que lo
+escrito, por construcción y en un solo lugar.
+
+ **La condición es "el buffer está vacío", no "se acaba de cerrar un trozo".**
+Parece lo mismo y no lo es: en la segunda corrida de una misma ventana el
+descarte es del 100%, no se escribe ni una línea y nunca se cierra un trozo. Con
+la regla del trozo el cursor no avanzaría jamás y cualquier interrupción
+reiniciaría desde cero.
+
+#### Por qué no cerrar el trozo en cada página
+
+Era la opción más simple y elimina el riesgo por construcción, sin tener que
+razonar sobre cuándo muere el proceso. Se midió su costo sobre filas
+sintéticas con la redundancia de las reales:
+
+| líneas por trozo | archivos | penalización de tamaño |
+|---|---|---|
+| 5.000 | 1 | — |
+| 500 | 10 | +1,8% |
+| 100 | 50 | +9,3% |
+| **50** (una página del flujo 3) | 100 | **+18,1%** |
+| 25 | 200 | +34,5% |
+
+El espacio no es el problema: 18% sobre 2 MB por noche son 360 KB. Lo que cuesta
+son **~200.000 archivos al año** entre las cuatro particiones, de forma
+permanente, a cambio de un riesgo ocasional.
+
+#### Por qué no solo la cota de páginas sin número
+
+La alternativa era que el cursor apuntara al último trozo cerrado y nada más:
+igual de segura, más simple, sin parámetro nuevo. Deja el peor caso en ~100
+páginas rebajadas.
+
+Se eligió acotarlo **porque hoy la interrupción no es el caso raro**:
+`paginacion.py` todavía no tiene reintentos ante 429 y 5xx, y H32 ya demostró
+que esta fuente se cae bajo carga. Un solo error en la página 300 aborta el
+barrido.
+
+ **Esta decisión se revisa cuando existan los reintentos.** Ahí la
+interrupción vuelve a ser rara y la versión sin cota es preferible por simple.
+
+#### El número de páginas es una estimación, no una medición
+
+20 supone ~50 líneas escritas por página, que a su vez supone el 1% de cambio.
+Está parametrizado (`paginas_por_trozo`) y comentado como tal. **Medir el número
+real en la primera corrida** y ajustarlo.
+
+#### Lo que esto dejó ver sobre los tests
+
+El test `test_el_punto_de_control_guarda_el_cursor` **pasaba, y afirmaba el
+defecto**: escribía una línea, llamaba al punto de control y exigía que el
+manifiesto ya tuviera el cursor, con la línea todavía en el buffer.
+
+O sea que el defecto estaba **cubierto** por un test, no descubierto por falta
+de cobertura. Es la advertencia de `conftest.py` en su forma más pura —los
+tests se escriben desde la expectativa— aplicada esta vez no a los dobles de la
+fuente sino a los del propio diseño. Conviene releer los demás con esa sospecha
+puesta, y no solo con la de "¿falta cobertura?".
+
+Lo reemplazan seis tests que fallan contra el código viejo y pasan contra el
+nuevo, incluido el de la muerte dura.
+
+
+---
+
+## El primer barrido completo — 23 de agosto de 2026
+
+Lo que se midió la primera vez que el flujo 3 corrió entero contra la fuente.
+Reemplaza estimaciones, así que conviene tenerlo junto.
+
+| | Estimado | **Medido** |
+|---|---|---|
+| Contratos vivos | 2.825.685 | **2.835.895** |
+| Páginas de 5.000 | ~566 | **568** |
+| Tiempo del barrido | ~20 min | **39 min 46 s** |
+| Segundos por página | — | **~4,1** |
+| Volcado del índice | 13,9 s | **55,7 s** |
+| Comprimido por fila | 63 B | **324 B** |
+| La partición en disco | ~140 MB | **916 MB** |
+
+### Lo que esto confirma
+
+**D3 funciona entre días distintos, no solo dentro de una corrida.** De las
+11.449 filas que ya estaban en el índice del día anterior, se descartaron las
+11.449. Bytes idénticos con otra `fecha_extraccion`, o sea que los metadatos
+están efectivamente fuera del hash (I1) y la canonicalización es estable en el
+tiempo. Es una comprobación que la fase 3 de `verificar_carga_raw.py` no puede
+hacer, porque corre las dos veces el mismo día.
+
+**El barrido entra en la ventana nocturna.** Arrancando después de las 04:41 COT
+(H24), cuarenta minutos terminan cerca de las 05:30.
+
+### Lo que sigue sin medirse
+
+**Cuántos contratos cambian por noche.** Es el número del que dependen el
+volumen anual y el ratio de deduplicación, y hoy solo hay una noche de datos.
+El 99% que se viene citando sale de H9 y del razonamiento, no de una medición
+sobre el universo completo.
+
+Sale de correr el barrido una segunda noche. Hasta entonces, las cifras de
+"al año" de D3 son proyecciones.
+
+**Por qué una página tardó 28 segundos.** El 2026-08-22 una partición de dos
+páginas tardó 55,6 s, y la repetición de esa misma partición 6,4 s. El barrido
+completo promedió 4,1 s. Se dijo "arranque en frío de Socrata" y eso es una
+hipótesis sin respaldo. Importa para el margen del `schedule` del DAG: si el
+rango real va de 3 a 28 segundos por página, el peor caso son cuatro horas.
 
 
 ---
@@ -981,9 +1172,11 @@ El eje real no es el disco: es **dónde vive `columnas.py` en el linaje**. En
 A y C es un documento que hay que traducir; en B es código ejecutable en el
 camino crítico.
 
-**Una cuarta opción puede aparecer** según el resultado de la FASE 3: si
-Adiciones y Suspensiones son append-only, hay un watermark real disponible y
-cambia el planteo.
+**La cuarta opción no apareció.** La FASE 3 corrió (H23): los hermanos sí
+tienen watermark propio, pero eso **no abre una opción de arquitectura nueva**
+—abre una restricción sobre las tres existentes—. La capa raw tendría que
+alojar dos patrones de ingesta incompatibles, y eso mueve peso en contra de B,
+no a favor de una D. Ver H23 en `02_ecosistema_secop.md`.
 
 ### Restricciones ya identificadas para D2 y D3
 

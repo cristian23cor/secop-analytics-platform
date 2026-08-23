@@ -63,10 +63,14 @@ from secop_analytics.flujos import (
 )
 from secop_analytics.hashing import preparar
 from secop_analytics.indice import IndiceHashes
-from secop_analytics.paginacion import Fila
+from secop_analytics.paginacion import ErrorDeConfiguracion, Fila
 
 RAIZ_RAW = Path("datos/raw")
 RUTA_INDICE = Path("datos/indice_hashes.duckdb")
+
+# Umbrales del canario. Ver `_advertencia_de_descarte()`.
+UMBRAL_DE_DESCARTE = 0.5
+MINIMO_PARA_EL_CANARIO = 1_000
 
 # `fecha_extraccion` es el día COLOMBIANO, no el del reloj del sistema.
 #
@@ -110,6 +114,13 @@ class Resultado:
     escritas: int = 0
     paginas: int = 0
     segundos: float = 0.0
+    # Cuántos contratos conocía el índice al arrancar. Informativo: sirve para
+    # el mensaje del canario, no para decidir si canta.
+    conocidos_al_inicio: int = 0
+    # Cuántas de las filas RECIBIDAS ya estaban en el índice. Esta es la que
+    # decide: un descarte del 0% significa cosas opuestas según si las filas
+    # eran conocidas (los hashes dejaron de servir) o nuevas (partición nueva).
+    conocidas: int = 0
 
     @property
     def tasa_descarte(self) -> float:
@@ -125,8 +136,17 @@ class Resultado:
         todos los hashes anteriores y llena raw de duplicados que parecen
         cambios.
 
+        ⚠ **El razonamiento de arriba vale solo para el flujo 3.** En los flujos
+        1 y 2 el descarte bajo es lo correcto: el flujo 1 trae contratos recién
+        firmados, que el índice nunca vio, y el flujo 2 trae contratos a los que
+        les pasó algo, o sea que alguna columna se movió. Los dos escriben casi
+        todo lo que reciben y los dos superan las 1.000 filas diarias. Por eso
+        `_advertencia_de_descarte()` no los mira.
+
         Al 100% durante varios días seguidos es lo contrario: puede que la
-        fuente dejó de actualizarse y nadie se enteró.
+        fuente dejó de actualizarse y nadie se enteró. Eso **no se comprueba
+        acá**: hace falta comparar contra corridas anteriores, y este objeto
+        solo conoce la suya.
         """
         if not self.recibidas:
             return 0.0
@@ -141,6 +161,48 @@ class Resultado:
         print(f"  descarte:   {self.tasa_descarte:.1%}")
         print(f"  tiempo:     {self.segundos:.1f}s")
         print(f"  {'─' * 58}")
+
+
+def _advertencia_de_descarte(resultado: Resultado) -> str | None:
+    """El canario, con las tres corridas donde NO debe cantar.
+
+    Una alerta ruidosa enseña a ignorarla, y esta protege la señal más
+    importante del pipeline: que el esquema de la fuente cambió y todos los
+    hashes quedaron inservibles. Las exclusiones son parte de la alerta, no
+    concesiones.
+
+    1. **Flujos 1 y 2.** El descarte bajo es su comportamiento correcto, y los
+       dos pasan las 1.000 filas por día: sin esta exclusión la advertencia
+       salía en las dos corridas diarias, todas las noches, sin que nada
+       estuviera mal.
+    2. **Ninguna fila conocida.** No hay nada contra qué comparar: estos
+       contratos nunca se habían visto, así que escribirlos todos es correcto.
+       Cubre la primera corrida y, sobre todo, **cada partición nueva del flujo
+       3** — que la primera noche son tres de cuatro. Preguntar en cambio si el
+       índice está vacío no alcanza: al barrer la segunda partición el índice ya
+       tiene los contratos de la primera, que son otros.
+    3. **Muestras chicas.** Bajo ese piso la tasa es ruido.
+    """
+    if resultado.flujo != Flujo.REFRESCO.value:
+        return None
+    if resultado.conocidas == 0:
+        return None
+    if resultado.recibidas <= MINIMO_PARA_EL_CANARIO:
+        return None
+    if resultado.tasa_descarte >= UMBRAL_DE_DESCARTE:
+        return None
+
+    return (
+        f"\n⚠ Descarte del {resultado.tasa_descarte:.1%} en el flujo 3, cuando "
+        f"debería rondar el 99%.\n"
+        f"  {resultado.conocidas:,} de las {resultado.recibidas:,} filas "
+        "recibidas YA estaban en el índice, así que no es una partición "
+        "nueva.\n"
+        "  Si no coincide con un día de actividad excepcional, revisá si cambió "
+        "el esquema\n  de la fuente: una columna nueva o un formato distinto "
+        "invalidan todos los hashes\n  anteriores y llenan raw de duplicados "
+        "que parecen cambios."
+    )
 
 
 # --------------------------------------------------------------------------
@@ -171,8 +233,13 @@ def _procesar_paginas(
         fecha_extraccion=fecha_extraccion,
         particion=particion,
     ) as destino:
+        resultado.conocidos_al_inicio = indice.conocidos
+
         if destino.esta_completa:
             print("  ya estaba completa, no se rehace", flush=True)
+            # Los segundos se asignan igual: abrir el índice y la partición
+            # tarda, y un `tiempo: 0.0s` en pantalla parece un error.
+            resultado.segundos = time.perf_counter() - inicio
             return resultado
 
         if destino.cursor:
@@ -192,6 +259,8 @@ def _procesar_paginas(
                     fila, flujo=flujo.value, fecha_extraccion=fecha_extraccion
                 )
                 ultimo_id = id_contrato
+                if indice.conoce(id_contrato):
+                    resultado.conocidas += 1
 
                 if indice.cambio(id_contrato, huella):
                     # ── EL ORDEN. No invertir. ──────────────────────────
@@ -334,21 +403,22 @@ def main() -> int:
                 parser.error(f"El flujo {args.flujo} necesita --desde y --hasta.")
             cargar = cargar_nuevos if args.flujo == "nuevos" else cargar_eventos
             resultado = cargar(args.desde, args.hasta, **comunes)
+    except ErrorDeConfiguracion as error:
+        # Hereda de RuntimeError, así que el `except ValueError` de abajo no lo
+        # veía y el fallo más probable de una primera corrida —falta el token en
+        # el `.env`— salía como traza de Python en vez de como mensaje.
+        print(f"\n❌ {error}", file=sys.stderr)
+        return 2
     except ValueError as error:
         print(f"\n❌ {error}", file=sys.stderr)
         return 1
 
     resultado.imprimir()
 
-    # El canario. Ver `Resultado.tasa_descarte`.
-    if resultado.recibidas > 1000 and resultado.tasa_descarte < 0.5:
-        print(
-            "\n⚠ Descarte inusualmente bajo. Si esto no coincide con un día de "
-            "actividad excepcional, revisá si cambió el esquema de la fuente: "
-            "una columna nueva o un formato distinto invalidan todos los hashes "
-            "anteriores y llenan raw de duplicados que parecen cambios.",
-            file=sys.stderr,
-        )
+    # El canario. Ver `_advertencia_de_descarte()`.
+    advertencia = _advertencia_de_descarte(resultado)
+    if advertencia:
+        print(advertencia, file=sys.stderr)
     return 0
 
 

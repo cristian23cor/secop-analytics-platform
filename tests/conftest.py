@@ -8,7 +8,7 @@ probar en CI **lo que el orquestador decide**: el orden entre archivo e índice,
 el guardarraíl del flujo 3, los nombres de partición, la reanudación por cursor
 y la deduplicación entre corridas.
 
-⚠ **Los dobles no prueban el contrato con la fuente.** Devuelven las filas que
+ **Los dobles no prueban el contrato con la fuente.** Devuelven las filas que
 uno escribe, y uno las escribe desde lo que espera. Las rarezas que la
 exploración encontró en la fuente real son la prueba de lo que eso deja afuera:
 una columna de fecha corrupta, centinelas de texto en dos capitalizaciones,
@@ -24,7 +24,7 @@ verdad y se ejecuta a mano.
 que los módulos falsos tienen que estar en `sys.modules` **antes** de importarlo.
 De ahí el orden raro de este archivo.
 
-⚠ **Y por qué se instalan con asignación y no con `setdefault`.** `setdefault`
+ **Y por qué se instalan con asignación y no con `setdefault`.** `setdefault`
 no hace nada si el módulo ya está importado, así que bastaba con que cualquier
 test tocara el módulo real antes para que `cargar_raw` saliera a la red — un
 fallo que depende del orden de recolección de pytest y por lo tanto aparece y
@@ -106,6 +106,65 @@ def parametros_de(modulo: str, funcion: str) -> set[str] | None:
             }
     return None
 
+def nombres_importados_por(script: str, modulo: str) -> set[str] | None:
+    """Qué nombres le pide un script de `scripts/` a un módulo de `src/`.
+
+    Los otros dos ayudantes comparan lo que el doble **tiene**. Este compara lo
+    que el orquestador **necesita**, que es la pregunta que faltaba: un doble
+    puede estar perfectamente sincronizado con el original y aun así no exportar
+    el nombre que el script importa, porque el original lo tiene y el doble no
+    lo copió.
+    """
+    import ast
+
+    ruta = RAIZ / "scripts" / f"{script}.py"
+    if not ruta.is_file():
+        return None
+    arbol = ast.parse(ruta.read_text(encoding="utf-8"))
+    objetivo = f"secop_analytics.{modulo}"
+    return {
+        alias.name
+        for nodo in ast.walk(arbol)
+        if isinstance(nodo, ast.ImportFrom) and nodo.module == objetivo
+        for alias in nodo.names
+    }
+
+
+def constantes_de(modulo: str) -> dict[str, Any] | None:
+    """Asignaciones de nivel superior con valor literal, del módulo real.
+
+    `valores_de_enum()` cubre enums y `parametros_de()` cubre firmas. Las
+    constantes de módulo no las cubría nadie, y ahí vive `ESTADOS_VIVOS`, que
+    define el universo entero del flujo 3: si el doble y el original divergen,
+    los tests pasan y el barrido nocturno cubre otro universo.
+
+    Lee `Assign` y `AnnAssign`, porque el original las declara con `Final[...]`.
+    """
+    import ast
+
+    arbol = _arbol(modulo)
+    if arbol is None:
+        return None
+
+    encontradas: dict[str, Any] = {}
+    for nodo in arbol.body:
+        if isinstance(nodo, ast.AnnAssign) and isinstance(nodo.target, ast.Name):
+            nombre, valor = nodo.target.id, nodo.value
+        elif (
+            isinstance(nodo, ast.Assign)
+            and len(nodo.targets) == 1
+            and isinstance(nodo.targets[0], ast.Name)
+        ):
+            nombre, valor = nodo.targets[0].id, nodo.value
+        else:
+            continue
+        if valor is None:
+            continue
+        try:
+            encontradas[nombre] = ast.literal_eval(valor)
+        except (ValueError, TypeError):
+            continue  # `Fila = dict[str, Any]` y compañía: no son literales
+    return encontradas
 
 # --------------------------------------------------------------------------
 # Dobles, instalados en sys.modules antes de que nadie importe el orquestador
@@ -114,6 +173,19 @@ def parametros_de(modulo: str, funcion: str) -> set[str] | None:
 _paginacion = types.ModuleType("secop_analytics.paginacion")
 _paginacion.Fila = dict
 _paginacion.LIMITE_POR_DEFECTO = 5000
+
+
+class ErrorDeConfiguracion(RuntimeError):
+    """Copia de `ErrorDeConfiguracion` de `paginacion.py`.
+
+    Hereda de `RuntimeError` igual que el original, y eso importa: el
+    orquestador la atrapa **aparte** del `ValueError` precisamente porque no es
+    uno. Si acá heredara de `ValueError`, el test del guardarraíl de R1 pasaría
+    por el camino equivocado sin que nada lo delate.
+    """
+
+
+_paginacion.ErrorDeConfiguracion = ErrorDeConfiguracion
 sys.modules["secop_analytics.paginacion"] = _paginacion
 
 

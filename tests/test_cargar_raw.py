@@ -61,6 +61,59 @@ def test_paginar_acepta_el_cursor():
     assert parametros is not None, "no se pudo leer paginacion.py"
     assert "desde_cursor" in parametros
 
+MODULOS_DOBLADOS = ["paginacion", "flujos"]
+
+
+@pytest.mark.parametrize("modulo", MODULOS_DOBLADOS)
+def test_el_doble_exporta_todo_lo_que_el_orquestador_importa(modulo):
+    """Los tres tests de arriba comparan lo que el doble TIENE. Este compara lo
+    que el orquestador NECESITA, que es la pregunta que faltaba.
+
+    Ya ocurrió: se agregó `from secop_analytics.paginacion import
+    ErrorDeConfiguracion` a `cargar_raw.py`, el doble no lo exportaba, y 19
+    tests reventaron con `ImportError` antes de correr una sola aserción. Esa
+    vez salió barato porque el fallo fue ruidoso; el modo peligroso —el doble
+    exporta el nombre con otro valor— lo cubre el test de abajo.
+    """
+    import importlib
+
+    from conftest import nombres_importados_por
+
+    pedidos = nombres_importados_por("cargar_raw", modulo)
+    assert pedidos is not None, "no se pudo leer scripts/cargar_raw.py"
+
+    doble = importlib.import_module(f"secop_analytics.{modulo}")
+    faltan = sorted(n for n in pedidos if not hasattr(doble, n))
+    assert not faltan, (
+        f"el doble de {modulo} no exporta {faltan} y cargar_raw.py los importa"
+    )
+
+
+@pytest.mark.parametrize("modulo", MODULOS_DOBLADOS)
+def test_las_constantes_del_doble_valen_lo_mismo_que_las_reales(modulo):
+    """`valores_de_enum` cubre enums y `parametros_de` cubre firmas. Las
+    constantes de módulo no las cubría nadie, y ahí vive `ESTADOS_VIVOS`.
+
+    Define los cuatro estados que barre el flujo 3 — los 2.825.685 contratos
+    que todavía pueden cambiar. Si el original gana un quinto estado y el doble
+    no, todos los tests pasan y el barrido real cubre otro universo.
+    """
+    import importlib
+
+    from conftest import constantes_de
+
+    reales = constantes_de(modulo)
+    assert reales is not None, f"no se pudo leer {modulo}.py"
+
+    doble = importlib.import_module(f"secop_analytics.{modulo}")
+    discrepan = {
+        nombre: (valor_real, getattr(doble, nombre))
+        for nombre, valor_real in reales.items()
+        if hasattr(doble, nombre) and getattr(doble, nombre) != valor_real
+    }
+    assert not discrepan, (
+        f"el doble de {modulo} divergió: {discrepan} (real, doble)"
+    )
 
 # --------------------------------------------------------------------------
 # El invariante de orden

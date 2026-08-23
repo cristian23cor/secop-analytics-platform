@@ -33,14 +33,28 @@ Depende de la red y de una API de terceros. Un test que falla porque
 `datos.gov.co` está caído enseña a ignorar los tests. Se corre a mano cuando
 cambia algo del extractor, de `columnas.py` o de la canonicalización.
 
+## Por qué la ventana está cerrada en el pasado
+
+`fecha_de_firma` tiene ~1 día de rezago de publicación, y llegó a observarse
+hasta cuatro. Una ventana que termina hoy puede venir vacía sin que nada esté
+roto — y sin filas **todos los chequeos pasan por vacuidad**: cero es igual a
+cero, una lista vacía no tiene discrepancias y ninguna columna personal llegó
+porque no llegó ninguna columna. Un script que aprueba sin haber verificado
+nada da confianza falsa justo el día que algo se rompió.
+
+Por eso la ventana por defecto es un día hábil ya cerrado, igual que en
+`verificar_extraccion.py`, y **el script aborta si viene vacía**.
+
 Uso:
 
     uv run python scripts/verificar_carga_raw.py
-    uv run python scripts/verificar_carga_raw.py --paginas 3 --dias 3
+    uv run python scripts/verificar_carga_raw.py --paginas 3 --desde 2024-02-06 --dias 3
 
 ⚠ **Consume el doble de peticiones de lo que parece.** La fase 3 descarga la
 misma ventana dos veces, a propósito: es la única forma de comprobar que la
-segunda corrida descarta todo.
+segunda corrida descarta todo. Y a diferencia de la fase 1, **no está acotada
+por `--paginas`**: baja la ventana entera. Por eso se mide el tamaño con un
+`count(*)` antes de empezar.
 
 Referencias: `exploration/03_decisiones_capa_raw.md` — D3 (deduplicación por
 bytes) y R2 (la fecha colombiana).
@@ -61,16 +75,20 @@ from dotenv import load_dotenv
 from cargar_raw import cargar_nuevos, hoy
 from secop_analytics.columnas import PERSONALES
 from secop_analytics.escritura import leer_particion
-from secop_analytics.flujos import contratos_nuevos
+from secop_analytics.flujos import _rango, contratos_nuevos
 from secop_analytics.hashing import canonicalizar, hashear, preparar, verificar_linea
+from secop_analytics.paginacion import contar
 
-# Ventana chica y reciente: suficiente para ver filas reales sin bajar medio
-# dataset. ~2.900 contratos por día (H3).
-#
-# Es solo el valor por defecto de `--dias`. El ancho real viaja como parámetro
-# hasta cada fase: una global que `main()` reescribe hace que el comportamiento
-# de una función dependa de quién la llamó antes.
+# Un día hábil ya cerrado, el mismo que usa `verificar_extraccion.py`. No se
+# usa "ayer": `fecha_de_firma` tiene ~1 día de rezago y llegó a observarse
+# hasta cuatro, así que una ventana pegada a hoy puede venir vacía sin que nada
+# esté roto — y una ventana vacía aprueba todas las fases por vacuidad.
+DESDE_POR_DEFECTO = date(2024, 2, 6)
 DIAS_POR_DEFECTO = 1
+
+# Cuántas filas se consideran demasiadas para la fase 3, que baja la ventana
+# entera dos veces y no respeta `--paginas`.
+MAXIMO_RAZONABLE = 20_000
 
 
 def titulo(texto: str) -> None:
@@ -80,12 +98,15 @@ def titulo(texto: str) -> None:
 # --------------------------------------------------------------------------
 
 
-def fase_1(paginas_max: int, dias: int) -> list[dict]:
-    """Toda fila real pasa por `preparar()` sin explotar."""
+def fase_1(desde: date, hasta: date, paginas_max: int) -> tuple[list[dict], bool]:
+    """Toda fila real pasa por `preparar()` sin explotar.
+
+    Devuelve también el veredicto: es la fase más importante y antes no
+    participaba del código de salida. Podía imprimir que fallaron mil filas y
+    el script terminaba en 0.
+    """
     titulo("FASE 1 — Las filas reales sobreviven la canonicalización")
 
-    hasta = hoy()
-    desde = hasta - timedelta(days=dias)
     print(f"Ventana: {desde} a {hasta} (semiabierta)\n")
 
     recogidas: list[dict] = []
@@ -107,23 +128,25 @@ def fase_1(paginas_max: int, dias: int) -> list[dict]:
         print(f"  ❌ FALLARON {len(fallos)}:")
         for id_contrato, motivo in fallos[:5]:
             print(f"     {id_contrato}: {motivo[:120]}")
-    else:
-        print("  ✅ ninguna falló")
+        return recogidas, False
 
-    if not recogidas:
-        print("\n  ⚠ Sin filas en la ventana. Ampliá --dias o revisá el rezago.")
-    return recogidas
+    print("  ✅ ninguna falló")
+    return recogidas, True
 
 
-def fase_2(recogidas: list[dict]) -> bool:
-    """La ida y vuelta es exacta. Es la que valida D3."""
+def fase_2(recogidas: list[dict]) -> tuple[bool, list[dict]]:
+    """La ida y vuelta es exacta. Es la que valida D3.
+
+    Devuelve también las observaciones releídas del disco: son lo que la fase 4
+    necesita para comprobar sobre lo GUARDADO y no sobre lo recibido.
+    """
     titulo("FASE 2 — Ida y vuelta sobre datos reales")
     print("Si el hash de lo releído no coincide con el de lo escrito, la")
     print("deduplicación está construida sobre arena.\n")
 
     if not recogidas:
         print("  (sin filas que verificar)")
-        return True
+        return True, []
 
     base = Path(tempfile.mkdtemp())
     try:
@@ -164,14 +187,14 @@ def fase_2(recogidas: list[dict]) -> bool:
 
         if discrepancias:
             print(f"  ❌ {discrepancias} filas no rehashean igual")
-            return False
+            return False, observaciones
         print("  ✅ todas rehashean idéntico")
-        return True
+        return True, observaciones
     finally:
         shutil.rmtree(base)
 
 
-def fase_3(dias: int) -> bool:
+def fase_3(desde: date, hasta: date) -> bool:
     """La tasa de descarte real. La segunda corrida no debe escribir nada."""
     titulo("FASE 3 — Deduplicación sobre datos reales")
     print("Dos corridas seguidas de la MISMA ventana: la segunda debe descartar")
@@ -181,9 +204,19 @@ def fase_3(dias: int) -> bool:
     base = Path(tempfile.mkdtemp())
     try:
         indice = base / "indice.duckdb"
-        hasta = hoy()
-        desde = hasta - timedelta(days=dias)
         fecha = str(hasta)
+
+        # Esta fase NO respeta `--paginas`: `cargar_nuevos` baja la ventana
+        # entera, y acá se baja dos veces. Se mide antes con un `count(*)` del
+        # servidor en vez de descubrirlo a mitad de camino.
+        esperadas = contar(_rango("fecha_de_firma", desde, hasta))
+        print(f"  la ventana tiene {esperadas:,} filas · se bajan dos veces")
+        if esperadas > MAXIMO_RAZONABLE:
+            print(
+                f"  ⚠ más de {MAXIMO_RAZONABLE:,} filas. El script SIGUE, pero "
+                "considerá achicar la ventana: la garantía la da que la segunda "
+                "corrida descarte, no cuántas filas se bajen."
+            )
 
         primera = cargar_nuevos(
             desde, hasta, fecha_extraccion=fecha,
@@ -210,17 +243,24 @@ def fase_3(dias: int) -> bool:
         shutil.rmtree(base)
 
 
-def fase_4(recogidas: list[dict]) -> bool:
-    """Ningún dato personal viajó. H7 dice que el filtro corre en el `$select`."""
+def fase_4(observaciones: list[dict]) -> bool:
+    """Ningún dato personal quedó guardado. H7: el filtro corre en el `$select`.
+
+    Mira lo que se releyó del disco, no lo que devolvió la API. El título decía
+    "en lo guardado" y comprobaba lo recibido; hoy son lo mismo, pero el día que
+    dejen de serlo el chequeo tiene que estar del lado correcto.
+    """
     titulo("FASE 4 — Ningún dato personal en lo guardado")
     print("H7: el filtro corre en el `$select`, no después. Esto verifica que")
     print("efectivamente no viajaron, en vez de confiar en que no viajaron.\n")
 
-    if not recogidas:
+    if not observaciones:
         print("  (sin filas que verificar)")
         return True
 
-    presentes = {c for fila in recogidas for c in fila if c in PERSONALES}
+    presentes = {
+        c for o in observaciones for c in o["datos"] if c in PERSONALES
+    }
     if presentes:
         print(f"  ❌ llegaron {len(presentes)} columnas personales: {sorted(presentes)}")
         return False
@@ -235,12 +275,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--paginas", type=int, default=2,
-                        help="Cuántas páginas traer como máximo (defecto 2).")
+                        help="Cuántas páginas traer como máximo en la fase 1 (defecto 2).")
+    parser.add_argument("--desde", type=date.fromisoformat, default=DESDE_POR_DEFECTO,
+                        help=f"Inicio de la ventana (defecto {DESDE_POR_DEFECTO}).")
     parser.add_argument("--dias", type=int, default=DIAS_POR_DEFECTO,
                         help=f"Ancho de la ventana en días (defecto {DIAS_POR_DEFECTO}).")
     args = parser.parse_args()
 
+    if args.dias < 1:
+        parser.error(
+            "La ventana necesita al menos un día. Con cero, `_rango()` la "
+            "rechaza por vacía y el error sale como traza a mitad de la fase 1."
+        )
+
     load_dotenv()
+
+    desde = args.desde
+    hasta = desde + timedelta(days=args.dias)
 
     print("\nVerificación de la capa raw contra la API real")
     print(f"hoy en Colombia: {hoy()}  ·  hoy del sistema: {date.today()}")
@@ -248,11 +299,29 @@ def main() -> int:
         print("  ⚠ difieren: estás en la franja donde UTC ya cambió de día. La")
         print("    fecha que manda es la colombiana (ver R2).")
 
-    recogidas = fase_1(args.paginas, args.dias)
+    recogidas, ok_1 = fase_1(desde, hasta, args.paginas)
+
+    # La guarda contra el aprobado vacuo. Sin filas, las fases 2, 3 y 4 pasan
+    # las tres: cero es igual a cero, una lista vacía no tiene discrepancias y
+    # ninguna columna personal llegó porque no llegó ninguna columna. El script
+    # diría que está todo bien sin haber verificado nada.
+    if not recogidas:
+        print(
+            f"\n❌ La ventana {desde} a {hasta} no trajo filas.\n"
+            "   No se puede verificar nada con cero filas: las otras tres fases\n"
+            "   pasarían por vacuidad y el script aprobaría sin haber mirado.\n\n"
+            "   Revisá si el rango cayó en un feriado, o si el filtro dejó de\n"
+            "   funcionar contra la fuente. Probá otro día hábil con --desde.",
+            file=sys.stderr,
+        )
+        return 1
+
+    ok_2, observaciones = fase_2(recogidas)
     resultados = [
-        ("2 · ida y vuelta", fase_2(recogidas)),
-        ("3 · deduplicación", fase_3(args.dias)),
-        ("4 · datos personales", fase_4(recogidas)),
+        ("1 · canonicalización", ok_1),
+        ("2 · ida y vuelta", ok_2),
+        ("3 · deduplicación", fase_3(desde, hasta)),
+        ("4 · datos personales", fase_4(observaciones)),
     ]
 
     titulo("RESUMEN")
@@ -260,7 +329,8 @@ def main() -> int:
         print(f"  {'✅' if paso else '❌'}  fase {nombre}")
 
     if all(paso for _, paso in resultados):
-        print("\n  La capa raw se comporta igual contra datos reales que en los tests.")
+        print(f"\n  La capa raw se comporta igual contra datos reales que en los "
+              f"tests, sobre {len(recogidas):,} filas.")
         return 0
     print("\n  ⚠ Algo se comporta distinto con datos reales. Los dobles no bastan.")
     return 1

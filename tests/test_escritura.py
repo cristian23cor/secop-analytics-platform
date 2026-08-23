@@ -229,13 +229,90 @@ def test_retoma_desde_el_ultimo_trozo_cerrado(base):
     assert len(leer_particion(segunda.directorio)) == 30
 
 
-def test_el_punto_de_control_guarda_el_cursor(base):
+def test_el_cursor_no_se_confirma_con_lineas_en_el_buffer(base):
+    """El defecto que corrige I5, en su forma más chica.
+
+    Anotar una página no la confirma. Si el manifiesto guardara el cursor con
+    la línea todavía en memoria, una muerte dura la perdería y la reanudación
+    arrancaría después de ella: la fila no se vuelve a pedir nunca y la fuente
+    ya se sobrescribió.
+    """
     with abrir(base) as p:
         p.escribir(linea_de(1))
         p.punto_de_control(cursor="CO1.PCCNTR.1")
         manifiesto = json.loads((p.directorio / NOMBRE_MANIFIESTO).read_text())
+        assert manifiesto["cursor"] is None
+        p.completar()
+
+
+def test_el_cursor_se_confirma_cuando_el_buffer_esta_vacio(base):
+    """La otra mitad: cerrado el trozo, avanzar es seguro y hay que avanzar."""
+    with abrir(base, lineas_por_trozo=1) as p:
+        p.escribir(linea_de(1))  # el trozo se cierra solo
+        p.punto_de_control(cursor="CO1.PCCNTR.1")
+        manifiesto = json.loads((p.directorio / NOMBRE_MANIFIESTO).read_text())
         assert manifiesto["cursor"] == "CO1.PCCNTR.1"
         p.completar()
+
+
+def test_el_trozo_se_cierra_por_paginas_aunque_no_se_llene(base):
+    """La cota que I5 agrega.
+
+    En el flujo 3 se escriben ~50 líneas por página, así que llenar un trozo de
+    5.000 lleva ~100 páginas. Contar líneas no acota nada; contar páginas sí.
+    """
+    with abrir(base, lineas_por_trozo=5_000, paginas_por_trozo=3) as p:
+        for pagina in range(3):
+            p.escribir(linea_de(pagina))
+            p.punto_de_control(cursor=f"CO1.PCCNTR.{pagina}")
+        assert len(list(p.directorio.glob("parte-*.jsonl.gz"))) == 1
+        p.completar()
+
+
+def test_una_muerte_dura_no_deja_el_cursor_por_delante_del_disco(base):
+    """El caso que ningún `with` cubre: SIGKILL, corte de luz, OOM.
+
+    No se ejecuta `__exit__`, así que lo único que queda es lo que ya estaba en
+    disco. El manifiesto no puede prometer más que eso.
+    """
+    p = abrir(base, lineas_por_trozo=5_000, paginas_por_trozo=2)
+    p.__enter__()
+    for pagina in range(3):  # cierra en la 2ª; la 3ª queda en el buffer
+        p.escribir(linea_de(pagina))
+        p.punto_de_control(cursor=f"CO1.PCCNTR.{pagina}")
+    # Acá muere el proceso. Sin `__exit__`, sin `completar()`.
+
+    manifiesto = json.loads((p.directorio / NOMBRE_MANIFIESTO).read_text())
+    assert manifiesto["cursor"] == "CO1.PCCNTR.1"
+
+    en_disco = 0
+    for trozo in sorted(p.directorio.glob("parte-*.jsonl.gz")):
+        with gzip.open(trozo, "rt", encoding="utf-8") as f:
+            en_disco += sum(1 for _ in f)
+    assert en_disco == 2, "el cursor apunta a la 1, así que la 0 y la 1 están"
+
+
+def test_sin_cambios_el_cursor_avanza_igual(base):
+    """Por qué la condición es "el buffer está vacío" y no "se cerró un trozo".
+
+    En la segunda corrida de una misma ventana el descarte es del 100%: no se
+    escribe ni una línea y nunca se cierra un trozo. Con la regla del trozo el
+    cursor no avanzaría jamás y cualquier interrupción reiniciaría desde cero.
+    """
+    with abrir(base) as p:
+        for pagina in range(40):
+            p.punto_de_control(cursor=f"CO1.PCCNTR.{pagina}")
+        manifiesto = json.loads((p.directorio / NOMBRE_MANIFIESTO).read_text())
+        assert manifiesto["cursor"] == "CO1.PCCNTR.39"
+        assert list(p.directorio.glob("parte-*.jsonl.gz")) == []
+        p.completar()
+
+
+@pytest.mark.parametrize("malo", [0, -1])
+def test_paginas_por_trozo_invalido_falla_temprano(base, malo):
+    """En cero el trozo no se cerraría nunca por páginas: vuelve el defecto."""
+    with pytest.raises(ValueError):
+        abrir(base, paginas_por_trozo=malo)
 
 
 def test_un_manifiesto_ilegible_no_rompe_la_corrida(base):

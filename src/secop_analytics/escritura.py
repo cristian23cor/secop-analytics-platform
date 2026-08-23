@@ -46,10 +46,26 @@ opción 2 de D2, descartada).
 
 ## Cómo se reanuda
 
-`punto_de_control()` anota el último `id_contrato` confirmado en el manifiesto.
-Al reabrir la partición, `_retomar()` lo recupera en `self.cursor`, y el
-orquestador se lo pasa al flujo como `desde_cursor`. Morir en la página 550 no
-cuesta volver a bajar las 550.
+`punto_de_control()` anota el último `id_contrato` visto. Al reabrir la
+partición, `_retomar()` lo recupera en `self.cursor`, y el orquestador se lo
+pasa al flujo como `desde_cursor`. Morir en la página 550 no cuesta volver a
+bajar las 550.
+
+**El cursor del manifiesto nunca va por delante del disco.** Anotar una página
+no la confirma: el cursor solo pasa al manifiesto cuando el buffer está vacío,
+o sea cuando esas líneas ya están dentro de un `.gz` cerrado. Si no lo fuera,
+una muerte dura —`SIGKILL`, corte de luz, OOM; no una excepción, que el `with`
+sí alcanza a cubrir— dejaría el manifiesto diciendo "ya pasé por acá" con las
+filas evaporadas en memoria, y la reanudación no volvería a pedirlas nunca.
+
+Por eso el trozo se cierra por **dos** cotas, la que ocurra primero: líneas
+acumuladas y páginas desde el último cierre. La segunda hace falta porque en el
+flujo 3 la primera no acota nada — de cada página de 5.000 filas se escriben
+unas 50, así que llenar un trozo lleva ~100 páginas.
+
+Y la condición para confirmar es "el buffer está vacío", no "se acaba de cerrar
+un trozo": en una corrida donde no cambió nada no se escribe ninguna línea y
+nunca se cierra un trozo, y con la otra regla el cursor no avanzaría jamás.
 
 El cursor es el mismo mecanismo que hace avanzar la paginación normal: retomar
 es idéntico a pedir la página siguiente. No hay un camino especial de
@@ -100,6 +116,16 @@ NIVEL_COMPRESION: Final[int] = 6
 # noche típica, 5.000 da unos seis trozos.
 LINEAS_POR_TROZO: Final[int] = 5_000
 
+# Páginas por trozo. Es la MISMA cota que `LINEAS_POR_TROZO` —cuánto trabajo
+# puede perderse— medida en la otra unidad, y hace falta porque en el flujo 3
+# contar líneas no acota nada: de cada página de 5.000 filas se escriben unas
+# 50, así que llenar un trozo lleva ~100 páginas y hasta entonces esas líneas
+# viven solo en memoria.
+#
+# 20 es una estimación, no una medición: supone ~50 líneas por página, que a su
+# vez supone el 1% de cambio. Medir el número real en la primera corrida.
+PAGINAS_POR_TROZO: Final[int] = 20
+
 
 def _validar_particion(particion: str) -> str:
     """La partición va en una ruta, así que no puede traer separadores.
@@ -148,6 +174,7 @@ class ParticionRaw:
         fecha_extraccion: str,
         particion: str,
         lineas_por_trozo: int = LINEAS_POR_TROZO,
+        paginas_por_trozo: int = PAGINAS_POR_TROZO,
         verboso: bool = True,
     ) -> None:
         self.base = Path(base)
@@ -155,6 +182,13 @@ class ParticionRaw:
         self.fecha_extraccion = fecha_extraccion
         self.particion = _validar_particion(particion)
         self.lineas_por_trozo = lineas_por_trozo
+        if paginas_por_trozo < 1:
+            raise ValueError(
+                "`paginas_por_trozo` tiene que ser al menos 1. En cero el trozo "
+                "no se cerraría nunca por páginas y volvería el problema que "
+                "este parámetro existe para acotar."
+            )
+        self.paginas_por_trozo = paginas_por_trozo
         self.verboso = verboso
 
         self.directorio = (
@@ -167,7 +201,16 @@ class ParticionRaw:
         self._buffer: list[bytes] = []
         self._trozos_cerrados: int = 0
         self._lineas_totales: int = 0
+        # Dos cursores, no uno. `_cursor` es el que va al manifiesto y solo
+        # puede apuntar a un punto cuyas líneas YA están en disco;
+        # `_cursor_pendiente` es la última página vista, que puede tener líneas
+        # todavía en memoria. Confundirlos es el defecto que I5 corrige: el
+        # manifiesto decía "ya pasé por acá" mientras las filas seguían en el
+        # buffer, así que una muerte dura las perdía y la reanudación no las
+        # volvía a pedir. La fuente ya se había sobrescrito.
         self._cursor: str | None = None
+        self._cursor_pendiente: str | None = None
+        self._paginas_desde_cierre: int = 0
         self._inicio: float = 0.0
         # Si la partición ya estaba completa al abrirla, este objeto no debe
         # tocar nada: sus contadores están en cero y guardar el manifiesto lo
@@ -236,6 +279,9 @@ class ParticionRaw:
         self._trozos_cerrados = manifiesto.get("trozos_cerrados", 0)
         self._lineas_totales = manifiesto.get("lineas_totales", 0)
         self._cursor = manifiesto.get("cursor")
+        # Lo leído del manifiesto está confirmado por definición: sus líneas
+        # están en los trozos que ya se cerraron.
+        self._cursor_pendiente = self._cursor
         if self.verboso and self._trozos_cerrados:
             print(
                 f"  retomando: {self._trozos_cerrados} trozos, "
@@ -264,11 +310,22 @@ class ParticionRaw:
 
         El cursor es el último `id_contrato` de la página confirmada: el punto
         desde el que `paginar()` reanuda el keyset si la partición se retoma.
+
+        Anotarlo acá **no** lo confirma. Solo pasa al manifiesto cuando el
+        buffer está vacío, o sea cuando sus líneas ya están en disco; de eso se
+        encarga `_guardar_manifiesto()`. El trozo se cierra al llenarse por
+        líneas o al cumplirse `paginas_por_trozo`, lo que ocurra primero (I5).
         """
         if cursor is not None:
-            self._cursor = cursor
-        if self._buffer:
+            self._cursor_pendiente = cursor
+
+        self._paginas_desde_cierre += 1
+        if self._buffer and (
+            len(self._buffer) >= self.lineas_por_trozo
+            or self._paginas_desde_cierre >= self.paginas_por_trozo
+        ):
             self._cerrar_trozo()
+
         self._guardar_manifiesto()
 
     def _cerrar_trozo(self) -> None:
@@ -284,10 +341,25 @@ class ParticionRaw:
         os.replace(temporal, destino)  # atómico en el mismo sistema de archivos
         self._trozos_cerrados = numero
         self._buffer.clear()
+        self._paginas_desde_cierre = 0
 
     # -- manifiesto y cierre ----------------------------------------------
 
     def _guardar_manifiesto(self) -> None:
+        # EL INVARIANTE DE I5, y vive acá porque este es el único punto donde el
+        # cursor llega al disco. El manifiesto nunca puede anunciar un avance
+        # mayor que lo efectivamente escrito: si quedan líneas en el buffer, el
+        # cursor se queda donde estaba y la próxima corrida rebaja esas páginas.
+        # Reescribir filas es el error que sobra; perderlas es el que falta, y
+        # la fuente se sobrescribe cada noche.
+        #
+        # La condición es "el buffer está vacío", no "se acaba de cerrar un
+        # trozo": en una corrida donde no cambió nada no se escribe ni una
+        # línea, nunca se cierra un trozo, y con la regla del trozo el cursor
+        # no avanzaría jamás.
+        if not self._buffer:
+            self._cursor = self._cursor_pendiente
+
         contenido = {
             "flujo": self.flujo,
             "fecha_extraccion": self.fecha_extraccion,

@@ -198,6 +198,30 @@ class IndiceHashes:
             return self._pendientes[id_contrato][0] != huella
         return self._conocidos.get(id_contrato) != huella
 
+    def conoce(self, id_contrato: str) -> bool:
+        """¿Este contrato ya estaba en el índice, con la huella que fuera?
+
+        `cambio()` junta dos cosas distintas bajo un mismo `True`: "nunca vi
+        este contrato" y "lo vi y sus bytes cambiaron". Para deduplicar da
+        igual —los dos casos se guardan— pero para **interpretar** una tasa de
+        descarte baja no da igual en absoluto:
+
+        - Descarte bajo sobre filas **conocidas**: los hashes que teníamos ya no
+          sirven. Algo cambió en la fuente y raw se está llenando de duplicados
+          que parecen cambios. Es la alarma.
+        - Descarte bajo sobre filas **nuevas**: es una partición que nunca se
+          había barrido. Es lo normal, y ocurre en tres de las cuatro
+          particiones del flujo 3 la primera noche.
+
+        Sin esta distinción el canario de `cargar_raw.py` no puede separarlas y
+        avisa en el caso normal, que es la peor cosa que le puede pasar a una
+        alerta.
+
+        Mira los pendientes además de los conocidos, por la misma razón que
+        `cambio()`: un contrato registrado en esta misma corrida ya cuenta.
+        """
+        return id_contrato in self._pendientes or id_contrato in self._conocidos
+
     # -- escritura --------------------------------------------------------
 
     def registrar(

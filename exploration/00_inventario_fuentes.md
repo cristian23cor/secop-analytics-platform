@@ -9,17 +9,13 @@
 > con su veredicto. Las **decisiones de diseño** que salieron de estos hallazgos
 > tampoco viven acá: se las referencia con →.
 >
-> **Cómo leerlo:** empezá por el glosario si no venís del dominio. Después los
-> hallazgos en orden: cada uno abre con *por qué se validó*, sigue con la
-> consulta exacta y su resultado, y cierra con la conclusión.
->
 > Última verificación contra la API: 21 de agosto de 2026.
 
 ---
 
 ## Glosario
 
-Términos que este documento usa constantemente. Si ya los conocés, saltealos.
+Términos que este documento usa constantemente.
 
 **Grano** — qué representa una fila. "Una fila = un contrato" es distinto de
 "una fila = una versión de un contrato", y confundirlos infla todos los totales.
@@ -47,21 +43,18 @@ consultas SQL:
   - `marts` — las tablas finales que consume el tablero.
 
 **Freshness** (frescura) — test que verifica que la fuente no esté vieja. Si el
-dato más reciente tiene más de X horas, algo se rompió río arriba.
+dato más reciente tiene más de X horas, algo se rompió.
 
 **Columna material** — una columna cuyo cambio significa que el contrato cambió
 de verdad, y por eso genera una versión nueva. Se opone a *cosmética*, donde
-cambió el registro y no el contrato (una tilde corregida). El detalle está en
+cambió el registro y no el contrato (una tilde corregida por ej). El detalle está en
 `03_decisiones_capa_raw.md`.
 
 **Vista derivada** — un dataset del portal que no es una fuente propia, sino un
 recorte o una copia de otro. Usarla en vez del maestro trae datos incompletos
 sin avisar.
 
-**ETL / ELT** — el proceso de mover datos de un lado a otro transformándolos.
-*Extract, Transform, Load*; en ELT se transforma después de cargar.
-
-**ESE** — Empresa Social del Estado. Son los hospitales públicos colombianos.
+**ESE** — Empresa Social del Estado. 
 
 **PGN, SGP, SGR** — las tres grandes bolsas del presupuesto público colombiano:
 Presupuesto General de la Nación, Sistema General de Participaciones (lo que la
@@ -144,10 +137,6 @@ de 2025. Se eligió **SODA2** para la v1 por tres razones:
 
 **Mitigación:** toda la lógica que conoce `$limit` / `$offset` vive aislada en una
 sola función del extractor. Migrar a SODA3 es cambiar esa función.
-
-La decisión se pagó sola: media docena de verificaciones posteriores se
-resolvieron pegando URLs en el navegador, incluida la que demostró que
-Suspensiones es una vista derivada (H25).
 
 ---
 
@@ -271,7 +260,7 @@ que es donde se cuantifica.
    `Suspendido`, `Prorrogado`— que suman **2.825.685** contratos, y lo hace
    **cada noche**.
 
-   ⚠ Es tentador acotarlo a `En ejecución` y correrlo semanal: son 1,7M de filas
+    Es tentador acotarlo a `En ejecución` y correrlo semanal: son 1,7M de filas
    en vez de 2,8M. No alcanza. Un contrato `Modificado` o `Suspendido` sigue
    recibiendo pagos, y una semana de resolución pierde el orden de los eventos
    dentro de ese lapso.
@@ -280,7 +269,7 @@ que es donde se cuantifica.
    paralelismo** —un reparto entre procesos de la misma noche— y **no** una
    ventana de backfill. Ver el glosario.
 
-   ⚠ **Este flujo no admite backfill.** Pregunta por el estado actual, y el
+    **Este flujo no admite backfill.** Pregunta por el estado actual, y el
    estado de una fecha pasada ya se destruyó. Reejecutarlo hacia atrás
    escribiría el hoy con fecha de ayer. → *Ver* El flujo 3 no se puede reejecutar hacia atrás *(R1) en*
    `03_decisiones_capa_raw.md`.
