@@ -157,8 +157,23 @@ class Resultado:
         print(f"  flujo:      {self.flujo}")
         print(f"  partición:  {self.particion}")
         print(f"  recibidas:  {self.recibidas:,} en {self.paginas} páginas")
+        print(f"  conocidas:  {self.conocidas:,}")
         print(f"  escritas:   {self.escritas:,}")
-        print(f"  descarte:   {self.tasa_descarte:.1%}")
+        # Toda fila descartada es necesariamente conocida: `cambio()` solo da
+        # falso si el contrato está en `_conocidos` o en `_pendientes`. Así que
+        # `recibidas - escritas` son exactamente las conocidas que no cambiaron,
+        # y esta segunda tasa no necesita ningún contador nuevo.
+        #
+        # Es la que dice algo cuando casi todas las filas son nuevas: la tasa
+        # global se diluye, ésta no.
+        if self.conocidas:
+            sobre_conocidas = (self.recibidas - self.escritas) / self.conocidas
+            print(
+                f"  descarte:   {self.tasa_descarte:.1%}  "
+                f"({sobre_conocidas:.2%} sobre las conocidas)"
+            )
+        else:
+            print(f"  descarte:   {self.tasa_descarte:.1%}  (ninguna conocida)")
         print(f"  tiempo:     {self.segundos:.1f}s")
         print(f"  {'─' * 58}")
 

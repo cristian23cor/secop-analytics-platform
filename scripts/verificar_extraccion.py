@@ -175,7 +175,8 @@ def main() -> None:
         fallos.append(f"COLUMNAS INESPERADAS: {sorted(inesperadas)}")
 
     # Las ausentes se esperan: la API omite las claves nulas. Se informan
-    # porque son el insumo del relleno con nulo en la capa raw.
+    # porque son el insumo del relleno con nulo, que ocurre en `staging`
+    # (D1, I1). Raw las deja ausentes: rellenar ahí sería normalizar.
     ausentes = set(columnas.COLUMNAS_EXTRAIDAS) - claves
     if ausentes:
         print(f"\n  Nunca llegaron (nulas en todas las filas del rango): {len(ausentes)}")
@@ -203,7 +204,8 @@ def main() -> None:
 
     solape = len(set(ids) & set(eventos))
     print(f"\n  Contratos que llegan por los flujos 1 y 2 a la vez: {solape:,}")
-    print("  (Se espera solape. Lo resuelve el MERGE de la capa raw.)")
+    print("  (Se espera solape. Lo resuelve el índice de hashes, que es global")
+    print("   por id_contrato y no por flujo: el segundo en llegar se descarta.)")
 
     # -------------------------------------------------------------------------
     print()
