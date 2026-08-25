@@ -10,7 +10,7 @@
 > de la capa raw (D1–D8 e I1–I4) vive en `03_decisiones_capa_raw.md`, y desde
 > acá se lo referencia con →.
 >
-> Última revisión: 21 de agosto de 2026.
+> Última revisión: 25 de agosto de 2026.
 
 ---
 
@@ -126,8 +126,12 @@ fuente principal: `SECOP II – Adiciones` (`cb9c-h8sn`), con una fila por
 modificación, su tipo y una justificación en texto libre.
 
 Pero no sirve para medir. No tiene **ninguna columna de valor** —el monto está
-enterrado en la prosa (H17)— y su única fecha está **corrupta**: mes y día
-truncados a su primer dígito, solo el año sobrevive (H33).
+enterrado en la prosa (H17)— y su única fecha **trunca mes y día al primer
+dígito significativo** (H33): el día solo sobrevive en el 16,8% de las filas.
+
+Lo que descarta el dataset es la **ausencia de la medida**, no el estado de la
+fecha. Aunque `fecharegistro` estuviera intacta, seguiría sin haber una columna
+de valor, y las preguntas 6 y 7 necesitan pesos. La fecha truncada agrava.
 
 O sea: el Estado publica el evento sin la medida; esta plataforma reconstruye la
 medida sin el evento. Por eso el proceso 2 sigue necesitando la comparación
@@ -471,7 +475,16 @@ no busca el código exacto, busca su familia.
 ### `dim_tiempo`
 
 Generada con SQL, no viene de la fuente. Con atributos de año, trimestre, mes y
-día hábil. Sirve para la pregunta 4, el pico de diciembre.
+día hábil. Sirve para la pregunta 4, la estacionalidad de apertura.
+
+⚠ **"El pico de diciembre" es una expectativa heredada, no una medición**, y
+hay un indicio en contra. El control de H33 sobre `fecha_de_firma` —una columna
+sana— dio **17,4% de contratos firmados entre octubre y diciembre**, cuando lo
+uniforme sería 25%. Parte se explica porque 2026 está a mitad de camino y no
+aporta ningún cuarto trimestre, así que el número no es concluyente; pero
+apunta al revés de lo que la frase asume. La pregunta 4 tiene que **medir** la
+estacionalidad, no confirmarla: si el mart se construye buscando el pico de
+diciembre, va a encontrarlo.
 
 ### `dim_modalidad`
 

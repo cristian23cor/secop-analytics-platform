@@ -9,7 +9,7 @@
 > con su veredicto. Las **decisiones de diseño** que salieron de estos hallazgos
 > tampoco viven acá: se las referencia con →.
 >
-> Última verificación contra la API: 21 de agosto de 2026.
+> Última verificación contra la API: 25 de agosto de 2026.
 
 ---
 
@@ -521,7 +521,9 @@ claves no los cubre. Se normalizan en `staging`.
 
 El centinela no se limita a columnas de detalle: también aparece en columnas
 **categóricas**, donde es más dañino porque parece una categoría legítima. En el
-dataset de Adiciones es el 22% de los tipos de modificación (H28).
+dataset de Adiciones es el 22% de los tipos de modificación entre 2015 y 2022
+(H28; ese porcentaje tiene denominador parcial y no vale para el dataset
+entero).
 
 #### Columna clave para el caso de uso comercial
 
@@ -675,9 +677,14 @@ el dataset no lo dice.
    a ser lo único que justifica que la plataforma exista.
 
 **Se buscó esta serie en todo el ecosistema y no está**: no hay columna de valor
-en el dataset de modificaciones (H17), su única fecha está corrupta (H33), y la
-publicación en OCDS que sí conservaba enmiendas se apagó en abril de 2022 (H21).
-Tres verificaciones independientes que endurecen la afirmación.
+en el dataset de modificaciones (H17), su única fecha llega truncada a nivel de
+día en el 83% de las filas (H33), y la publicación en OCDS que sí conservaba
+enmiendas se apagó en abril de 2022 (H21). Tres verificaciones independientes
+que endurecen la afirmación.
+
+El argumento no se apoya en la fecha: aunque `fecharegistro` estuviera intacta,
+seguiría faltando **el monto**, que es lo que la pregunta 7 necesita. La fecha
+truncada agrava, no sostiene.
 
 El único candidato del ecosistema que queda sin evaluar es
 `SECOP II – Ejecución de Contratos` (pregunta abierta 8).
@@ -749,6 +756,13 @@ Aplicables a cualquier fuente futura, no solo a esta.
    Y si al compararlos los conteos coinciden **exactamente**, no es
    coincidencia: son las mismas filas. Catorce números iguales fueron la pista;
    la verificación fila a fila vino después.
+
+   **Corolario que costó aprender: el cruce descubre el defecto, no lo mide.**
+   Ocho filas cruzadas revelaron el truncamiento de H33; hicieron falta seis
+   consultas agregadas para saber que afecta a 26,5 millones de filas, que el
+   mes sobrevive en el 79% y que el daño es identificable fila por fila. Y una
+   de esas seis salió mal la primera vez, por aplicarle al mes el umbral del
+   día. Una muestra que revela un patrón invita a darlo por medido.
 7. **Los tipos declarados no garantizan nada.** `fecharegistro`
    está declarada como fecha, parsea sin error, y está sistemáticamente mal. Un
    tipo válido no es un valor correcto.
@@ -771,9 +785,11 @@ Aplicables a cualquier fuente futura, no solo a esta.
   eventos, en un dataset aparte que no es evidente desde la fuente principal: el
   dataset `SECOP II – Adiciones` (`cb9c-h8sn`), una fila por modificación, con
   tipo y justificación. Pero **no tiene ninguna columna de valor** —el monto está
-  en prosa dentro del texto libre (H17)— y su única fecha, `fecharegistro`, está
-  **corrupta**: mes y día truncados al primer dígito significativo, solo el año
-  sobrevive (H33). El evento existe; ni su monto ni su fecha son utilizables.
+  en prosa dentro del texto libre (H17)— y su única fecha, `fecharegistro`,
+  **trunca mes y día al primer dígito significativo** (H33, confirmado sobre las
+  26.571.106 filas del dataset). El año sobrevive siempre, el mes en el 79,0% de
+  las filas y la fecha completa en el 13,6%, y se sabe fila por fila cuáles son.
+  El evento existe; su monto no es utilizable y su fecha lo es solo en parte.
 - ~~¿Qué contienen `fecha_de_inicio_de_ejecucion`, `fecha_fin_liquidacion` y
   `estado_bpin`?~~ → `fecha_fin_liquidacion` existe y está clasificada como
   material; `fecha_de_inicio_de_ejecucion` y `estado_bpin` **no existen en la
@@ -823,7 +839,7 @@ Aplicables a cualquier fuente futura, no solo a esta.
 
 | Dataset | ID | Veredicto |
 |---|---|---|
-| SECOP II – Adiciones | `cb9c-h8sn` | **Evaluado, fuera de la v1.** Log de modificaciones, >6M filas (más grande que la fuente principal). Cinco columnas, **ninguna de valor**. `fecharegistro` corrupta (H33). La llave `id_contrato` empata sin trabajo |
+| SECOP II – Adiciones | `cb9c-h8sn` | **Evaluado, fuera de la v1.** Log de modificaciones, **26.571.106 filas — 4,5× la fuente principal** (H29, medido). Cinco columnas, **ninguna de valor**. `fecharegistro` trunca mes y día (H33). La llave `id_contrato` empata sin trabajo |
 | SECOP II – Suspensiones | `u99c-7mfm` | **Es una vista derivada de Adiciones** (H25), con las mismas filas y las etiquetas corregidas. No es fuente independiente. ~734.759 filas |
 | SECOP II – Ejecución de Contratos | — | **Sin evaluar.** Candidato prioritario: es el único lugar donde podría estar la serie de pagos de H9 |
 | SECOP II – Rubros Presupuestales | — | Sin evaluar |
@@ -831,7 +847,8 @@ Aplicables a cualquier fuente futura, no solo a esta.
 
 **Por qué los hermanos no entran a la v1.** Su valor ya se capturó como hallazgos
 —H17 a H33 son material de README— sin cargar una sola fila. Incorporarlos
-duplicaría el tamaño del proyecto y exigiría un **segundo patrón de ingesta**:
+quintuplicaría el tamaño del proyecto (H29) y exigiría un **segundo patrón de
+ingesta**:
 se actualizan en continuo y tienen watermark propio (H23), a diferencia de la
 fuente principal que se regenera entera. La v1 se define por hacer una cosa
 impecablemente.

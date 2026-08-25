@@ -15,7 +15,7 @@
 > Documentos hermanos: `00_inventario_fuentes.md` (la fuente principal, H1–H9) y
 > `03_decisiones_capa_raw.md` (las decisiones de diseño D1–D8 e I1–I4).
 >
-> Última verificación contra la API: 21 de agosto de 2026.
+> Última verificación contra la API: 25 de agosto de 2026.
 
 ---
 
@@ -70,17 +70,24 @@ El tipo existe (141.217 filas hasta 2022). Pero la fila de muestra
 `CO1.CTRMOD.499720` está clasificada como `MODIFICACION GENERAL` y su
 descripción adiciona **$15.693.000**.
 
-`MODIFICACION GENERAL` son 1.767.394 filas — el 75% del dataset. Hay
-adiciones de valor escondidas ahí en proporción desconocida. Usar el tipo
-como filtro exhaustivo subestima por un factor que no se puede acotar.
+`MODIFICACION GENERAL` son 1.767.394 filas, **el 75% de las que respondieron
+el troceado anual de H32 — o sea 2015 a 2022, no el dataset**. El numerador y
+el denominador salen los dos de ese subconjunto, así que el porcentaje vale
+para esos años y no se puede reexpresar contra el total de H29: dividir un
+numerador parcial por un denominador completo no da nada. Hay adiciones de
+valor escondidas ahí en proporción desconocida. Usar el tipo como filtro
+exhaustivo subestima por un factor que no se puede acotar.
 
 Mismo patrón que la hipótesis descartada de `dias_adicionados > 0` para
 identificar contratos `Modificado`: la categoría existe y no es exhaustiva.
 
-**Lo que se creía ganar, y NO se gana:** se anotó que para 141.217
-modificaciones habría "fecha exacta de una adición de valor sin parsear
-texto". **H33 lo desmiente:** `fecharegistro` está corrupta y solo conserva
-el año. Queda el evento y el año, nada más.
+**Lo que se creía ganar, y se gana solo en parte:** se anotó que para 141.217
+modificaciones habría "fecha exacta de una adición de valor sin parsear texto".
+**H33 lo acota:** `fecharegistro` trunca mes y día, así que el año se conserva
+siempre, el mes en el 79,0% de las filas y la fecha completa en el 13,6%. No
+alcanza para fechar una adición de forma general, pero tampoco queda "solo el
+año": queda el año, casi siempre el mes, y a veces la fecha entera — y se sabe
+en cuáles filas.
 
 ### H27 — El valor del contrato puede BAJAR
 
@@ -90,18 +97,27 @@ no puede asumir monotonía. RN5 protege `valor_pagado`, que es acumulado;
 
 ### H28 — El centinela `No definido` también está en la columna que clasifica
 
-Segundo tipo más frecuente de Adiciones: **515.151 filas, el 22%**. Con la
-misma capitalización minúscula que H13. Un quinto de los eventos de
-modificación no declara qué fueron.
+Segundo tipo más frecuente de Adiciones: **515.151 filas, el 22%** — con el
+mismo denominador parcial que H26, los años 2015 a 2022. Con la misma
+capitalización minúscula que H13. Un quinto de los eventos de modificación de
+esos años no declara qué fueron.
 
-### H29 — Volumen: Adiciones es más grande que la fuente principal
+### H29 — Volumen: Adiciones cuadruplica a la fuente principal - medido
 
-2.785.329 filas hasta diciembre de 2022, **sin** los cuatro años de mayor
-volumen (2023-2026 no respondieron). El total supera con holgura los seis
-millones, contra 5.958.553 de `jbjy-vk9h`.
+**26.571.106 filas**, contra 5.958.553 de `jbjy-vk9h`. Medido el 25 de agosto
+de 2026 con `?$select=count(*) as n`, que responde sin trocear aunque el
+`GROUP BY` de H32 no pueda. Ninguna fila tiene `fecharegistro` nula: el conteo
+de valores no nulos da el mismo número.
+
+⚠ **Esto corrige la versión anterior de H29 por un factor de 4,4.** Decía "el
+total supera con holgura los seis millones", extrapolando desde las 2.785.329
+filas hasta diciembre de 2022 que devolvió el troceado anual. La extrapolación
+subestimó, y la lección es la de siempre acá: un agregado que la API no puede
+calcular entero no se completa razonando, se pide de otra forma.
 
 Si estos datasets entran al alcance, no es agregar una fuente chica al
-costado: es duplicar el proyecto. Decisión de alcance, no de ingeniería.
+costado: es **quintuplicar** el proyecto. Decisión de alcance, no de
+ingeniería.
 
 Corroboración cruzada: OCDS reportaba 3.008.861 enmiendas hasta abril de
 2022 (H21) y acá van 2.785.329 hasta diciembre de 2022. Los órdenes calzan,
@@ -210,7 +226,9 @@ un contrato tiene dos suspensiones aprobadas el mismo día, colisiona y el
 
 ## 3. El defecto que solo se vio cruzando los dos
 
-### H33 — `fecharegistro` de Adiciones está corrupta: mes y día truncados al primer dígito - 8/8, falta la prueba a escala
+### H33 — `fecharegistro` de Adiciones trunca mes y día al primer dígito significativo - confirmado sobre 26.571.106 filas
+
+#### Cómo apareció: ocho filas cruzadas contra Suspensiones
 
 Tomando la fecha real de Suspensiones y truncando mes y día a su **primer
 dígito significativo**:
@@ -226,40 +244,137 @@ dígito significativo**:
 | 2019-**10**-**09** | 2019-01-09 | 2019-01-09 ✓ |
 | 2019-**04**-**23** | 2019-04-02 | 2019-04-02 ✓ |
 
-`21 → 2`, `15 → 1`, `12 → 1`, `09 → 9`. Ocho de ocho. **El año sobrevive
-intacto.**
+`21 → 2`, `15 → 1`, `12 → 1`, `09 → 9`. Ocho de ocho.
 
-La columna está declarada `calendar_date`, parsea sin error, y un pipeline
-la consumiría sin que nada fallara. **Fallo silencioso puro.**
+La columna está declarada `calendar_date`, parsea sin error, y un pipeline la
+consumiría sin que nada fallara. **Fallo silencioso puro.**
 
-**Consecuencias:**
-
-- **Mata el consuelo de H26.** Para las 141.217 filas de `ADICION EN EL
- VALOR` se sabe el año y nada más. La fecha no es recuperable (la
- transformación es de muchos a uno) y esas filas no tienen dataset
- corregido, a diferencia de las suspensiones.
-- **Salva los conteos de la FASE 2.** El año sobrevive, así que el troceado
- anual y los totales de H25 a H29 siguen siendo válidos.
-- **Endurece la tesis del proyecto:** fechar una modificación en SECOP II
- solo es posible guardando cortes.
-
-**Prueba a escala pendiente.** Si la hipótesis vale, en 2,7M de filas no
-existe ninguna con día o mes mayor a 9:
+#### El síntoma, sobre el dataset completo (25 de agosto de 2026)
 
 ```
-.../cb9c-h8sn.json?$select=count(*) as n&$where=date_extract_d(fecharegistro) > 9
-.../cb9c-h8sn.json?$select=count(*) as n&$where=date_extract_m(fecharegistro) > 9
+?$select=count(*) as n                                        → 26.571.106
+?$select=count(fecharegistro) as con_fecha                    → 26.571.106
+?$select=count(*) as n&$where=date_extract_d(fecharegistro) > 9 → 0
+?$select=count(*) as n&$where=date_extract_m(fecharegistro) > 9 → 0
 ```
 
-Y el control, para descartar un defecto general del portal — tiene que dar
-millones:
+Ninguna fila sin fecha, y **cero filas con día o mes mayor a 9** sobre 26,5
+millones. Si las fechas fueran reales, unos 19,5 millones tendrían día mayor a
+9. No es un margen estrecho: es estructural.
+
+**Los controles hacen más que descartar un defecto general del portal.** Se
+corrieron los dos sobre `jbjy-vk9h`, no solo el del día:
+
+| Control sobre `fecha_de_firma` | Observado | Esperado si las fechas son reales |
+|---|---|---|
+| Día > 9 | 4.075.476 (73,6%) | 70,4% — los días 10 a 31 son 257 de los 365 del año |
+| Mes > 9 | 963.145 (17,4%) | 25% si fuera uniforme |
+
+El del día queda tres puntos por encima de lo que da la frecuencia del
+calendario, que es una desviación chica y en la dirección de que las firmas se
+apilen sobre el final del mes. Lo importante es que **da millones donde
+Adiciones da cero**, y que eso prueba algo que el control no se proponía: que
+`date_extract_d` se comporta como se cree sobre esta API. Sin él, un cero en
+Adiciones podría ser la función y no los datos.
+
+⚠ El 70,4% se calcula contando días del año, no como `22/30`. Esa
+aproximación da 73,3% y hace parecer que el observado clava el esperado.
+
+#### La distribución prueba el mecanismo, no solo el síntoma
+
+Un cero demuestra que día y mes nunca superan 9. No demuestra **por qué**.
+El truncamiento al primer dígito deja una huella muy particular: el balde 1
+absorbe once días reales (1, 10–19), el 2 otros once (2, 20–29), el 3 solo tres
+(3, 30, 31) y los baldes 4 a 9 uno cada uno.
 
 ```
-.../jbjy-vk9h.json?$select=count(*) as n&$where=date_extract_d(fecha_de_firma) > 9
+?$select=date_extract_d(fecharegistro) as dia,count(*) as n&$group=dia&$order=dia
 ```
 
-Si el control diera cero, el problema no es de Adiciones sino de toda la
-publicación, y cambia el proyecto entero.
+| Balde | Días reales que absorbe | Esperado | Observado |
+|---|---|---|---|
+| 1 | 1, 10–19 | 36,2% | 35,4% |
+| 2 | 2, 20–29 | 35,9% | 39,4% |
+| 3 | 3, 30, 31 | 8,2% | 8,4% |
+| 4–9 | uno cada uno | 3,3% c/u | 2,4–3,1% |
+
+Medido en unidades de "un día real" —el promedio de los baldes 4 a 9, 745.833
+filas— el balde 1 vale **12,6 días**, el 2 vale **14,0** y el 3 vale **3,0**.
+La hipótesis predice 11, 10,9 y 2,5.
+
+**Ninguna lectura alternativa sobrevive.** Si las fechas fueran reales y las
+modificaciones ocurrieran solo del 1 al 9, los nueve baldes serían comparables
+entre sí. Que dos sean doce y catorce veces más grandes que los otros seis, y
+que el tercero sea exactamente tres veces, solo se explica porque absorben once,
+once y tres días respectivamente.
+
+#### Cuánto sobrevive — esto corrige la versión anterior del hallazgo
+
+Este documento decía **"solo el año sobrevive"**. Es falso para la mayoría de
+las filas, y la versión correcta es más interesante:
+
+| Qué sobrevive | Filas | Proporción |
+|---|---|---|
+| El año | 26.571.106 | 100% |
+| El mes | 21.003.223 | **79,0%** |
+| El día | 4.474.999 | 16,8% |
+| La fecha entera | 3.619.047 | **13,6%** |
+
+**El daño es tan desparejo por una razón estructural**, y no había motivo para
+esperar simetría. Truncar destruye información solo cuando dos valores comparten
+inicial. Los meses llegan hasta 12, así que **solo tres colapsan** —octubre,
+noviembre y diciembre caen en el balde 1 junto con enero— y los otros ocho
+quedan intactos. Los días llegan hasta 31: **veintidós de treinta y uno
+colapsan**.
+
+Corolario para quien escriba el `$where`: para el mes el umbral es
+`date_extract_m > 1`, no `> 3`. Asumir la simetría con el día es el error
+natural acá.
+
+#### El daño es identificable fila por fila
+
+La transformación es de muchos a uno **solo en los baldes 1, 2 y 3**. En los
+demás es uno a uno: un día 7 solo pudo venir de un día 7, porque los días 70–79
+no existen. Lo mismo con los meses 2 a 9.
+
+```
+?$select=count(*) as n&$where=date_extract_d(fecharegistro) > 3
+                             AND date_extract_m(fecharegistro) > 1   → 3.619.047
+```
+
+O sea que no es una columna que haya que descartar entera: es una columna donde
+se puede decir exactamente de cuáles valores fiarse.
+
+**Control de independencia, que salió sin consulta extra:** `P(día exacto)` es
+16,84% y `P(día exacto | mes exacto)` es 17,23%. Prácticamente idénticas, así
+que el truncamiento se aplica componente por componente y no a una fecha
+compuesta.
+
+#### Consecuencias
+
+- **El consuelo de H26 queda a medias, no muerto.** Para las 141.217 filas de
+  `ADICION EN EL VALOR` se conoce siempre el año, el mes en cuatro de cada
+  cinco casos, y la fecha completa en algo más de una de cada ocho. Sigue sin
+  alcanzar para fechar una adición de forma general, y esas filas no tienen
+  dataset corregido, a diferencia de las suspensiones.
+- **Salva los conteos de la FASE 2.** El año sobrevive siempre, así que el
+  troceado anual y los totales de H25 a H29 siguen siendo válidos.
+- **Endurece la tesis del proyecto:** fechar una modificación en SECOP II con
+  precisión de día solo es posible guardando cortes.
+
+#### Lo que queda sin explicar
+
+El balde 1 del mes vale **2,1 meses** cuando debería valer 4,0: enero, octubre,
+noviembre y diciembre están fuertemente subrepresentados. Dos explicaciones
+candidatas, ninguna verificada: que 2026 esté a mitad de camino y no aporte
+ningún cuarto trimestre, y la estacionalidad real de las modificaciones. El
+control sobre `fecha_de_firma` empuja en la misma dirección (17,4% para meses
+mayores a 9, contra 25% uniforme), lo que sugiere que es una propiedad de la
+contratación y no del truncamiento.
+
+**No amenaza la conclusión.** La prueba del truncamiento del mes no viene de la
+distribución sino del cero: sobre 26,5 millones de filas no hay ni una con mes
+10, 11 o 12, y eso es imposible en fechas reales.
 
 
 ---
@@ -447,8 +562,8 @@ de PDFs, descartado por el mismo criterio.
 ## 8. Por qué no entran a la v1
 
 Su valor ya se capturó como hallazgos —son material de README— sin cargar una
-sola fila. Incorporarlos duplicaría el tamaño del proyecto: Adiciones supera los
-seis millones de filas, más que la fuente principal (H29).
+sola fila. Incorporarlos multiplicaría el tamaño del proyecto: Adiciones tiene
+26.571.106 filas, **4,5 veces la fuente principal** (H29).
 
 Y exigiría un **segundo patrón de ingesta**. Se actualizan en continuo y tienen
 watermark propio (H23), a diferencia de la fuente principal que se regenera
@@ -464,31 +579,38 @@ Script: `scripts/verificar_datasets_hermanos.py`. En orden de impacto:
 | Fase | Pregunta | Qué decide | Estado |
 |---|---|---|---|
 | 0 | Esquema real de ambos datasets | Cierra H17 |  **hecho** — 5 y 7 columnas, sin medidas |
-| 1 | Grano y volumen | Si `identificador` es llave |  timeout, repetir |
+| 1 | Grano y volumen | Si `identificador` es llave |  **volumen hecho** (26.571.106, → H29); el grano sigue pendiente |
 | 1b | Llave compuesta de Suspensiones | Idempotencia del `MERGE` | pendiente (→ H31) |
 | 2 | Tipos de modificación | Estructura del dataset |  **hecho** — → H25 a H29, H32 |
 | 3 | ¿`:updated_at` difiere? | Watermark |  **hecho** → H23, H24 |
 | 3b | `:created_at != :updated_at` | Append puro vs. edición | pendiente |
 | **V** | **¿Suspensiones es vista de Adiciones?** | Si sobra medio ecosistema |  **hecho** → H25, H33 |
-| **T** | **Truncamiento de `fecharegistro` a escala** | Confirma H33 sobre 2,7M filas | **pendiente — LA PRÓXIMA** |
-| 4 | ¿Suspensiones conserva el fin viejo? | Confirma o mata H20 | pendiente |
+| **T** | **Truncamiento de `fecharegistro` a escala** | Confirma H33 | **hecho** — 26.571.106 filas, síntoma y mecanismo → H33 |
+| 4 | ¿Suspensiones conserva el fin viejo? | Confirma o mata H20 | **pendiente — LA PRÓXIMA** |
 | 5 | Cobertura del cruce | Si son usables juntos | pendiente |
 | 6 | Contraste con `dias_adicionados` | Si cuentan la misma historia | pendiente |
 
-**La verificación T va antes que lo demás.** Tres consultas de navegador:
+**La verificación T está hecha**, con seis consultas y no con las tres que
+este documento planeaba. Las tres que faltaban no eran adorno y conviene
+anotar por qué, porque el patrón se repite:
 
-```
-.../cb9c-h8sn.json?$select=count(*) as n&$where=date_extract_d(fecharegistro) > 9
-.../cb9c-h8sn.json?$select=count(*) as n&$where=date_extract_m(fecharegistro) > 9
-.../jbjy-vk9h.json?$select=count(*) as n&$where=date_extract_d(fecha_de_firma) > 9
-```
+- **El denominador.** Un cero no significa nada sin saber sobre cuántas filas
+  se tomó. `count(*)` fue lo que convirtió "no hay ninguna" en "no hay ninguna
+  entre 26,5 millones", y de paso corrigió H29.
+- **El segundo control.** El plan traía un solo control, sobre el día. Un
+  control asimétrico deja abierto que el portal trunque meses en todas partes y
+  días en ninguna.
+- **La distribución.** Las dos consultas del plan prueban el **síntoma** —día y
+  mes nunca superan 9—, no el **mecanismo**. El `GROUP BY` por día es lo que
+  demuestra que los baldes 1 y 2 absorben once días cada uno.
 
-Las dos primeras deben dar **0**; la tercera, **millones**. Si la tercera
-diera 0, el defecto no es de Adiciones sino de toda la publicación.
+Y una consulta que se corrió mal antes de correrse bien: para el mes el umbral
+es `date_extract_m > 1`, no `> 3`. Los meses llegan hasta 12, así que solo
+colapsan tres; asumir la simetría con el día es el error natural.
 
-H20 sigue vivo pero cambió de sentido: Suspensiones es la versión corregida
+H20 sigue vivo y cambió de sentido: Suspensiones es la versión corregida
 (H25), así que si conserva el `fecha_de_fin_del_contrato` viejo, es una
-propiedad de la fuente buena, no de una vista sucia.
+propiedad de la fuente buena, no de una vista sucia. Es la próxima.
 
 La 3b sigue pendiente. Dos consultas por dataset:
 

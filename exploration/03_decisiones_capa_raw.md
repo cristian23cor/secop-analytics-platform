@@ -241,6 +241,11 @@ los 63 que se deducen de 1,81 MB / 30.000. Son cinco veces más, y las medicione
 intermedias —269 y 342 bytes por fila, sobre muestras de 18.746 y 5.331 filas—
 coinciden con la grande, no con esta.
 
+La segunda corrida agregó la muestra que faltaba: **320 bytes por fila sobre
+58.971 filas**, o sea una partición de noche típica y no un barrido completo.
+Era la duda razonable —que el ratio del barrido saliera de su mezcla particular
+de filas— y queda descartada. Cuatro mediciones entre 269 y 342; una sola en 63.
+
 La hipótesis es que las 30.000 filas de esta tabla vinieron de una consulta con
 mucha más redundancia que una muestra representativa: una sola entidad, o un
 solo día. **No está confirmada** — habría que revisar qué consulta las trajo.
@@ -353,32 +358,63 @@ solo puede sobrar es seguro; mismo criterio que el `$select` explícito.
 Tampoco pierde fidelidad: si la fila de hoy es byte por byte igual a la última
 guardada, guardarla otra vez no agrega información.
 
-**Volumen resultante, medido sobre el primer barrido completo** (2026-08-23,
-2.824.446 filas escritas):
+**Volumen resultante, medido sobre dos corridas completas:**
 
-| | Medido |
+| | Barrido inicial (2026-08-23) | Corrida incremental (2026-08-25) |
+|---|---|---|
+| Filas recibidas | 2.835.895 | 2.840.337 |
+| Filas escritas | 2.824.446 | **58.971** |
+| Comprimido por fila | 324 bytes | **320 bytes** |
+| En disco | 916 MB | **18 MB** |
+
+La segunda corrida es la que faltaba: convierte la proyección de "si cambian
+~30.000 por noche" en una medición. **Su muestra:** intervalo de dos
+regeneraciones, 23 → 25 de agosto, cubriendo domingo y lunes; corrida completa
+sin reanudar; los flujos 1 y 2 no corrieron antes, así que no contaminaron el
+índice.
+
+**Lo que cambió en dos días, separado por población:**
+
+| | Filas |
 |---|---|
-| Comprimido por fila | **324 bytes** |
-| Ratio de gzip sobre el JSONL crudo | **8,8×** |
-| La primera corrida completa | **916 MB** |
-| Noche típica, si cambian ~30.000 | ~9,7 MB |
-| Al año, a ese ritmo | ~3,6 GB |
+| Contratos conocidos que cambiaron | **52.954** |
+| Contratos nuevos en el universo vivo | 6.017 |
+| Descartadas por bytes idénticos | 2.781.366 |
+| Tasa de cambio sobre las conocidas | **1,87%** |
 
-Las dos últimas filas son **proyecciones, no mediciones**: dependen de cuántos
-contratos cambian por noche, y eso todavía no se midió — hace falta una segunda
-noche de barrido completo. Ver la pregunta abierta al final de esta sección.
+ **`escritas` mezcla dos poblaciones y no se puede citar como tasa de
+cambio.** De las 58.971 filas, 6.017 son contratos nuevos que se escriben por
+serlo, no por haber cambiado. Sin la separación, la tasa de cambio se citaría
+un 11% más alta de lo que es.
 
-Frente a guardar la foto entera cada noche sin comprimir —8,1 GB por noche,
-2,9 TB al año— la deduplicación reduce el almacenamiento **unas 800 veces**. Ese
-número mezcla dos efectos distintos y conviene enunciarlo partido:
+ **Y no se divide por dos.** El índice guarda un hash por contrato, así que
+uno que cambió el domingo y otra vez el lunes se escribió una sola vez: el
+delta de dos días es **menor** que la suma de los dos deltas diarios. Lo
+correcto es enunciarlo como cota: **al menos 26.477 contratos cambian por día**.
+La estimación de ~30.000 sobrevive, y ahora tiene piso medido.
 
-- **Compresión: 8,8×.** Es gzip haciendo su trabajo.
-- **Deduplicación: el resto.** Es el diseño. Depende de la tasa real de cambio.
+Al año, a ese ritmo: **≥3,4 GB**. También es cota inferior, por lo mismo.
 
- **Este párrafo reemplaza dos estimaciones anteriores, las dos equivocadas.**
+#### La reducción de almacenamiento, partida y medida
+
+Frente a guardar la foto entera cada noche sin comprimir —8,08 GB por noche—:
+
+| Efecto | Factor | Qué es |
+|---|---|---|
+| Compresión | **8,9×** | gzip haciendo su trabajo |
+| Deduplicación | **48,2×** | el diseño |
+| **Total** | **428×** | 8,08 GB contra 18 MB |
+
+ **428× es cota inferior, y hay que decir en qué dirección se equivoca.** El
+intervalo fue de dos días, así que cambiaron más contratos de los que cambian
+en uno; con 24 horas la deduplicación descarta más y el factor sube. El "~800×"
+que circulaba no era absurdo — era un número sin medición, y ahora la corrida de
+dos días le pone piso.
+
+ **Este bloque reemplaza tres estimaciones anteriores, las tres equivocadas.**
 La original decía 12 MB por noche y 5 GB al año; la corrección de D2 revisada
-decía 2 MB y 1 GB. La segunda estaba mal por un factor de cinco en la dirección
-opuesta a la primera.
+decía 2 MB y 1 GB; y el factor de reducción circuló como "~250×" y como "~800×"
+sin que ninguno saliera de una medición sobre el universo completo.
 
 **Consecuencia sobre D1:** la condición abierta **se disuelve**. Hay retención
 completa sin retención corta, así que "puedo reprocesar el pasado" sigue en pie
@@ -897,6 +933,16 @@ otra vuelca **no alcanza a esperar y muere con `RuntimeError`**.
 Hoy no muerde porque las particiones se corren en serie. Hay que rehacer el
 cálculo antes de paralelizar.
 
+ **Pero el caso extremo es más raro de lo que parecía.** La corrida
+incremental del 2026-08-25 volcó 58.971 hashes en **4,0 s**, y los cargó en
+4,2 s. O sea que los 55,7 s ocurren en la primera corrida y en un re-barrido
+completo, no en una noche típica: en operación normal el volcado entra cómodo
+en el presupuesto de 15,5 s.
+
+Eso baja la prioridad del arreglo, **no lo cancela**. El día que exista el DAG,
+la primera corrida sigue siendo una corrida, y es justo la que más tarda en
+volcar.
+
  **Vigilar si el dataset crece.** Cuatro particiones en paralelo son cuatro
 copias del índice: **740 MB**. Manejable hoy; si el dataset se duplica, hay que
 volver a mirar los lotes.
@@ -908,7 +954,7 @@ volver a mirar los lotes.
 colgado — lección .
 
 **El archivo del índice pesa 171 MB, no 90.** La estimación de I2 no contaba el
-índice de la llave primaria. Irrelevante frente a los ~3,6 GB anuales de raw, pero
+índice de la llave primaria. Irrelevante frente a los ≥3,4 GB anuales de raw, pero
 el número correcto es 171.
 
 
@@ -983,11 +1029,34 @@ barrido.
  **Esta decisión se revisa cuando existan los reintentos.** Ahí la
 interrupción vuelve a ser rara y la versión sin cota es preferible por simple.
 
-#### El número de páginas es una estimación, no una medición
+#### El número de páginas era una estimación. Ya está medido
 
-20 supone ~50 líneas escritas por página, que a su vez supone el 1% de cambio.
-Está parametrizado (`paginas_por_trozo`) y comentado como tal. **Medir el número
-real en la primera corrida** y ajustarlo.
+20 suponía ~50 líneas escritas por página, que a su vez suponía el 1% de cambio.
+
+**Medido en la corrida incremental del 2026-08-25: 103,6 líneas por página**
+(58.971 líneas en 569 páginas). El doble de lo supuesto. Llenar un trozo de
+5.000 líneas toma **48 páginas**, así que la cota que manda sigue siendo la de
+páginas — pero por un margen bastante menor que el previsto.
+
+Esa corrida cerró **31 trozos**, no los 29 que dan 569 páginas divididas por 20.
+Los dos extra salen de la cota de líneas, y el porqué importa más que el número:
+
+ **La escritura no está repartida a lo largo del recorrido: está apilada al
+final.** La página 1 escribió 0 filas de 5.000; la 568 escribió **2.413**, o sea
+el 48%. Un factor de 600× entre el arranque y la cola, contra un promedio de
+104. En la cola, veinte páginas superan las 5.000 líneas y el trozo cierra por
+líneas antes de llegar a la cota de páginas.
+
+No se sabe por qué se apila. La explicación tentadora —"los contratos nuevos
+cambian más"— **no se sostiene**: el keyset ordena `id_contrato` como texto, así
+que `CO1.PCCNTR.1735835` va antes que `CO1.PCCNTR.285227`, y la cola del
+recorrido son los ids de seis dígitos que empiezan por 9. Ni los más nuevos ni
+los más viejos. Es una observación, no un hallazgo.
+
+**Consecuencia práctica para el día que se paralelice:** las particiones por
+rango de `fecha_de_firma` no van a tener carga de escritura pareja. El tiempo lo
+domina la red, así que probablemente no importe — pero conviene no descubrirlo
+con el DAG andando.
 
 #### Lo que esto dejó ver sobre los tests
 
@@ -1034,21 +1103,80 @@ hacer, porque corre las dos veces el mismo día.
 **El barrido entra en la ventana nocturna.** Arrancando después de las 04:41 COT
 (H24), cuarenta minutos terminan cerca de las 05:30.
 
+---
+
+## La segunda corrida — 25 de agosto de 2026
+
+La primera vez que el flujo 3 corrió sobre un índice ya poblado. Es la corrida
+que convierte la deduplicación de una propiedad demostrada en una propiedad
+medida.
+
+**Su muestra, que es parte de la medición:** intervalo de **dos regeneraciones**
+—23 → 25 de agosto, cubriendo domingo y lunes—, corrida completa sin reanudar,
+con los flujos 1 y 2 sin correr antes para no contaminar el índice.
+
+| | Barrido inicial (23) | Segunda corrida (25) |
+|---|---|---|
+| Índice al arrancar | 18.746 | 2.843.192 |
+| Recibidas | 2.835.895 en 568 págs | 2.840.337 en 569 págs |
+| Conocidas | 11.449 | 2.834.320 |
+| Escritas | 2.824.446 | **58.971** |
+| Descarte global | 0,4% | **97,9%** |
+| Descarte sobre las conocidas | 100,00% | **98,13%** |
+| Tiempo | 39 min 46 s | **49 min 31 s** |
+| Segundos por página | 4,20 | **5,22** |
+| Volcado del índice | 55,7 s | **4,0 s** |
+| En disco | 916 MB | **18 MB** |
+
+Las dos tasas de descarte están juntas a propósito: la corrida del 23 muestra
+por qué la global no sirve como señal —0,4% y 100% describen la misma corrida— y
+es el argumento del arreglo del canario.
+
+### Lo que confirma
+
+**El índice cierra sin resto.** Al arrancar tenía 2.843.192, que se descompone
+exacto en las 2.824.446 escritas el 23 más las 18.746 anteriores de los flujos 1
+y 2 y de la partición de prueba `2020-01`. De esas 18.746, solo 11.449 estaban
+en el universo vivo el 23.
+
+**Existe un flujo de salida del universo vivo, y es de miles.** Se puede acotar
+pero no fijar: **entre 1.575 y 8.872 contratos** dejaron de estar vivos en dos
+días. El rango es ancho porque `conocidos_al_inicio` es global y no se sabe
+cuántos de esos 7.297 no-vivos entraron al universo a la vez. Es el primer dato
+empírico sobre la pregunta abierta de si los estados terminales cambian, y no la
+cierra.
+
+**Los contratos nuevos por día calzan con H3.** 6.017 en dos días son ~3.000 por
+día, contra los ~2.900 que H3 obtuvo de un `GROUP BY` sobre `fecha_de_firma`.
+Dos caminos independientes al mismo número.
+
+**El ratio de compresión se sostiene fuera del barrido.** 320 bytes por fila en
+una partición de noche típica, contra 324 en el barrido completo. Era una duda
+razonable: que el ratio saliera de la mezcla particular de filas del barrido.
+
+### Lo que empeoró, y hay que anotarlo
+
+**El ritmo de la API: 5,22 s por página contra 4,20.** Un 24% más lento, sobre
+569 páginas. Con dos muestras, el margen del `schedule` del DAG no se puede
+calcular con 4,1.
+
 ### Lo que sigue sin medirse
 
-**Cuántos contratos cambian por noche.** Es el número del que dependen el
-volumen anual y el ratio de deduplicación, y hoy solo hay una noche de datos.
-El 99% que se viene citando sale de H9 y del razonamiento, no de una medición
-sobre el universo completo.
-
-Sale de correr el barrido una segunda noche. Hasta entonces, las cifras de
-"al año" de D3 son proyecciones.
+**El delta de veinticuatro horas.** Lo de arriba son dos días, y no se divide
+por dos: el índice guarda un hash por contrato, así que lo que cambió los dos
+días se escribió una vez. Todo lo que sale de esta corrida —la tasa de cambio,
+el volumen anual, el factor de deduplicación— son **cotas inferiores**. El
+número limpio sale de dos corridas en días consecutivos hábiles.
 
 **Por qué una página tardó 28 segundos.** El 2026-08-22 una partición de dos
-páginas tardó 55,6 s, y la repetición de esa misma partición 6,4 s. El barrido
-completo promedió 4,1 s. Se dijo "arranque en frío de Socrata" y eso es una
-hipótesis sin respaldo. Importa para el margen del `schedule` del DAG: si el
-rango real va de 3 a 28 segundos por página, el peor caso son cuatro horas.
+páginas tardó 55,6 s, y la repetición de esa misma partición 6,4 s. Los dos
+barridos completos promediaron 4,20 y 5,22 s. Se dijo "arranque en frío de
+Socrata" y sigue siendo una hipótesis sin respaldo. Importa para el margen del
+`schedule`: si el rango real va de 3 a 28 segundos por página, el peor caso son
+cuatro horas.
+
+**La distribución de la escritura a lo largo del recorrido.** Va de 0% en la
+primera página a 48% en la 568. Documentado en I5; sin explicación.
 
 
 ---
