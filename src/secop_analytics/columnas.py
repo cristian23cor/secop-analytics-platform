@@ -31,11 +31,21 @@ Dos advertencias para quien construya la detección de cambios encima:
 1. **La API omite las claves nulas.** Una fila real trajo 81 de 85, y las
    cuatro ausentes eran `ultima_actualizacion` y las tres fechas de
    liquidación/prórroga: las cuatro son MATERIALES. Cuando el hito ocurre, la
-   clave aparece. Comparar diccionarios crudos leería eso como cambio de
-   esquema en vez de como el paso de nulo a fecha, que es el cambio más
-   informativo del snapshot. La capa raw debe materializar las columnas de
-   `COLUMNAS_EXTRAIDAS` completas, rellenando con nulo lo omitido, ANTES de
-   comparar.
+   clave aparece.
+
+   ⚠ **El relleno con nulo vive en `staging`, NO en raw.** Raw guarda la fila
+   tal como llegó, con las claves ausentes ausentes (D1, I1). Rellenar antes
+   de escribir sería normalizar, y un defecto de normalización quedaría
+   grabado en la única copia que existe, porque la fuente ya se sobrescribió.
+   El costo se asume a conciencia: cuando una clave aparece, los bytes
+   cambian y la fila se guarda de más. Es el error que sobra, que es el
+   aceptable.
+
+   Sobre `staging` ya rellenado, la comparación de D6 lee el paso de nulo a
+   fecha como lo que es —el cambio más informativo del snapshot— y no como un
+   cambio de esquema. Son dos filtros de finura distinta y no hay que
+   confundirlos: bytes en Python decide qué se guarda en disco, la
+   clasificación en dbt decide qué merece una versión.
 
 2. **Los nulos también vienen como centinela de texto**, y con dos
    capitalizaciones: "No definido" y "No Definido". No son nulos de verdad, así
@@ -281,7 +291,12 @@ def validar_cobertura(columnas_de_la_fuente: set[str]) -> dict[str, set[str]]:
 
 
 def clasificacion(columna: str) -> str:
-    """Categoría de comparación de una columna. Sirve a la capa raw."""
+    """Categoría de comparación de una columna.
+
+    La consumen dbt —vía el generador de D1— y los scripts de diagnóstico.
+    **Raw no la usa:** ahí la comparación es de bytes y no distingue
+    categorías.
+    """
     if columna in IMPOSIBLES:
         return "imposible"
     if columna in MATERIALES:
