@@ -5,6 +5,13 @@ Este es el único módulo del proyecto que conoce `$limit`, `$offset`, `$where`,
 la capa raw— habla en términos de "traeme los contratos que cumplen tal
 condición" y nunca ve una URL.
 
+No todo lo que se le pregunta a la fuente son filas. `contar()` pregunta
+cuántas hay y `corte()` pregunta qué estado está publicado; las dos existen
+acá por la misma razón de aislamiento, y las dos son una sola petición sin
+paginar. La tercera pregunta de esa familia todavía falta: el endpoint de
+metadatos que `columnas.validar_cobertura()` necesita y que nadie puede llamar
+porque este módulo no lo expone.
+
 El aislamiento es a propósito: SODA3 es el default de la plataforma desde
 octubre de 2025, y la v1 eligió SODA2 por depurabilidad. Migrar debe ser
 reescribir este archivo, no buscar cadenas por todo el repo.
@@ -12,8 +19,9 @@ reescribir este archivo, no buscar cadenas por todo el repo.
 Estrategia: **keyset**, no offset.
 
 Con offset, para servir la página 500 el motor ordena y descarta 2,5 millones
-de filas antes de llegar a las tuyas. El flujo 3 barre el universo vivo todas
-las noches, así que esa degradación no se paga una vez sino a diario. Keyset
+de filas antes de llegar a las tuyas. El flujo 3 barre el universo vivo entero
+en cada corrida, así que esa degradación no se paga una vez sino en cada
+regeneración de la fuente. Keyset
 pide "las siguientes N con `id_contrato` mayor al último que vi", el servidor va
 al índice y cada página cuesta lo mismo.
 
@@ -43,7 +51,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, NamedTuple
 
 import requests
 
@@ -56,6 +64,12 @@ LIMITE_POR_DEFECTO = 5_000
 # El cursor avanza sobre esta columna. Tiene que estar entre las extraídas o la
 # última fila de cada página no trae el valor con el que pedir la siguiente.
 COLUMNA_CURSOR = "id_contrato"
+
+# Campo de sistema de Socrata: cuándo se escribió la fila. En esta fuente es
+# idéntico en las 5,96M de filas porque el dataset se reemplaza entero, y por
+# eso identifica al corte (H2). Lleva dos puntos adelante; `requests` lo
+# codifica como %3A y la API lo acepta así.
+COLUMNA_DEL_CORTE = ":updated_at"
 
 Fila = dict[str, Any]  # los valores llegan como str, salvo `urlproceso` (dict)
 
@@ -205,6 +219,112 @@ def contar(
     )
     respuesta.raise_for_status()
     return int(respuesta.json()[0]["n"])
+
+
+class Corte(NamedTuple):
+    """El estado de la fuente que produjo una regeneración.
+
+    `jbjy-vk9h` se reemplaza entero en cada regeneración, así que todas sus
+    filas comparten el mismo `:updated_at` (H2, confirmado cuatro veces sobre
+    5,96M de filas). Ese valor idéntico es lo que identifica al corte: no es una
+    etiqueta nuestra sino el sello que la propia fuente le puso al estado.
+
+    Los dos extremos se guardan por separado a propósito. Ver `confiable`.
+    """
+
+    mas_viejo: str
+    mas_nuevo: str
+
+    @property
+    def confiable(self) -> bool:
+        """Si los dos extremos coinciden, y por lo tanto hay un corte único.
+
+        Cuando difieren hay **dos** explicaciones posibles y este módulo no
+        puede distinguirlas:
+
+        1. La consulta cayó **mientras la fuente se regeneraba**. Escribir 5,96
+           millones de filas no es instantáneo, y a mitad el dataset estaría
+           mezclado. Nadie observó nunca la fuente dentro de su ventana de
+           regeneración, así que no se sabe qué se ve ahí.
+        2. **H2 dejó de valer** y la fuente pasó a actualizar filas sueltas. Eso
+           tumbaría los tres flujos, D10 y D11 de una vez.
+
+        Por eso `corte()` no aborta ni descarta: devuelve los dos valores y esta
+        marca, y quien llama decide. Abortar trataría el caso 1 como una
+        catástrofe; ignorarlo escribiría la mezcla como si fuera un corte
+        limpio. Registrar los dos valores deja que el dato decida después.
+        """
+        return self.mas_viejo == self.mas_nuevo
+
+
+def corte(
+    *,
+    sesion: requests.Session | None = None,
+    tiempo_limite: int = 60,
+) -> Corte:
+    """Qué estado de la fuente está publicado ahora mismo.
+
+    Es la única pregunta del proyecto que no es por filas, y cuesta una
+    petición de segundos contra 5,96 millones de filas: la agregación corre del
+    lado del servidor.
+
+    Para qué sirve, que son dos cosas distintas:
+
+    - **Saber si hay estado nuevo.** La fuente declara frecuencia diaria y no la
+      cumple: en nueve días observados hubo tres regeneraciones y cuatro días
+      sin ninguna, con saltos de dos y de cinco días (H34). Correr el flujo 3
+      contra un corte ya ingerido cuesta ~50 minutos y escribe una partición
+      vacía, así que el disparador es este valor y no el calendario (D11).
+    - **Anotar de dónde vino cada observación.** Raw se particiona por
+      `fecha_extraccion`, que es cuándo bajamos los datos, no qué vimos. Con la
+      fuente saltando días, dos particiones con fechas distintas pueden
+      contener el mismo estado (D10).
+
+    ⚠ **`:updated_at` sirve como llave del corte y NO como watermark de fila.**
+    Son usos opuestos y conviene no confundirlos: el inventario lo descarta como
+    watermark, con razón, porque es idéntico en todas las filas. Esa misma
+    propiedad es la que lo hace único por regeneración.
+
+    Si la petición falla —429, 5xx, timeout— la excepción sube y la corrida se
+    aborta. Es deliberado: reintentar es volver a escribir el comando y no se
+    pierde nada, mientras que arrancar cincuenta minutos sin saber contra qué
+    corte se está corriendo es exactamente lo que D10 vino a eliminar.
+
+    Args:
+        sesion: `requests.Session` para reusar la conexión. Conviene pasar la
+            misma que va a usar el recorrido.
+        tiempo_limite: segundos antes de abandonar la petición.
+
+    Returns:
+        Un `Corte` con los dos extremos. Ver `Corte.confiable`.
+    """
+    http = sesion or requests.Session()
+    respuesta = http.get(
+        URL_BASE,
+        params={
+            "$select": (
+                f"min({COLUMNA_DEL_CORTE}) as mas_viejo,"
+                f"max({COLUMNA_DEL_CORTE}) as mas_nuevo"
+            )
+        },
+        headers={"X-App-Token": _token()},
+        timeout=tiempo_limite,
+    )
+    respuesta.raise_for_status()
+
+    cuerpo = respuesta.json()
+    # Un dataset vacío devuelve la fila con los agregados en nulo, y un cambio
+    # en la forma de la respuesta la devuelve sin las claves. Los dos casos son
+    # indistinguibles acá y los dos significan lo mismo: no hay corte que leer.
+    # Se levanta en vez de devolver algo vacío, porque un corte inventado
+    # contamina la procedencia de todo lo que se escriba después.
+    if not cuerpo or not cuerpo[0].get("mas_viejo") or not cuerpo[0].get("mas_nuevo"):
+        raise RuntimeError(
+            f"La consulta del corte no devolvió los dos extremos: {cuerpo!r}. "
+            f"O el dataset vino vacío, o la respuesta cambió de forma."
+        )
+
+    return Corte(mas_viejo=cuerpo[0]["mas_viejo"], mas_nuevo=cuerpo[0]["mas_nuevo"])
 
 
 # TODO(pieza 3): reintentos con espera creciente ante 429 y 5xx.

@@ -30,3 +30,11 @@ logs/
 .idea/
 datos/
 *.jsonl.gz
+
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+datos/secop.duckdb
+
+.secretos/
+dbt/.user.yml

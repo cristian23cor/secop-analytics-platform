@@ -44,7 +44,7 @@ import types
 from collections.abc import Iterator
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 
@@ -174,6 +174,28 @@ _paginacion = types.ModuleType("secop_analytics.paginacion")
 _paginacion.Fila = dict
 _paginacion.LIMITE_POR_DEFECTO = 5000
 
+# Corte de referencia de los tests. Es el último que la fuente publicó de
+# verdad, y no un valor inventado: los mensajes de fallo se leen mejor cuando
+# el dato se parece al real.
+CORTE_POR_DEFECTO = "2026-08-25T09:05:54.277Z"
+
+
+class Corte(NamedTuple):
+    """Copia de `Corte` de `paginacion.py`.
+
+    Es un `NamedTuple` de verdad y no un stub porque el orquestador lee
+    `.mas_nuevo` y `.confiable`, y esta última es una propiedad calculada: un
+    doble que la fijara en `True` haría pasar el test del corte no confiable
+    sin ejercitar nada.
+    """
+
+    mas_viejo: str
+    mas_nuevo: str
+
+    @property
+    def confiable(self) -> bool:
+        return self.mas_viejo == self.mas_nuevo
+
 
 class ErrorDeConfiguracion(RuntimeError):
     """Copia de `ErrorDeConfiguracion` de `paginacion.py`.
@@ -216,6 +238,28 @@ class _Fuente:
         self.paginas: dict[str, list[list[dict[str, Any]]]] = {}
         self.llamadas: list[tuple[str, tuple, dict]] = []
         self.explotar_en_pagina: int | None = None
+        # Guion de `corte()`, que el orquestador llama DOS veces por corrida:
+        # al arrancar y al terminar (D10). Tienen que poder devolver valores
+        # distintos o la partición a caballo no se puede probar.
+        self.cortes: list[Corte] = []
+        self.llamadas_a_corte: int = 0
+        self.explotar_el_corte: Exception | None = None
+
+    def programar_cortes(self, *valores: Corte | str) -> None:
+        """Respuestas sucesivas de `corte()`. La última se repite."""
+        self.cortes = [
+            v if isinstance(v, Corte) else Corte(v, v) for v in valores
+        ]
+
+    def _corte(self, *args, **kwargs) -> Corte:
+        self.llamadas_a_corte += 1
+        if self.explotar_el_corte is not None:
+            raise self.explotar_el_corte
+        if not self.cortes:
+            return Corte(CORTE_POR_DEFECTO, CORTE_POR_DEFECTO)
+        if len(self.cortes) > 1:
+            return self.cortes.pop(0)
+        return self.cortes[0]
 
     def programar(self, clave: str, paginas: list[list[dict[str, Any]]]) -> None:
         self.paginas[clave] = paginas
@@ -232,6 +276,9 @@ class _Fuente:
 
 
 _fuente = _Fuente()
+
+_paginacion.Corte = Corte
+_paginacion.corte = _fuente._corte
 
 _flujos = types.ModuleType("secop_analytics.flujos")
 _flujos.Flujo = Flujo
@@ -268,6 +315,9 @@ def fuente():
     _fuente.paginas.clear()
     _fuente.llamadas.clear()
     _fuente.explotar_en_pagina = None
+    _fuente.cortes.clear()
+    _fuente.llamadas_a_corte = 0
+    _fuente.explotar_el_corte = None
     return _fuente
 
 

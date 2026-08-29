@@ -186,7 +186,11 @@ def refresco_de_vivos(
     Sus parámetros de fecha **no son una ventana de cambio** como en los otros
     dos flujos —no existe tal ventana, ese es el punto— sino una **partición de
     paralelismo**: un reparto del universo vivo entre varios procesos de la
-    **misma noche**. Sin ellos, recorre los ~2.825.685 contratos vivos.
+    **misma corrida**. Sin ellos, recorre los ~2.825.685 contratos vivos.
+
+    La corrida ocurre una vez por cada regeneración de la fuente, que no es
+    todos los días (H34). Qué dispara el flujo lo decide el corte, no el
+    calendario: ver D11 en `03_decisiones_capa_raw.md`.
 
     ⚠ **No confundir con una ventana de backfill.** Darle fechas viejas no
     reprocesa el pasado: devuelve el estado de hoy de los contratos firmados

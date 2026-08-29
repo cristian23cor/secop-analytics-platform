@@ -12,10 +12,11 @@
 > capturó como hallazgos, sin cargar una sola fila. El razonamiento está al
 > final, en *Por qué no entran a la v1*.
 >
-> Documentos hermanos: `00_inventario_fuentes.md` (la fuente principal, H1–H9) y
-> `03_decisiones_capa_raw.md` (las decisiones de diseño D1–D8 e I1–I4).
+> Documentos hermanos: `00_inventario_fuentes.md` (la fuente principal, H1–H9 y
+> H34) y `03_decisiones_capa_raw.md` (las decisiones de diseño D1–D8, D10, D11 e
+> I1–I5).
 >
-> Última verificación contra la API: 25 de agosto de 2026.
+> Última verificación contra la API: 28 de agosto de 2026.
 
 ---
 
@@ -383,16 +384,34 @@ distribución sino del cero: sobre 26,5 millones de filas no hay ni una con mes
 
 ### H23 — Los hermanos se actualizan en continuo; la fuente principal no - verificado
 
-Resultado de la FASE 3:
+Resultado de la FASE 3, corrida el **viernes 21/08/2026 alrededor de las 09:37
+COT** (14:37 UTC). La hora importa y no estaba anotada: se recupera de los
+máximos de los hermanos, que caían minutos antes, y es lo que ocho días después
+permitió releer la fila de control. Ver H34 en `00_inventario_fuentes.md`.
 
 | Dataset | min(`:updated_at`) | max(`:updated_at`) | Lectura |
 |---|---|---|---|
-| `jbjy-vk9h` (control) | 2026-08-20T09:41:20.358Z | idéntico | Reemplazo total. **H2 intacto.** |
+| `jbjy-vk9h` (control) | 2026-08-20T09:41:20.358Z | idéntico | Reemplazo total. **H2 intacto.** ⚠ Y el valor es **del día anterior**: ver abajo |
 | Adiciones | 2024-10-04T21:14:28.562Z | 2026-08-21T14:28:52.934Z | Escritura incremental |
 | Suspensiones | 2025-06-04T05:53:26.885Z | 2026-08-21T14:36:58.027Z | Escritura incremental |
 
-Los máximos caen minutos antes de la corrida: **se alimentan en continuo
-desde la plataforma transaccional**, no en un volcado nocturno.
+Los máximos de los hermanos caen minutos antes de la corrida: **se alimentan en
+continuo desde la plataforma transaccional**, no en un volcado nocturno.
+
+⚠ **La fila de control decía más de lo que se le leyó.** El corte vivo de
+`jbjy-vk9h` a las 09:37 del viernes 21 era el del jueves 20, cinco horas después
+del final de la ventana de regeneración: **ese viernes la fuente no había
+regenerado**. Se registró solo como confirmación de H2 —que lo es— y la
+consecuencia sobre la cadencia quedó sin ver hasta el 28 de agosto. Es una de las
+dos observaciones directas sobre las que se apoya H34.
+
+⚠ **"Minutos antes de la corrida" tiene un contraejemplo y hay que anotarlo.**
+El 28/08/2026 a las ~10:00 COT, el máximo de Adiciones era
+`2026-08-28T09:51:29.013Z`, o sea de las 04:51 COT: **cinco horas antes**, no
+minutos. Una observación no tumba H23 —el patrón de escritura continua se sostiene
+sobre dos muestras y sobre los mínimos— pero "en continuo" no quiere decir "sin
+pausas", y la afirmación no puede apoyarse en la distancia al reloj de la
+consulta. Queda como verificación pendiente.
 
 Los mínimos revelan otra cosa: Adiciones contiene filas con `fecharegistro`
 de 2018 pero ninguna con `:updated_at` anterior a octubre de 2024. Hubo una
@@ -401,6 +420,12 @@ de 2018 pero ninguna con `:updated_at` anterior a octubre de 2024. Hubo una
  **`:updated_at` acá no es fecha de negocio**, es cuándo Socrata escribió
 la fila. Sirve como watermark de ingesta y para nada más. No confundir con
 `fecharegistro`.
+
+ **Los hermanos sirven de testigo de la fuente principal.** Como escriben en
+continuo y `jbjy-vk9h` no, comparar los dos separa "la fuente no regeneró" de
+"la plataforma está caída". Se usó así el 26 y el 28 de agosto, y es lo que
+descarta la explicación de la caída en H34. Es un uso que no estaba previsto
+cuando se midió esto.
 
  **Esto NO prueba que sean append-only.** Es compatible con append puro,
 con inserción más edición posterior, y con upsert de sincronización. Las
@@ -417,21 +442,44 @@ watermark), los hermanos por watermark propio con `MERGE` sobre
 contra de la opción B de D1: acoplar ingesta y detección de cambios en el
 cargador estorba cuando una fuente necesita la primera y no la segunda.
 
-### H24 — Hora de regeneración de la fuente principal, y desfase entre tablas
+### H24 — La regeneración de la fuente principal cae en una ventana de madrugada, y los hermanos van más frescos
 
-`jbjy-vk9h` se regeneró el 2026-08-20 a las **09:41 UTC = 04:41 hora de
-Colombia**. Primer dato duro sobre *cuándo* se rehace la fuente; define el
-`schedule` del DAG. Programarlo a medianoche leería el corte del día
-anterior todas las noches.
+**Corregido el 28/08/2026.** Este hallazgo decía: *"`jbjy-vk9h` se regeneró el
+2026-08-20 a las 09:41 UTC = 04:41 hora de Colombia. Primer dato duro sobre
+cuándo se rehace la fuente; define el `schedule` del DAG"*. Las dos frases hay
+que retirarlas, por razones distintas.
 
-Es una observación de una corrida, no un horario publicado. Confirmar en
-dos o tres días distintos antes de escribirlo en Airflow.
+**Lo que sí se sabe.** Hay tres regeneraciones fechadas, y son todo lo que hay:
+
+| Corte | UTC | Hora de Colombia |
+|---|---|---|
+| 2026-08-18 | 09:22:15.735Z | **04:22** |
+| 2026-08-20 | 09:41:20.358Z | **04:41** |
+| 2026-08-25 | 09:05:54.277Z | **04:06** |
+
+Se mueven en una **ventana de ~35 minutos** de la madrugada colombiana. 04:41 es
+la más tardía de las tres, no un horario publicado ni un límite.
+
+⚠ **No define ningún `schedule`, por dos motivos independientes.** Primero,
+porque tres observaciones sobre una ventana móvil no fijan una hora: el margen
+que uno crea tener puede no existir. Y segundo, y decisivo, porque **hay días sin
+ninguna regeneración** (H34, en `00_inventario_fuentes.md`): ningún horario
+acierta contra un evento que a veces no ocurre. → *El disparador es el corte de la
+fuente y no el calendario: ver D11 en* `03_decisiones_capa_raw.md`.
+
+Sigue sin saberse si la ventana de 35 minutos aguanta con más observaciones o es
+un artefacto de tener solo tres.
 
 **Desfase entre tablas:** los hermanos están más frescos que la fuente
 principal. Una modificación aprobada hoy a las 14:00 ya está en Adiciones,
 pero su efecto sobre `valor_del_contrato` no aparece en `jbjy-vk9h` hasta
-la mañana siguiente. Ventana de hasta un día donde el evento existe y su
-consecuencia todavía no. Nota para el mart, no bug.
+la siguiente regeneración. Nota para el mart, no bug.
+
+⚠ **El desfase no es "de hasta un día".** Así estaba escrito, y suponía cadencia
+diaria. Con H34, la ventana en la que el evento existe y su consecuencia todavía
+no dura **hasta la próxima regeneración**, que puede ser al día siguiente o al
+cabo de varios días: el salto máximo observado es de cinco. El mart no puede
+prometer que un evento de Adiciones se refleje en el contrato al día siguiente.
 
 ### H19 — La llave empata sin trabajo
 
@@ -566,9 +614,9 @@ sola fila. Incorporarlos multiplicaría el tamaño del proyecto: Adiciones tiene
 26.571.106 filas, **4,5 veces la fuente principal** (H29).
 
 Y exigiría un **segundo patrón de ingesta**. Se actualizan en continuo y tienen
-watermark propio (H23), a diferencia de la fuente principal que se regenera
-entera cada noche. Serían dos mecanismos distintos conviviendo en la misma capa
-raw. La v1 se define por hacer una cosa impecablemente.
+watermark propio (H23), a diferencia de la fuente principal, que se regenera
+entera y de forma irregular (H2, H34). Serían dos mecanismos distintos
+conviviendo en la misma capa raw. La v1 se define por hacer una cosa impecablemente.
 
 ---
 
@@ -584,6 +632,7 @@ Script: `scripts/verificar_datasets_hermanos.py`. En orden de impacto:
 | 2 | Tipos de modificación | Estructura del dataset |  **hecho** — → H25 a H29, H32 |
 | 3 | ¿`:updated_at` difiere? | Watermark |  **hecho** → H23, H24 |
 | 3b | `:created_at != :updated_at` | Append puro vs. edición | pendiente |
+| **3c** | **¿Los hermanos escriben todos los días?** | Si sirven como testigo de H34 | **pendiente** — hay un contraejemplo de "minutos antes de la corrida" el 28/08 |
 | **V** | **¿Suspensiones es vista de Adiciones?** | Si sobra medio ecosistema |  **hecho** → H25, H33 |
 | **T** | **Truncamiento de `fecharegistro` a escala** | Confirma H33 | **hecho** — 26.571.106 filas, síntoma y mecanismo → H33 |
 | 4 | ¿Suspensiones conserva el fin viejo? | Confirma o mata H20 | **pendiente — LA PRÓXIMA** |
@@ -635,5 +684,10 @@ La 3b sigue pendiente. Dos consultas por dataset:
 4. Con RN11: ¿cuántos contratos superan el 50% legal? Es un hallazgo
  concreto con número, del tipo que pide el punto 8 de la definición de
  terminado.
+5. ¿Qué tan buen testigo es Adiciones? (H34) Se lo usa para descartar que la
+ fuente principal esté detenida por una caída de plataforma, y ese uso supone
+ que el hermano escribe todos los días. Es plausible y no está medido. Si
+ Adiciones también pausara los fines de semana, el testigo callaría justo
+ cuando más falta hace.
 
 ---

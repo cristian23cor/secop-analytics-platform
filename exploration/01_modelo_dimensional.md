@@ -1,16 +1,19 @@
 # Modelo dimensional — SECOP
 
 > Diseño del modelo, con el razonamiento que llevó a cada decisión.
-> Se apoya en `00_inventario_fuentes.md` (evidencia empírica H1–H16) y en
+> Se apoya en `00_inventario_fuentes.md` (evidencia empírica H1–H9 y H34) y en
 > `02_ecosistema_secop.md` (los datasets hermanos, H17–H33) y
-> `03_decisiones_capa_raw.md` (las decisiones D1–D8 e I1–I4).
+> `03_decisiones_capa_raw.md` (las decisiones D1–D8, D10, D11 e I1–I5).
 > **Cómo leerlo:** §0 es un glosario de los términos de modelado; los del
 > dominio están en el glosario del inventario. Este documento dice **qué** se
 > decidió y da una frase de por qué; el razonamiento completo de las decisiones
-> de la capa raw (D1–D8 e I1–I4) vive en `03_decisiones_capa_raw.md`, y desde
-> acá se lo referencia con →.
+> de la capa raw vive en `03_decisiones_capa_raw.md`, y desde acá se lo
+> referencia con →.
 >
-> Última revisión: 25 de agosto de 2026.
+> **H10 a H16 no existen**: nunca se asignaron, y este documento los citaba como
+> si existieran. Los hallazgos de la fuente principal son H1–H9 y H34.
+>
+> Última revisión: 28 de agosto de 2026.
 
 ---
 
@@ -42,6 +45,12 @@ lugar y solo refleja el presente. Así es `fct_contratos`.
 **Snapshot periódico** — fotos que se **acumulan**: cada observación se guarda
 además de las anteriores, así se puede mirar hacia atrás. Así es
 `fct_contratos_snapshot`.
+
+ **"Periódico" no quiere decir "regular".** Kimball llama así al patrón por
+oposición al acumulativo, no porque el período sea fijo. Acá el período lo marca
+la fuente, que se regenera de forma irregular (H34), así que las observaciones
+llegan a intervalos desiguales. El patrón es el mismo; lo que no se puede es leer
+la palabra como una promesa de cadencia.
 
 **Surrogate key** (`sk_`) — una llave inventada por el pipeline, normalmente un
 número, que reemplaza a la llave de la fuente para unir tablas. Se usa porque
@@ -177,6 +186,12 @@ fecha". La plataforma no sabe cuándo cambió el contrato: sabe cuándo el cambi
 se volvió visible, con una resolución igual a la frecuencia del barrido (D8).
 Prometer más sería inventar.
 
+ **Y la frecuencia del barrido está acotada por arriba por la de la fuente**,
+que es irregular (H34). `observado_desde` marca cuándo lo vimos nosotros; de qué
+corte de la fuente venía ese estado se registra aparte, en el manifiesto de la
+partición (D10 en `03_decisiones_capa_raw.md`). Son dos fechas distintas y hasta
+el 28 de agosto solo existía la primera.
+
 - Llave: `id_contrato` + `observado_desde`
 - Tipo: snapshot periódico, almacenado como SCD tipo 2 (ver sección 4).
 
@@ -219,23 +234,39 @@ Son dos decisiones distintas y se confunden con facilidad:
 - **Cada cuánto se mira** determina la resolución de detección.
 - **Cada cuánto se guarda** determina el costo de almacenamiento.
 
-### Decisión: mirar diario, guardar solo cuando algo cambió
+### Decisión: mirar en cada regeneración, guardar solo cuando algo cambió
+
+⚠ **Esta decisión decía "mirar diario", y la palabra "diario" no describe lo que
+pasa.** La fuente se regenera de forma irregular: en nueve días observados hubo
+tres regeneraciones y cuatro días sin ninguna, con saltos de dos y de cinco días
+entre cortes conocidos (H34, en `00_inventario_fuentes.md`). Lo que sí se decide
+acá sigue en pie: **mirar tan seguido como la fuente se mueva, y guardar solo
+cuando algo cambió.** Lo que cambia es la resolución que el modelo puede
+prometer.
 
 Comparación de las alternativas de almacenamiento:
 
 | | Denso (foto completa por período) | Solo cambios (SCD2) |
 |---|---|---|
 | Filas por año | Mensual: ~34M · Diario: ~1.000M | Del orden de 1 a 3M |
-| Resolución | La del período | Diaria |
+| Resolución | La del período | **La de la fuente**: como mucho la de sus regeneraciones |
 | Consulta "estado al 1 de marzo" | `WHERE fecha_snapshot = '2026-03-01'` | `WHERE observado_desde <= '2026-03-01' AND (observado_hasta > '2026-03-01' OR observado_hasta IS NULL)` |
 
 El denso diario queda descartado por volumen: mil millones de filas al año,
 mayormente copias idénticas de la fila anterior. El denso mensual es más cómodo
 de consultar pero no distingue dos modificaciones ocurridas dentro del mismo mes.
 
-Guardar solo los cambios da resolución diaria a costo menor que el mensual denso.
-No es trabajo adicional: la capa raw tiene que decidir igual qué conserva de cada
-extracción nocturna.
+Guardar solo los cambios da la máxima resolución que la fuente permite, a costo
+menor que el mensual denso. No es trabajo adicional: la capa raw tiene que
+decidir igual qué conserva de cada extracción.
+
+ **La resolución la fija la fuente y el modelo no puede superarla.** Entre dos
+regeneraciones separadas por cinco días, dos modificaciones del mismo contrato
+son indistinguibles: llegan juntas en el mismo corte. Es exactamente el defecto
+que se le critica al denso mensual, solo que impuesto desde afuera y no elegido.
+El modelo aguanta —D8 ya había decidido no prometer resolución diaria— pero
+**el README tiene que decir que la serie tiene la resolución de la fuente, con
+huecos, y no una resolución diaria**.
 
 **Hay dos filtros, no uno** (D3 y D6). Conviene no confundirlos:
 
@@ -276,8 +307,53 @@ un criterio.
 | Categoría | Definición | Comportamiento |
 |---|---|---|
 | **Material** | Cambió el contrato en el mundo real, y alguna pregunta de negocio lo necesita | Genera versión nueva |
-| **Cosmética** | Cambió el registro, no el contrato (tildes, "No definido" que se llena) | Se pisa el valor actual, sin versión |
+| **Cosmética** | Cambió el registro, no el contrato (tildes, "No definido" que se llena) | No genera versión. Ver la corrección de abajo |
 | **Imposible** | No debería cambiar nunca | No se compara. Si cambia, dispara alerta |
+
+#### Cuánto vale la distinción, medido el 28/08/2026
+
+D6 tenía un argumento y ahora tiene un número. Entre el barrido del 23 y la
+corrida del 25, la fuente publicó **52.954 contratos cambiados** —lo que raw
+detecta comparando bytes sobre las 67 columnas—. De esos, el SCD2 generó versión
+para **32.431**.
+
+**Los otros 20.523 cambiaron algo que no es el contrato: el 38,8%.**
+
+Cuatro de cada diez veces que SECOP publica un contrato como cambiado, al
+contrato no le pasó nada. Sin la clasificación de D6, la serie temporal tendría
+un 60% más de filas y ninguna información adicional.
+
+⚠ **Y casi todo ese ruido es un solo evento, no ruido difuso.**
+`entidad_centralizada` explica 20.675 de los 20.523 —el exceso son contratos que
+además cambiaron algo material—, y son seis entidades reclasificadas de golpe.
+Ver `00_inventario_fuentes.md`.
+
+Eso matiza el 38,8%: es una medición de **un** intervalo, dominada por un evento
+administrativo puntual. Con más regeneraciones ingeridas el número va a moverse,
+y la cifra estable todavía no se conoce.
+
+⚠ **"Se pisa el valor actual" era una descripción equivocada, y se corrige el
+28/08/2026 al implementar el snapshot.** Esa frase describe un SCD2 de
+dimensiones, donde hay una sola fila por entidad y pisarla tiene sentido.
+`fct_contratos_snapshot` es un **snapshot acumulativo**: no existe "la fila
+actual" que pisar, hay una fila por cada versión conservada.
+
+Lo que ocurre de verdad: **el valor cosmético queda congelado en el de la
+observación que abrió la versión.** Si una entidad se renombra y el contrato no
+cambia nada material, la tabla de hechos sigue mostrando el nombre viejo.
+
+Es deliberado. Una fila del snapshot dice *"así se veía este contrato cuando lo
+observamos"*, y con las 67 columnas viniendo de la misma observación eso es
+literalmente cierto: se vieron juntas, el mismo día, en la misma respuesta. Tomar
+las cosméticas de una observación posterior haría que la fila mezclara dos
+momentos sin que nada lo advirtiera, y rompería la trazabilidad con `hash`, que
+es el hash de los bytes de **una** observación.
+
+**Para el valor al día está la dimensión**, unida por su llave IMPOSIBLE. El
+nombre viejo en la tabla de hechos no molesta porque nadie debería leerlo de ahí.
+
+Lo que sí se pierde es **cuándo** cambió una cosmética. Ninguna pregunta de
+negocio lo necesita, pero es una pérdida y no un efecto neutro.
 
 La prueba para separar material de imposible: *si esta columna cambia mañana,
 ¿quiero una alarma o quiero un registro?* Imposible es solo para las que
@@ -325,10 +401,20 @@ Cuatro casos que no son obvios:
   versión, los 735.809 contratos con pagos siguen sin serie temporal, la tabla
   de snapshots queda casi vacía y ningún test falla. Es el error más caro
   posible en este diseño.
+- **`duraci_n_del_contrato` no es un número**: trae la unidad pegada al valor
+  —`"6 Mes(es)"`, `"180 Dia(s)"`— y ningún valor castea a entero. Cinco unidades
+  conviven en la misma columna, así que el número solo no significa nada:
+  `"1 Año(s)"` y `"365 Dia(s)"` son la misma duración con cifras que difieren 365
+  veces. Queda como texto en `staging`. Para duración real están las dos fechas
+  del contrato, que son fechas de verdad.
+- **`liquidaci_n` es booleana**, no un hito que arranca nulo: `"No"` en
+  2.611.371 filas y `"Si"` en 290.792, sin un solo nulo. Es material porque el
+  paso de `"No"` a `"Si"` es un cambio de estado real, no porque se llene una
+  fecha. Estaba clasificada con el motivo de los hitos y no le aplicaba.
 - **Las seis fuentes de financiación** son materiales porque RN1 exige que su
   suma iguale `valor_del_contrato`. Si el valor sube por una adición y las
   fuentes no versionan, quedan versiones históricas donde RN1 no se cumple.
-  (Son seis, no cinco; la definición de RN1 quedó pendiente de revisión por eso
+  (Son seis, no cinco, y las seis entran en la suma: medido el 28/08 contra raw
   — ver §10.)
 - **`fecha_de_fin_del_contrato`** se corre con cada prórroga. Es el mismo evento
   que registra `dias_adicionados`, visto desde el otro lado.
@@ -747,7 +833,7 @@ mensual de ejecución financiera.
 | RN1 | La suma de las **seis** fuentes de financiación iguala `valor_del_contrato` | H6 |
 | RN2 | Ningún registro de la tabla de hechos tiene estado pre-firma | H4, H5 |
 | RN3 | Ningún registro de la tabla de hechos tiene `fecha_de_firma` nula | H3, H4 |
-| RN4 | La fuente no tiene más de 48 horas de rezago (`freshness`) | H8 |
+| RN4 | ⚠ **Umbral sin fijar.** Decía 48 horas de rezago (`freshness`); el 28/08 una fuente sana llevaba tres días sin regenerar, así que ese umbral habría alertado sobre ella. Falta decidir el número y **contra qué columna se mide**: `ultima_actualizacion` mide el rezago del negocio, `:updated_at` mide si la fuente se regeneró | H8, H34 |
 | RN5 | `valor_pagado` no decrece entre versiones consecutivas | H9 — es un acumulado |
 | RN6 | RN1 se cumple en toda versión histórica, no solo en la fila actual | RN1 + diseño SCD2 |
 | RN7 | `dias_adicionados` y `fecha_de_fin_del_contrato` cambian juntos | Dominio — son el mismo evento |
@@ -755,10 +841,64 @@ mensual de ejecución financiera.
 | RN9 | Si `el_contrato_puede_ser_prorrogado = "No"`, entonces `dias_adicionados = 0` | Coherencia interna |
 | RN10 | Si `habilita_pago_adelantado = "No"`, entonces `valor_de_pago_adelantado = 0` | Coherencia interna |
 | RN11 | Las adiciones no superan el 50% del valor inicial, en SMLMV al momento de la firma | Ley 80 art. 40 |
+| RN12 | Si `fecha_fin_liquidacion` no es nula, `fecha_inicio_liquidacion` tampoco | Coherencia interna, medida |
+| RN13 | `valor_del_contrato` no supera el Presupuesto General de la Nación | PGN 2026: 546,9 billones |
 
-**RN1 no está cerrada.** Las fuentes de financiación son **seis** —la sexta solo
-aparece si se enumera el esquema completo contra el endpoint de metadatos— y
-falta decidir si entra en la suma antes de escribir el test.
+**RN1 quedó cerrada el 28/08/2026: son las seis.** Se midió contra raw, sobre
+las 2.824.446 filas del barrido del 23, con `scripts/medir_rn1.py`. La sexta
+—`recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_`— trae valor
+distinto de cero en **1.281.254 contratos**, y **1.280.989 filas solo cierran
+incluyéndola**. Con cinco, RN1 fallaría en el 45% del universo vivo.
+
+⚠ **Falta el umbral, no la definición.** El **3,31%** —93.557 filas— no cierra de
+ninguna forma, y siempre por defecto: la suma queda por debajo de
+`valor_del_contrato`. Puede ser una séptima fuente, puede ser que
+`valor_del_contrato` incluya adiciones que las fuentes no, o puede ser un
+incumplimiento real de la fuente. Hasta separarlas, **RN1 no puede escribirse
+como test que falle la construcción**: sería rojo el primer día por un motivo que
+no entendemos. Ver la pregunta abierta 13 del inventario.
+
+**RN12 nace con sus incumplimientos ya contados: son 2**, sobre 2.902.163
+observaciones. Un contrato no puede terminar una liquidación que nunca empezó.
+
+Es la única de las doce que llega con la medición hecha antes del test, y eso la
+hace útil de una forma que las otras todavía no: **falla, y falla por poco**. Un
+test que falla con dos casos se puede investigar; uno que falla con noventa mil
+—como RN1 hoy— se ignora. La contracara es que, escrita como test bloqueante,
+hace roja la construcción desde el primer día, así que hay que decidir si entra
+como error o como advertencia.
+
+Para orientar: 35 contratos tienen inicio de liquidación sin fin, y eso **no**
+incumple nada — son liquidaciones en curso. La regla es en un solo sentido.
+
+**RN13 atrapa lo que el sistema de tipos deja pasar**, que es la clase de basura
+más peligrosa. Los siete contratos que la incumplen **castean limpio** a
+`decimal(20,2)` y tienen `castings_fallidos = 0`. Un casting que no falla dice
+que la forma era válida, no que el valor sea cierto.
+
+Para dimensionar la asimetría: en 2.902.163 observaciones, el sistema de tipos
+atrapa **un** valor con forma inválida. Todo lo demás pasa limpio y solo lo
+detectan reglas de negocio.
+
+**El techo se elige contra una cifra pública y verificable, no a ojo.** El
+Presupuesto General de la Nación de 2026, aprobado por el Congreso, es de
+**546,9 billones de pesos**: el gasto de todo el Estado colombiano en un año. Un
+contrato individual no puede superarlo. El de 12.858 billones lo supera
+**veintitrés veces**.
+
+⚠ **Esto es el nivel de lo IMPOSIBLE, no el de lo sospechoso.** Con este techo,
+RN13 tiene **siete incumplimientos**, todos contratos distintos. El mayor
+—12.858 billones, 23,5 veces el PGN— es de un instituto municipal de deportes, y
+otro es de una institución educativa: no son megaproyectos mal digitados.
+
+Y aun así la regla **no toca** a los 32 contratos por encima del billón de pesos.
+El mínimo de esos 32 es 1,07 billones, que una obra de infraestructura grande
+puede valer legítimamente.
+
+Falta el segundo nivel, y el umbral no está fijado: por encima de qué fracción
+del **presupuesto de inversión anual** —88,4 billones para 2026— un contrato pasa
+de improbable a sospechoso. Ese número es una decisión y no se pone a ojo; ver la
+pregunta abierta 15 del inventario.
 
 **RN9 y RN10 tienen una trampa:** `habilita_pago_adelantado` **no es booleana**.
 Se observó en `"No Definido"` — tres estados, y `"No Definido"` no equivale a
@@ -804,8 +944,17 @@ Van al README, no se esconden.
    columnas se llaman `observado_desde` / `observado_hasta` justamente por eso:
    la plataforma sabe cuándo vio el cambio, no cuándo ocurrió. Un pago detectado
    el 21 de agosto pudo ocurrir cualquier día desde la observación anterior.
-8. **RN1 no está cerrada**: falta decidir si la sexta fuente de financiación
-   entra en la suma. Ver §10.
+
+    Y **el barrido no puede ver más seguido de lo que la fuente se regenera**,
+   que es irregular: saltos observados de dos y de cinco días entre cortes (H34).
+   La serie tiene la resolución de la fuente, con huecos, y **no una resolución
+   diaria**. Es la limitación que más hay que cuidar al redactar el README,
+   porque es la única que un lector podría entender como una promesa incumplida
+   en vez de como una propiedad del origen.
+8. **RN1 está definida pero sin umbral.** Son las seis fuentes —medido—, y el
+   3,31% del universo vivo no cierra por motivos que todavía no se separaron.
+   Escribirla como test bloqueante haría fallar la construcción el primer día.
+   Ver §10 y la pregunta abierta 13 del inventario.
 
 ---
 
@@ -816,7 +965,7 @@ Heredadas del inventario, más las nuevas:
 1. ¿`Cerrado` (1,69M) y `terminado` (774K) son sinónimos?
 2. ¿Qué miden `orden` y `rama`? El diccionario los define de forma circular.
 3. ¿Los estados terminales realmente no cambian? Determina si se excluyen del
-   refresco diario.
+   refresco del universo vivo.
 4. ¿La llave de `dim_proveedor` es `documento_proveedor` o `codigo_proveedor`?
 5. ~~¿Qué contienen `fecha_de_inicio_de_ejecucion`, `fecha_fin_liquidacion` y
    `estado_bpin`?~~ Resuelta al enumerar el esquema contra el endpoint de
@@ -831,6 +980,13 @@ Heredadas del inventario, más las nuevas:
 7. ¿Por qué `saldo_cdp` no se consume con la ejecución?
 8. ¿Aporta algo `SECOP II – Ejecución de Contratos`? Es el candidato obvio para
    la serie de pagos que hoy no existe en ninguna fuente.
+9. **¿El mart puede prometer que un evento de Adiciones se refleja en el
+   contrato?** Los hermanos van más frescos que la fuente principal (H24): una
+   modificación aprobada hoy está en Adiciones al rato, pero su efecto sobre
+   `valor_del_contrato` no aparece hasta la próxima regeneración, que puede
+   tardar días. La ventana en que el evento existe y su consecuencia todavía no
+   estaba anotada como "de hasta un día" y no lo es. Nota para el mart, no bug,
+   pero hay que decidir cómo se muestra.
 
 **Hipótesis descartada — vale la pena no volver a intentarla.** Se probó si
 `dias_adicionados > 0` identificaba a los contratos en estado `Modificado`. La

@@ -19,6 +19,8 @@ Este script cubre la otra mitad: **que las filas reales sobrevivan el viaje**.
 
 ## Qué comprueba, en orden de importancia
 
+  FASE 0 — Qué corte de la fuente está publicado ahora. Es precondición: si
+           `corte()` no funciona contra la API real, D10 y D11 no tienen piso.
   FASE 1 — Toda fila real pasa por `preparar()` sin explotar.
   FASE 2 — La ida y vuelta es exacta: lo escrito se relee idéntico.
            *** La que valida la deduplicación por bytes (D3). Si el rehasheo
@@ -77,7 +79,7 @@ from secop_analytics.columnas import PERSONALES
 from secop_analytics.escritura import leer_particion
 from secop_analytics.flujos import _rango, contratos_nuevos
 from secop_analytics.hashing import canonicalizar, hashear, preparar, verificar_linea
-from secop_analytics.paginacion import contar
+from secop_analytics.paginacion import contar, corte
 
 # Un día hábil ya cerrado, el mismo que usa `verificar_extraccion.py`. No se
 # usa "ayer": `fecha_de_firma` tiene ~1 día de rezago y llegó a observarse
@@ -96,6 +98,67 @@ def titulo(texto: str) -> None:
 
 
 # --------------------------------------------------------------------------
+
+
+def fase_0() -> tuple[bool, str | None]:
+    """El corte de la fuente. Precondición de D10 y D11.
+
+    Es la única fase que no verifica la capa raw sino la pregunta sobre la que
+    D10 y D11 se apoyan. Va primera porque cuesta una petición y porque si
+    falla, lo que sigue se puede leer igual pero las decisiones no tienen piso.
+
+    Verifica tres cosas, en orden de qué tan probable es que se rompan:
+
+    1. **Que la consulta funcione contra la API real.** `:updated_at` lleva dos
+       puntos y `requests` lo codifica como %3A; los alias con `as` llevan
+       espacios que se codifican como `+`. Nada de eso está probado contra
+       Socrata y **ningún doble lo probaría**, porque el doble devolvería lo
+       que uno espera. Es exactamente el hueco que este script existe para
+       cubrir.
+    2. **Que `min = max`**, o sea H2 una vez más, y sobre el universo completo.
+    3. **Que dos lecturas seguidas coincidan.** Si difieren en segundos, la
+       fuente se estaría regenerando justo ahora, que es el único caso donde
+       `confiable` puede dar falso sin que H2 esté roto — y sería la primera
+       observación del proyecto dentro de la ventana de regeneración.
+
+    Devuelve el veredicto y el valor del corte, que hay que anotar en el
+    registro de sondeo con la fecha y la hora colombiana.
+    """
+    titulo("FASE 0 — Qué corte de la fuente está publicado")
+    print("`:updated_at` es idéntico en las 5,96M de filas porque el dataset se")
+    print("reemplaza entero (H2). Ese valor identifica al corte, y es lo que")
+    print("dispara el flujo 3 (D11) y anota la procedencia en raw (D10).\n")
+
+    try:
+        primero = corte()
+    except Exception as error:  # noqa: BLE001 — acá interesa el mensaje, no el tipo
+        print(f"  ❌ la consulta falló: {type(error).__name__}: {error}")
+        print("     Si es un 400, sospechar de la codificación de `:updated_at`")
+        print("     o de los alias del `$select`. Probar la URL a mano.")
+        return False, None
+
+    print(f"  más viejo: {primero.mas_viejo}")
+    print(f"  más nuevo: {primero.mas_nuevo}")
+
+    if not primero.confiable:
+        print("  ⚠ LOS DOS EXTREMOS DIFIEREN. Dos explicaciones posibles y este")
+        print("    script no las distingue: o la consulta cayó mientras la")
+        print("    fuente se regeneraba, o H2 dejó de valer. Lo segundo tumba")
+        print("    los tres flujos. Repetir en unos minutos: si sigue distinto,")
+        print("    es lo segundo.")
+        return False, primero.mas_nuevo
+
+    segundo = corte()
+    if segundo.mas_nuevo != primero.mas_nuevo:
+        print(f"  ⚠ cambió entre dos lecturas seguidas: {segundo.mas_nuevo}")
+        print("    La fuente se está regenerando AHORA. Es la primera")
+        print("    observación del proyecto dentro de la ventana, y vale la")
+        print("    pena anotarla: no hay ninguna igual.")
+        return False, segundo.mas_nuevo
+
+    print("  ✅ min = max, y estable entre dos lecturas")
+    print(f"\n  ANOTAR EN EL REGISTRO DE SONDEO:  {hoy()}  ·  {primero.mas_nuevo}")
+    return True, primero.mas_nuevo
 
 
 def fase_1(desde: date, hasta: date, paginas_max: int) -> tuple[list[dict], bool]:
@@ -299,6 +362,11 @@ def main() -> int:
         print("  ⚠ difieren: estás en la franja donde UTC ya cambió de día. La")
         print("    fecha que manda es la colombiana (ver R2).")
 
+    # Va antes de la fase 1 y antes de la guarda de la ventana vacía: cuesta
+    # una petición, no depende del rango, y su valor hay que anotarlo aunque el
+    # resto del script no llegue a correr.
+    ok_0, valor_del_corte = fase_0()
+
     recogidas, ok_1 = fase_1(desde, hasta, args.paginas)
 
     # La guarda contra el aprobado vacuo. Sin filas, las fases 2, 3 y 4 pasan
@@ -311,13 +379,16 @@ def main() -> int:
             "   No se puede verificar nada con cero filas: las otras tres fases\n"
             "   pasarían por vacuidad y el script aprobaría sin haber mirado.\n\n"
             "   Revisá si el rango cayó en un feriado, o si el filtro dejó de\n"
-            "   funcionar contra la fuente. Probá otro día hábil con --desde.",
+            "   funcionar contra la fuente. Probá otro día hábil con --desde.\n\n"
+            f"   La fase 0 sí corrió: corte {valor_del_corte}, "
+            f"{'ok' if ok_0 else 'CON PROBLEMAS'}.",
             file=sys.stderr,
         )
         return 1
 
     ok_2, observaciones = fase_2(recogidas)
     resultados = [
+        ("0 · corte de la fuente", ok_0),
         ("1 · canonicalización", ok_1),
         ("2 · ida y vuelta", ok_2),
         ("3 · deduplicación", fase_3(desde, hasta)),

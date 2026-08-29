@@ -88,6 +88,20 @@ MATERIALES: Final[frozenset[str]] = frozenset({
     "fecha_inicio_liquidacion",
     "fecha_fin_liquidacion",
     "fecha_de_notificaci_n_de_prorrogaci_n",
+    # ⚠ `liquidaci_n` NO es un hito que arranca nulo: es BOOLEANA y está poblada
+    # en el 100% de las filas. Medido el 28/08/2026 sobre 2.902.163
+    # observaciones: "No" en 2.611.371 y "Si" en 290.792, sin nulos ni
+    # centinelas. Estaba acá arriba, entre los hitos, y el comentario de ellos
+    # no le aplicaba.
+    #
+    # Sigue siendo material, y por un motivo mejor que el que tenía: pasar de
+    # "No" a "Si" es un cambio de estado real del contrato. El motivo importa
+    # porque un motivo equivocado es el que justifica la siguiente decisión
+    # equivocada.
+    #
+    # ⚠ Y no calza con `fecha_inicio_liquidacion`: 290.792 contra 292.694, o sea
+    # 1.902 de diferencia. Si fueran lo mismo dicho de dos formas, coincidirían.
+    # Pregunta abierta 14 del inventario.
     "liquidaci_n",
     # Fecha del último evento contractual. No es auditoría técnica: su nulo es
     # información. Además es el watermark del flujo 2.
@@ -256,6 +270,101 @@ PERSONALES: Final[frozenset[str]] = frozenset({
     "tipo_de_cuenta",
     "nombre_del_banco",
 })
+
+
+# --------------------------------------------------------------------------
+# TIPOS DE DESTINO — a qué se castea cada columna en `stg_contratos`.
+#
+# Es un eje DISTINTO de la clasificación de comparación de arriba. Aquella
+# decide qué genera una versión nueva en el SCD2; ésta decide qué tipo tiene la
+# columna en `staging`. Una columna monetaria puede ser material o cosmética, y
+# las dos cosas son ciertas a la vez.
+#
+# Vive acá y no en el SQL de dbt por la misma razón que el resto: dos listas
+# escritas a mano se separan, y cuando se separan nada falla. `test_columnas.py`
+# verifica que estos conjuntos no se solapen y que solo contengan columnas
+# extraídas.
+#
+# Lo que no está en ninguno de los tres queda como TEXTO, que es el defecto
+# correcto: castear de más inventa estructura, castear de menos solo posterga.
+# --------------------------------------------------------------------------
+
+MONETARIAS: Final[frozenset[str]] = frozenset({
+    "valor_del_contrato",
+    "valor_pagado",
+    "valor_facturado",
+    "valor_pendiente_de_pago",
+    "valor_pendiente_de_ejecucion",
+    "valor_amortizado",
+    "valor_de_pago_adelantado",
+    "valor_pendiente_de",
+    "saldo_cdp",
+    "saldo_vigencia",
+    # Las seis fuentes de financiación. RN1 exige que sumen
+    # `valor_del_contrato`, así que tienen que ser comparables entre sí.
+    "presupuesto_general_de_la_nacion_pgn",
+    "sistema_general_de_participaciones",
+    "sistema_general_de_regal_as",
+    "recursos_de_credito",
+    "recursos_propios",
+    "recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_",
+})
+
+FECHAS: Final[frozenset[str]] = frozenset({
+    "fecha_de_firma",
+    "fecha_de_inicio_del_contrato",
+    "fecha_de_fin_del_contrato",
+    "fecha_inicio_liquidacion",
+    "fecha_fin_liquidacion",
+    "fecha_de_notificaci_n_de_prorrogaci_n",
+    # `ultima_actualizacion` es fecha aunque no lo diga el nombre: es la del
+    # último evento contractual, y el watermark del flujo 2 (H8).
+    "ultima_actualizacion",
+})
+
+ENTERAS: Final[frozenset[str]] = frozenset({
+    "dias_adicionados",
+    # ⚠ `duraci_n_del_contrato` NO está acá, y estuvo. Medido el 28/08/2026
+    # sobre 2.902.163 observaciones: **ni un solo valor castea a entero**. La
+    # unidad viene pegada al número.
+    #
+    #   1.648.333  "N Dia(s)"
+    #   1.163.203  "N Mes(es)"
+    #      70.385  "No definido"
+    #      14.829  "N Año(s)"
+    #       3.608  "N Hora(s)"
+    #       1.805  "N Semana(s)"
+    #
+    # Se clasificó como entera razonando desde el nombre, sin mirar un valor.
+    # Queda como TEXTO, y hay que saber por qué antes de "arreglarla": el
+    # número sin la unidad no significa nada. "1 Año(s)" y "365 Dia(s)" son la
+    # misma duración con números que difieren 365 veces, y las dos formas
+    # conviven en la misma columna.
+    #
+    # Partirla en cantidad y unidad ya es viable —las cinco unidades están
+    # enumeradas arriba— y es trabajo de `staging`. Normalizar a días NO: eso
+    # exige decidir cuánto dura un mes, y esa convención no la pone el
+    # pipeline. Para duración real están `fecha_de_inicio_del_contrato` y
+    # `fecha_de_fin_del_contrato`, que son fechas de verdad.
+})
+
+# --------------------------------------------------------------------------
+# Columnas donde el centinela de texto NO se convierte a nulo.
+#
+# "No definido" y "No Definido" son nulos disfrazados en casi todas las
+# columnas. En ésta no: `habilita_pago_adelantado` tiene TRES estados y
+# "No Definido" significa "no se declaró", que no es lo mismo que "No".
+# Convertirlo a nulo perdería información y rompería RN10.
+#
+# La lista es explícita y tiene un solo miembro a propósito: así agregar el
+# segundo es una decisión y no un descubrimiento.
+# --------------------------------------------------------------------------
+CENTINELA_ES_VALOR: Final[frozenset[str]] = frozenset({
+    "habilita_pago_adelantado",
+})
+
+# Los dos que la fuente usa, en las dos capitalizaciones observadas (H6).
+CENTINELAS: Final[tuple[str, ...]] = ("No definido", "No Definido")
 
 
 CLASIFICADAS: Final[frozenset[str]] = (

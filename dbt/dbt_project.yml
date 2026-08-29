@@ -1,0 +1,38 @@
+# Proyecto dbt de SECOP. Ver `exploration/03_decisiones_capa_raw.md` (D9) y
+# `01_modelo_dimensional.md` (el diseño de las capas).
+#
+# ⚠ NADA ESPECÍFICO DE DUCKDB EN ESTE ARCHIVO.
+#
+# El proyecto tiene dos objetivos —`dev` sobre DuckDB local y `snowflake`— y la
+# diferencia tiene que vivir entera en `profiles.yml` y en un solo modelo, el
+# que toca los archivos. Cualquier cosa motor-específica que se cuele acá
+# convierte el porte en una reescritura, que es exactamente lo que D9 quiere
+# evitar.
+#
+# La prueba de que se cumple: `dbt run --target snowflake` no debería requerir
+# tocar este archivo.
+
+name: secop
+version: "0.1.0"
+profile: secop
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # Dónde vive raw. Solo lo usa el modelo frontera; en Snowflake se sustituye
+  # por la ruta del stage y ningún otro modelo se entera.
+  ruta_raw: "../datos/raw"
+
+models:
+  secop:
+    staging:
+      +materialized: view
+      # El modelo frontera es la excepción y lo declara en su propio archivo:
+      # se materializa como tabla para que los archivos se lean UNA vez por
+      # corrida y no una vez por modelo que dependa de ellos.
+      +schema: staging

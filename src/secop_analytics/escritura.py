@@ -81,6 +81,23 @@ reanudación que pueda pudrirse sin que nadie lo note.
    tengan, o un `dbt run` disparado durante la ingesta lee media noche y produce
    números que nadie va a poder explicar.
 
+## Qué corte de la fuente vio cada partición
+
+La ruta dice **cuándo** se extrajo y **qué pedazo**, pero no **qué estado de la
+fuente** se vio. Mientras se creyó que la fuente se regeneraba a diario las dos
+primeras alcanzaban; no se regenera a diario (H34), así que dos particiones con
+`fecha_extraccion` distinta pueden contener exactamente el mismo estado y nada
+en raw lo dice.
+
+Por eso el manifiesto lleva el corte, y `ingestas_previas()` lo lee. Ver D10 y
+D11.
+
+⚠ **El guardarraíl de `_solo_lectura` no cubre ese eje.** Reabrir un directorio
+ya completo está bloqueado, pero eso protege una unidad de trabajo contra sí
+misma *en la misma fecha*. Correr hoy y mañana contra el mismo corte da dos
+directorios distintos: no falla, no avisa, y escribe una partición vacía después
+de bajar 2,8 millones de filas.
+
 ## Atomicidad
 
 Cada archivo se escribe con sufijo `.tmp` y se renombra al terminar. En POSIX el
@@ -100,7 +117,7 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
 from .hashing import ALGORITMO_HASH
 
@@ -173,6 +190,9 @@ class ParticionRaw:
         flujo: str,
         fecha_extraccion: str,
         particion: str,
+        corte_al_iniciar: str | None = None,
+        corte_anterior: str | None = None,
+        corte_confiable: bool = True,
         lineas_por_trozo: int = LINEAS_POR_TROZO,
         paginas_por_trozo: int = PAGINAS_POR_TROZO,
         verboso: bool = True,
@@ -181,6 +201,14 @@ class ParticionRaw:
         self.flujo = flujo
         self.fecha_extraccion = fecha_extraccion
         self.particion = _validar_particion(particion)
+        # D10. Llegan como texto suelto y no como el `Corte` de `paginacion`:
+        # este módulo escribe lo que le dan, y si el corte es confiable o no es
+        # un juicio sobre la fuente que le toca hacer a quien la consultó. Así
+        # `escritura.py` sigue sin conocer al módulo que habla con la red.
+        self.corte_al_iniciar = corte_al_iniciar
+        self.corte_anterior = corte_anterior
+        self.corte_confiable = corte_confiable
+        self.corte_al_terminar: str | None = None
         self.lineas_por_trozo = lineas_por_trozo
         if paginas_por_trozo < 1:
             raise ValueError(
@@ -276,6 +304,35 @@ class ParticionRaw:
                 print(f"  manifiesto ilegible, se reinicia: {error}", flush=True)
             return
 
+        # D10: retomar contra OTRO corte mezclaría dos estados de la fuente en
+        # un mismo directorio. Los trozos ya cerrados vienen del corte viejo y
+        # los que siguen vendrían del nuevo, y nada en el resultado lo diría —
+        # el manifiesto se reescribe con el corte actual y el viejo se pierde.
+        #
+        # Pasa de verdad: una corrida dura ~50 minutos y la regeneración cae en
+        # una ventana de madrugada de ~35, así que arrancar antes y cruzarla es
+        # posible. La `fecha_extraccion` no protege porque es la misma.
+        #
+        # Se descarta el progreso y se empieza de cero. Cuesta hasta 50 minutos
+        # y no pierde nada: es el error que sobra. Conservarlo dejaría en disco
+        # una partición a caballo que además parece reanudada con normalidad.
+        corte_viejo = manifiesto.get("corte_al_iniciar")
+        if (
+            self.corte_al_iniciar
+            and corte_viejo
+            and corte_viejo != self.corte_al_iniciar
+        ):
+            if self.verboso:
+                print(
+                    f"  ⚠ el progreso en disco es de otro corte de la fuente\n"
+                    f"     en disco: {corte_viejo}\n"
+                    f"     ahora:    {self.corte_al_iniciar}\n"
+                    f"     Retomarlo mezclaría dos estados en un directorio. Se "
+                    f"empieza de cero; los trozos viejos se reescriben.",
+                    flush=True,
+                )
+            return
+
         self._trozos_cerrados = manifiesto.get("trozos_cerrados", 0)
         self._lineas_totales = manifiesto.get("lineas_totales", 0)
         self._cursor = manifiesto.get("cursor")
@@ -369,6 +426,18 @@ class ParticionRaw:
             "trozos_cerrados": self._trozos_cerrados,
             "lineas_totales": self._lineas_totales,
             "cursor": self._cursor,
+            # D10. `corte_anterior` y `corte_al_iniciar` son los dos extremos
+            # del intervalo que esta partición cubre; sin ellos, cuánto negocio
+            # hay adentro no se puede saber después — y no se recupera, porque
+            # el corte anterior ya lo destruyó la fuente.
+            #
+            # `corte_al_terminar` sigue en nulo hasta `completar()`: si difiere
+            # del inicial, la partición quedó a caballo de dos regeneraciones,
+            # con las primeras páginas de un estado y las últimas de otro.
+            "corte_anterior": self.corte_anterior,
+            "corte_al_iniciar": self.corte_al_iniciar,
+            "corte_al_terminar": self.corte_al_terminar,
+            "corte_confiable": self.corte_confiable,
             "actualizado": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         ruta = self.directorio / NOMBRE_MANIFIESTO
@@ -378,16 +447,45 @@ class ParticionRaw:
         )
         os.replace(temporal, ruta)
 
-    def completar(self) -> None:
+    def completar(self, *, corte_al_terminar: str | None = None) -> None:
         """Marca la partición como legible. Es lo último que ocurre.
 
         El contenido del archivo es informativo; **lo que dbt consulta es su
         existencia**. Un archivo presente es más barato de comprobar que un
         JSON que hay que parsear.
+
+        `corte_al_terminar` se anota acá y no por un método aparte porque este
+        es el único momento en que la partición terminó de verdad. Un método
+        suelto sería una llamada más que se puede olvidar, y olvidarla dejaría
+        una partición completa sin la mitad de su procedencia.
+
+        Si difiere de `corte_al_iniciar`, la fuente se regeneró durante la
+        corrida y la partición quedó **a caballo**: las primeras páginas vienen
+        de un estado y las últimas de otro. Se anota y se advierte; qué hacer
+        con esa partición está sin decidir, y por eso no se toca `_COMPLETO` —
+        marcarla ilegible sería tomar esa decisión de costado.
         """
+        if corte_al_terminar is not None:
+            self.corte_al_terminar = corte_al_terminar
+
         if self._buffer:
             self._cerrar_trozo()
         self._guardar_manifiesto()
+
+        a_caballo = (
+            self.corte_al_iniciar
+            and self.corte_al_terminar
+            and self.corte_al_iniciar != self.corte_al_terminar
+        )
+        if a_caballo and self.verboso:
+            print(
+                f"  ⚠ PARTICIÓN A CABALLO DE DOS CORTES\n"
+                f"     empezó con {self.corte_al_iniciar}\n"
+                f"     terminó con {self.corte_al_terminar}\n"
+                f"     Las primeras páginas y las últimas vienen de estados "
+                f"distintos de la fuente.",
+                flush=True,
+            )
 
         resumen = {
             "lineas_totales": self._lineas_totales,
@@ -419,6 +517,120 @@ class ParticionRaw:
     @property
     def cursor(self) -> str | None:
         return self._cursor
+
+
+class ParticionCompleta(NamedTuple):
+    """Una partición terminada, con el corte de la fuente que vio."""
+
+    directorio: Path
+    fecha_extraccion: str
+    corte: str | None
+    """`None` si el manifiesto es anterior a D10. Desconocido, no ausente."""
+
+
+class IngestasPrevias(NamedTuple):
+    """Lo que raw ya sabe sobre esta unidad de trabajo.
+
+    Tres respuestas de una sola pasada, porque quien pregunta las necesita
+    juntas: si hay que abortar, contra qué se está comparando, y cuánto de lo
+    que hay en disco es anterior a que se anotara la procedencia.
+    """
+
+    ya_ingerido: ParticionCompleta | None
+    """Completa y con ESTE corte. Si no es `None`, D11 aborta."""
+
+    ultima: ParticionCompleta | None
+    """La más reciente completa, sea cual sea su corte. Para el mensaje."""
+
+    sin_corte_anotado: tuple[ParticionCompleta, ...]
+    """Completas y anteriores a D10. Se advierte, no se bloquea."""
+
+
+def _corte_anotado(directorio: Path) -> str | None:
+    """El `corte_al_iniciar` del manifiesto, o `None` si no se puede saber.
+
+    Un manifiesto ilegible, ausente o sin el campo dan todos lo mismo:
+    desconocido. No se distingue a propósito — las tres respuestas llevan a la
+    misma acción, que es advertir sin bloquear, y distinguirlas invitaría a
+    tratar alguna como si fuera un dato.
+    """
+    ruta = directorio / NOMBRE_MANIFIESTO
+    try:
+        manifiesto = json.loads(ruta.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    corte = manifiesto.get("corte_al_iniciar")
+    return corte if isinstance(corte, str) and corte else None
+
+
+def ingestas_previas(
+    base: Path | str,
+    *,
+    flujo: str,
+    particion: str,
+    corte: str,
+) -> IngestasPrevias:
+    """Qué se ingirió antes para esta unidad de trabajo. Es la base de D11.
+
+    La pregunta que contesta no es "¿ya vi este corte?" sino:
+
+        ¿Existe una partición **completa**, del mismo flujo y la misma
+        partición, cuyo manifiesto diga este corte — con cualquier
+        `fecha_extraccion`?
+
+    Las tres condiciones importan y cada una descarta un modo de fallo:
+
+    - **Completa.** Una partición sin `_COMPLETO` es trabajo a medias, y
+      retomarla es exactamente lo que I5 permite. Bloquear ahí convertiría la
+      reanudación en un callejón.
+    - **Mismo flujo y misma partición.** El barrido del flujo 3 puede partirse y
+      correr en paralelo. Si se partió en cuatro y terminaron tres, la cuarta
+      tiene que poder correr: cada unidad de trabajo se pregunta por sí misma,
+      que es la regla que este módulo ya sostiene.
+    - **Cualquier `fecha_extraccion`.** Es el eje que faltaba. La fecha es
+      cuándo bajamos los datos; el corte es qué vimos. Correr dos días seguidos
+      contra el mismo corte da dos fechas distintas y un solo estado.
+
+    El recorrido es acotado: un glob sobre las fechas de esta partición, no un
+    barrido del árbol. Son tantos directorios como veces se corrió esta unidad
+    de trabajo.
+
+    Args:
+        base: raíz de raw.
+        flujo: valor de `Flujo`, el mismo que arma la ruta.
+        particion: la unidad de trabajo.
+        corte: el `:updated_at` que la fuente publica ahora, tal como lo
+            devuelve `paginacion.corte()`.
+
+    Returns:
+        Un `IngestasPrevias`. Ver sus campos.
+    """
+    if not corte:
+        raise ValueError(
+            "Hace falta el corte de la fuente. Sin él la pregunta no se puede "
+            "contestar, y contestarla que sí con un vacío bloquearía corridas "
+            "legítimas — el error que falta."
+        )
+
+    raiz = Path(base)
+    particion = _validar_particion(particion)
+
+    encontradas = [
+        ParticionCompleta(
+            directorio=directorio,
+            fecha_extraccion=directorio.parent.name.removeprefix("fecha_extraccion="),
+            corte=_corte_anotado(directorio),
+        )
+        for directorio in raiz.glob(f"flujo={flujo}/*/particion={particion}")
+        if (directorio / NOMBRE_COMPLETO).is_file()
+    ]
+    encontradas.sort(key=lambda p: p.fecha_extraccion, reverse=True)
+
+    return IngestasPrevias(
+        ya_ingerido=next((p for p in encontradas if p.corte == corte), None),
+        ultima=encontradas[0] if encontradas else None,
+        sin_corte_anotado=tuple(p for p in encontradas if p.corte is None),
+    )
 
 
 def iterar_particion(directorio: Path | str) -> Iterator[dict[str, Any]]:

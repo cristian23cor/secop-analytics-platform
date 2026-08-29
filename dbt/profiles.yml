@@ -1,0 +1,35 @@
+# Dos objetivos desde el primer día, aunque hoy solo se use uno.
+#
+# No es previsión de más: es lo que obliga a que ninguna decisión específica de
+# un motor se cuele en `dbt_project.yml` o en los modelos. Un proyecto escrito
+# contra un solo objetivo y portado después no descubre esos acoplamientos
+# hasta el día del porte, que es el peor momento.
+#
+# ⚠ Snowflake NO lee el disco local. El día del porte hay que subir raw a un
+# stage y cambiar `ruta_raw`; el resto de los modelos no cambia. Esa es toda la
+# frontera, y está en un solo modelo a propósito (D9).
+
+secop:
+  target: dev
+  outputs:
+
+    dev:
+      type: duckdb
+      path: ../datos/secop.duckdb
+      threads: 4
+      # `extensions` vacío a propósito: leer JSON comprimido es nativo.
+
+    snowflake:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', '') }}"
+      # Par de claves y no contraseña: Snowflake dejó de aceptar contraseña sola
+      # para usuarios humanos, y con MFA cada corrida dispararía un push al
+      # teléfono — inviable en `dbt run` desatendido y en Airflow.
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'ACCOUNTADMIN') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'COMPUTE_WH') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'SECOP') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'PUBLIC') }}"
+      threads: 8
+      client_session_keep_alive: false

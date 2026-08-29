@@ -1,0 +1,100 @@
+version: 2
+
+# Tests de la capa staging.
+#
+# ## Qué hace distinto a este archivo
+#
+# Cada test de acá nace con su resultado ya medido sobre las 2.902.163
+# observaciones reales. No son reglas escritas desde lo que debería pasar: son
+# reglas escritas desde lo que pasa, con el número al lado.
+#
+# Eso cambia para qué sirven. Un test que arranca en verde avisa cuando algo se
+# rompe. Un test que arranca con N incumplimientos conocidos avisa cuando N
+# cambia — y esa es la señal útil en una fuente que se sobrescribe y de la que
+# no controlamos nada.
+#
+# ## Por qué casi todo es `warn` y no `error`
+#
+# Tres de estos tests fallan hoy, con datos que ya están en disco. Puestos como
+# `error`, la construcción de dbt queda roja desde el primer día y por motivos
+# que no dependen de nosotros. Una suite roja permanente enseña a ignorar los
+# tests, y ahí se pierde la capacidad de detectar el fallo que sí importa.
+#
+# Es el mismo argumento que dejó `referencia_del_contrato` fuera de IMPOSIBLES:
+# una alerta ruidosa es peor que no tener alerta.
+#
+# `error` queda reservado para lo que, si falla, significa que el pipeline está
+# roto y no que la fuente esté sucia.
+#
+# ## Lo que NO está acá, a propósito
+#
+# **RN1** —que las seis fuentes de financiación sumen `valor_del_contrato`—
+# falla en 93.557 filas, el 3,31%, por motivos que todavía no se separaron. Ver
+# la pregunta abierta 13 del inventario. Meterla hoy sería garantizar que nadie
+# mire los resultados de esta suite.
+
+models:
+
+  - name: raw_observaciones
+    description: >
+      El modelo frontera: el único que toca los archivos de raw. Todo lo demás
+      lee esta tabla. Las 67 columnas salen como texto, sin castear ni limpiar.
+    columns:
+      - name: hash
+        description: >
+          Hash de los bytes canónicos de la observación, calculado en la
+          ingesta (I1). Es lo que sostiene la deduplicación de D3.
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+                # Si esto falla, raw está corrupto o el modelo frontera está
+                # leyendo mal. Las dos cosas son fallos NUESTROS, no de la
+                # fuente, y por eso acá sí es `error`.
+
+  - name: stg_contratos
+    description: >
+      Las 67 columnas casteadas, con los centinelas convertidos a nulo y
+      `urlproceso` aplanado. Es donde se paga lo que D1 dejó para después.
+    columns:
+
+      - name: id_contrato
+        description: >
+          Llave del contrato. ⚠ NO es única en esta tabla y no debe serlo: hay
+          2.902.163 observaciones de contratos que se repiten entre
+          particiones, y esa repetición es el proyecto entero. Lo único es la
+          combinación con la observación.
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+                # Sin `id_contrato` la fila no se puede deduplicar ni unir con
+                # nada. La ingesta ya lo rechaza en `preparar()`, así que si
+                # aparece uno nulo acá el problema está en el camino a dbt.
+
+      - name: castings_fallidos
+        description: >
+          Cuántas de las 25 columnas tipadas tenían valor y no se pudieron
+          castear. Mide la FORMA del dato, no su verdad.
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+
+      - name: valor_del_contrato
+        description: >
+          La columna que justifica el proyecto. Tiene basura de dos clases y
+          solo una la atrapa el sistema de tipos. RN13 vive en
+          `tests/rn13_valor_imposible.sql`, escrita a mano en vez de con
+          `dbt_utils.accepted_range`: el umbral necesita explicar de dónde sale
+          la cifra, y una dependencia externa menos es una cosa menos que
+          reinstalar el día del porte.
+
+# ---------------------------------------------------------------------------
+# Tests singulares: van en `tests/` porque expresan relaciones entre columnas,
+# que los tests genéricos de dbt no cubren.
+#
+#   tests/rn12_liquidacion_sin_inicio.sql
+#   tests/rn13_valor_imposible.sql
+#   tests/castings_fallidos_no_subieron.sql
+# ---------------------------------------------------------------------------

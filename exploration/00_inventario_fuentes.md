@@ -4,12 +4,17 @@
 > Cada hallazgo va acompañado de la consulta que lo demuestra, para que sea
 > reproducible por cualquiera.
 > **Alcance:** este documento cubre la fuente principal (`jbjy-vk9h`), con los
-> hallazgos H1 a H9. Los datasets hermanos del ecosistema y sus hallazgos
-> H17–H33 están en `02_ecosistema_secop.md`; acá se listan en la sección 2
-> con su veredicto. Las **decisiones de diseño** que salieron de estos hallazgos
-> tampoco viven acá: se las referencia con →.
+> hallazgos H1 a H9 y **H34**. Los datasets hermanos del ecosistema y sus
+> hallazgos H17–H33 están en `02_ecosistema_secop.md`; acá se listan en la
+> sección 2 con su veredicto. Las **decisiones de diseño** que salieron de estos
+> hallazgos tampoco viven acá: se las referencia con →.
 >
-> Última verificación contra la API: 25 de agosto de 2026.
+> **H10 a H16 no existen.** Nunca se asignaron: sus contenidos viven dentro de H6
+> y las referencias cruzadas de otros documentos quedaron colgando. Por eso el
+> hallazgo nuevo es H34 y no H10 — los identificadores son estables y no se
+> reciclan.
+>
+> Última verificación contra la API: 28 de agosto de 2026.
 
 ---
 
@@ -26,7 +31,7 @@ Sirve para pedirle a la fuente solo lo nuevo, en vez de descargar todo cada vez.
 Sin watermark no hay carga incremental posible.
 
 **Carga incremental** — traer solo lo que cambió desde la última corrida, en
-lugar de rehacer todo. Es lo que hace que un pipeline diario sea barato.
+lugar de rehacer todo. Es lo que hace que un pipeline recurrente sea barato.
 
 **Backfill** — reprocesar el pasado. Se usa cuando se agrega una fuente nueva o
 se corrige un error: en vez de esperar a mañana, se recorre el histórico por
@@ -68,11 +73,20 @@ veces no, así que el mismo NIT aparece escrito de dos formas.
 **UNSPSC** — clasificador internacional de bienes y servicios, con una jerarquía
 de cuatro niveles. Es lo que permite preguntar "¿quién compra lo que yo vendo?".
 
+**Regeneración** — la operación con la que la fuente se rehace entera y
+sobrescribe su propio estado anterior. No es una actualización de filas: es un
+reemplazo total (H2). Ocurre de madrugada, pero **no todos los días** (H34).
+
+**Corte** — el estado de la fuente que produjo una regeneración. Se identifica
+por el valor de `:updated_at`, que es idéntico en todas las filas y por eso
+funciona como llave del corte, aunque no sirva como watermark de fila (H2). "El
+corte del 25" es lo que un analista llamaría la foto de ese día.
+
  **"Partición" significa dos cosas distintas** y conviene no mezclarlas:
   - **Ventana de backfill** — un pedazo del histórico, normalmente un mes. Se
     usa para reprocesar el pasado sin bajar todo de una vez.
   - **Partición de paralelismo** — un pedazo del universo vivo que se reparte
-    entre varios procesos **de la misma noche**, para que terminen antes.
+    entre varios procesos **de la misma corrida**, para que terminen antes.
 
   Confundirlas tiene consecuencias: darle una ventana de backfill al flujo 3
   hace que parezca que se está reprocesando el pasado, y no es así. Por eso el
@@ -106,9 +120,9 @@ Subdirección de Información y Desarrollo Tecnológico, versión 1.0, agosto 20
 | Publica | Agencia Nacional de Contratación Pública – Colombia Compra Eficiente |
 | Filas | 5.958.553 |
 | Columnas | **85 en el esquema real**, enumeradas contra el endpoint de metadatos el 20/08/2026. El diccionario declara 87 (ver pregunta abierta 4) |
-| Frecuencia declarada | Diaria |
+| Frecuencia declarada | Diaria. ⚠ **Declarada, no verificada — y contradicha** (H34) |
 | Rezago real de publicación | ~1 día (máximo observado: 2026-08-17) |
-| Hora de regeneración | ~04:41 hora de Colombia (ver H8) |
+| Hora de regeneración | Madrugada colombiana, en una ventana de ~35 min entre 04:06 y 04:41 sobre tres observaciones. **No es un horario publicado** (H34) |
 | Rango temporal | 2015-06-11 a 2026-08-17 |
 | Licencia | Datos abiertos (Ley 1712 de 2014) |
 
@@ -208,13 +222,33 @@ Resultado: existe `:updated_at`.
 Mínimo y máximo idénticos **al milisegundo**, sobre 5,96 millones de filas.
 
 **Conclusión parcial:** Colombia Compra Eficiente no actualiza filas
-individuales en Socrata; regenera el dataset completo en una sola operación cada
-noche. Coherente con la metodología declarada en el diccionario, que describe un
-proceso ETL nocturno que genera las vistas publicadas. `:updated_at` es inútil
-como watermark.
+individuales en Socrata; regenera el dataset completo en una sola operación.
+Coherente con la metodología declarada en el diccionario, que describe un proceso
+ETL nocturno que genera las vistas publicadas. `:updated_at` es inútil **como
+watermark de fila**.
 
-**Reconfirmado el 21/08/2026:** `min = max = 2026-08-20T09:41:20.358Z`. Tres días
-después de la primera medición, mismo comportamiento.
+**Confirmado cuatro veces**, siempre con `min = max` al milisegundo sobre 5,96
+millones de filas:
+
+| Fecha de la consulta | Valor observado |
+|---|---|
+| 18/08/2026 | `2026-08-18T09:22:15.735Z` |
+| 21/08/2026 | `2026-08-20T09:41:20.358Z` |
+| 26/08/2026 | `2026-08-25T09:05:54.277Z` |
+| 28/08/2026 | `2026-08-25T09:05:54.277Z` |
+
+**H2 es el hallazgo más sólido del documento y no está en discusión.** Pero fijate
+en la segunda y la cuarta fila: el valor observado **no es del día de la
+consulta**. Esa lectura tardó ocho días en hacerse y es lo que hoy es H34.
+
+⚠ **Lo que sí hay que corregir de este hallazgo: `:updated_at` no es inútil, es
+inútil para una cosa.** La conclusión original decía "inútil como watermark", a
+secas. Es cierto fila por fila, que era la pregunta que se le estaba haciendo.
+Pero la misma propiedad que lo inutiliza para eso —que min y max coincidan al
+milisegundo— lo convierte en la **llave natural del corte**: una petición de
+segundos dice qué estado está vivo, y dos observaciones con el mismo valor vieron
+el mismo estado. Sobre eso se apoyan D10 y D11 en `03_decisiones_capa_raw.md`.
+No vale para los hermanos, que escriben en continuo y no tienen corte (H23).
 
 #### Etapa 2 — Sí existe un watermark de negocio (aportado por el diccionario)
 
@@ -258,15 +292,20 @@ que es donde se cuantifica.
 
    Barre los **cuatro estados vivos** —`En ejecución`, `Modificado`,
    `Suspendido`, `Prorrogado`— que suman **2.825.685** contratos, y lo hace
-   **cada noche**.
+   **una vez por cada regeneración de la fuente** (H34). Correrlo dos veces
+   contra el mismo corte no aporta nada, y por eso el cargador se planta
+   → *ver D11 en* `03_decisiones_capa_raw.md`.
 
     Es tentador acotarlo a `En ejecución` y correrlo semanal: son 1,7M de filas
    en vez de 2,8M. No alcanza. Un contrato `Modificado` o `Suspendido` sigue
    recibiendo pagos, y una semana de resolución pierde el orden de los eventos
-   dentro de ese lapso.
+   dentro de ese lapso. **Ojo con el argumento simétrico:** que la fuente pase
+   días sin regenerar (H34) no justifica bajar el flujo a semanal. La resolución
+   la fija la fuente, y renunciar a más resolución de la que ella impone es
+   perder observaciones que sí existían.
 
    Los parámetros de fecha de `refresco_de_vivos()` son una **partición de
-   paralelismo** —un reparto entre procesos de la misma noche— y **no** una
+   paralelismo** —un reparto entre procesos de la misma corrida— y **no** una
    ventana de backfill. Ver el glosario.
 
     **Este flujo no admite backfill.** Pregunta por el estado actual, y el
@@ -274,12 +313,12 @@ que es donde se cuantifica.
    escribiría el hoy con fecha de ayer. → *Ver* El flujo 3 no se puede reejecutar hacia atrás *(R1) en*
    `03_decisiones_capa_raw.md`.
 
-Los flujos 1 y 2 suman ~5.000 filas diarias: una sola petición. El DAG diario es
-liviano; todo el peso está en el flujo 3.
+Los flujos 1 y 2 suman ~5.000 filas por día de negocio: una sola petición. El DAG
+es liviano; todo el peso está en el flujo 3.
 
-**Consecuencia de fondo:** el historial no existe en el origen. Cada noche la
-fuente sobrescribe su propio estado anterior, y nadie puede consultar cuánto
-valía un contrato antes de una adición.
+**Consecuencia de fondo:** el historial no existe en el origen. Cada
+regeneración sobrescribe el estado anterior de la fuente, y nadie puede consultar
+cuánto valía un contrato antes de una adición.
 
 El argumento completo —por qué esto justifica la plataforma entera— está en H9,
 que es donde se cuantifica.
@@ -537,6 +576,160 @@ Clase— y remite al clasificador oficial en
 `colombiacompra.gov.co/clasificador-de-bienes-y-servicios`, que es la fuente para
 traducir códigos a nombres legibles en la dimensión de categoría.
 
+#### Seis entidades reclasificadas entre el 23 y el 25 de agosto de 2026
+
+**Este es el primer cambio real que el pipeline capturó, y la prueba de que la
+premisa del proyecto no es teórica.**
+
+Comparando el barrido del 23 contra la corrida del 25, **20.675 contratos**
+cambiaron `entidad_centralizada` de `"Centralizada"` a `"Descentralizada"`.
+Ninguno en sentido contrario. Pertenecen a **seis entidades**:
+
+| Entidad | `orden` | Contratos |
+|---|---|---|
+| Gobernación del Cauca | Territorial | 8.955 |
+| SENA Regional Valle — Grupo de Apoyo Administrativo | Nacional | 5.553 |
+| SENA Secretaría General | Nacional | 3.014 |
+| Instituto Municipal de Cultura y Turismo de B… | Territorial | 1.274 |
+| Instituto Departamental de Salud de Nariño | Territorial | 1.156 |
+| Hospital de Castilla la Nueva — ESE | Territorial | 723 |
+
+**Nadie que consulte SECOP hoy puede saber que esto pasó.** La fuente se
+sobrescribió: hoy solo dice `"Descentralizada"` y no queda rastro del estado
+anterior. Existe únicamente porque se guardaron las dos fotos y se compararon.
+
+#### ⚠ Pero la lectura fácil no se sostiene
+
+Sería cómodo enunciarlo como "se corrigieron seis clasificaciones erróneas".
+Cuatro de las seis encajan: dos regionales del SENA, un instituto municipal, un
+instituto departamental de salud y una ESE son entidades con personería jurídica
+propia, o sea descentralizadas por definición.
+
+**La Gobernación del Cauca no encaja, y son 8.955 contratos — el 43% del
+total.** Una gobernación *es* el nivel central de la administración
+departamental; reclasificarla como descentralizada parece incorrecto.
+
+A menos que "centralizada/descentralizada" en SECOP no signifique lo que dice la
+doctrina administrativa — que es exactamente el problema de la **pregunta abierta
+2**: el diccionario define `orden` y `rama` de forma circular, y sus valores ya
+contradicen la intuición (un hospital departamental figura como "Nacional"). Es
+el mismo defecto en la columna de al lado.
+
+**La afirmación que se sostiene:** la fuente reclasificó seis entidades en un
+solo movimiento, sobre una taxonomía cuyo significado su propio diccionario no
+define bien. No que haya corregido errores.
+
+#### Y el evento pertenece a la dimensión, no al contrato
+
+`entidad_centralizada` es **cosmética**, así que el snapshot no generó versión
+para esos 20.675 contratos. La clasificación es correcta: no cambió nada del
+contrato, cambió la ficha de su entidad.
+
+Pero el evento es real e interesante, y eso convierte una decisión pendiente en
+una con evidencia: **`dim_entidad` necesita historia propia**, y ya tiene su
+primer caso documentado para probarla.
+
+#### Valores imposibles en `valor_del_contrato` — medido el 28/08/2026
+
+La columna que justifica el proyecto entero tiene basura, y de dos clases que
+hay que mantener separadas porque se atrapan con herramientas distintas.
+
+**La que el sistema de tipos rechaza.** Un contrato trae
+`767747876936238525636` — 21 dígitos, unos 767 mil trillones de pesos. No entra
+en `decimal(20,2)` y `try_cast` lo vuelve nulo. Es **1 sobre 2.902.163**.
+
+⚠ **Agrandar el decimal para que entre sería lo peor que se puede hacer.** El
+valor pasaría a contaminar toda suma, promedio y máximo del proyecto. Que se
+rechace es el sistema funcionando.
+
+**La que el sistema de tipos deja pasar, y es peor.** Hay **siete contratos
+distintos** —no siete observaciones del mismo— cuyo valor supera el Presupuesto
+General de la Nación de 2026, que el Congreso aprobó en **546,9 billones de
+pesos**. Los siete **castean limpio** y tienen `castings_fallidos = 0`.
+
+| Valor declarado | Veces el PGN | Estado | Entidad |
+|---|---|---|---|
+| 12.858 billones | **23,5** | En ejecución | Instituto municipal de deportes |
+| 6.453 billones | 11,8 | En ejecución | Institución educativa |
+| 3.247 billones | 5,9 | Modificado | Ministerio del Interior |
+| 714 billones | 1,3 | Modificado | Ministerio del Interior |
+| 601 billones | 1,1 | Modificado | Secretaría distrital |
+| 579 billones | 1,1 | Modificado | DISAN-DMSOC |
+| 577 billones | 1,1 | En ejecución | Hospital Central de la Policía |
+
+Las entidades son lo que cierra la lectura. Un megaproyecto de infraestructura
+mal digitado sería discutible; **un instituto municipal de deportes con 23,5
+veces el presupuesto del Estado no lo es**.
+
+⚠ **Pero el dinero no se movió, y eso hay que decirlo.** Seis de los siete
+declaran `valor_pagado = 0`; el séptimo, 22,7 millones sobre 577 billones — el
+0,000004%. Son errores de digitación publicados sin ningún filtro, no desfalcos.
+La afirmación sostenible es que **la fuente oficial no valida sus propios
+valores**, y esa versión no necesita adorno para ser fuerte.
+
+`valor_pagado = 0` no sirve para detectarlos: la mayoría de los contratos sanos
+también lo tiene en cero. Sirve para interpretarlos.
+
+⚠ **Y la distribución sugiere dos fenómenos, no uno.** Los tres primeros están
+órdenes de magnitud por encima; los últimos cuatro apenas cruzan el techo, entre
+1,1 y 1,3 veces. El umbral del PGN parte ese segundo grupo por la mitad, lo que
+confirma que es el nivel de lo imposible y apenas la punta: los 32 contratos por
+encima del billón siguen esperando un segundo umbral.
+
+Es H33 otra vez, en otra columna: un valor con forma válida y contenido
+imposible. `castings_fallidos = 0` para esa fila. **Un casting que no falla no
+dice que el dato sea cierto**, y esta clase de basura solo la atrapa una regla de
+negocio con un techo defendible → *RN13 en* `01_modelo_dimensional.md`.
+
+**La escala del problema:** 32 contratos superan el billón de pesos. No todos son
+basura — el mínimo es 1,07 billones y una obra de infraestructura grande puede
+valer eso. La misma lista contiene contratos reales y corrupción, y separarlos es
+lo que RN13 tiene que resolver.
+
+**Y una pérdida de precisión silenciosa:** 3 contratos traen más de dos
+decimales, como `51041037891.7566`. `decimal(20,2)` los redondea sin avisar. Tres
+sobre 2,9 millones; se anota y no se cambia el tipo, porque dos decimales es lo
+correcto para pesos y son los datos los que están raros.
+
+#### `liquidaci_n` es booleana, no un hito — medido el 28/08/2026
+
+Este documento y `columnas.py` la ponían junto a `fecha_inicio_liquidacion` y
+`fecha_fin_liquidacion`, bajo el rótulo de "hitos que arrancan nulos y se
+llenan". **No arranca nula nunca.** Sobre las 2.902.163 observaciones de raw:
+
+| Valor | Filas |
+|---|---|
+| `"No"` | 2.611.371 |
+| `"Si"` | 290.792 |
+| nulo o centinela | **0** |
+
+Sigue siendo material, y por un motivo mejor que el que tenía escrito: pasar de
+`"No"` a `"Si"` es un cambio de estado real del contrato. Lo que se corrige es la
+razón. Un motivo equivocado es el que después justifica la siguiente decisión
+equivocada — acá habría llevado a esperar un `NULL → fecha` que no va a ocurrir.
+
+⚠ **Y no calza con `fecha_inicio_liquidacion`:** 290.792 contra 292.694, o sea
+**1.902 de diferencia**. Si fueran lo mismo dicho de dos formas, coincidirían.
+Un casi-calce pide explicación igual que un calce demasiado bueno. Pregunta
+abierta 14.
+
+#### Dos contratos terminan una liquidación que nunca empezó
+
+Del mismo recorrido, cruzando las dos fechas de liquidación:
+
+| | Filas | Lectura |
+|---|---|---|
+| Inicio sí, fin no | 35 | Liquidaciones en curso. Normal |
+| **Fin sí, inicio no** | **2** | **Imposible** |
+
+Dos sobre 2.902.163 es 0,00007%. La rareza es lo que los hace interesantes: es
+corrupción puntual, del mismo tipo que H33 encontró en una columna de fechas, y
+no una categoría con significado.
+
+→ *Candidata a RN12 en* `01_modelo_dimensional.md`: una regla que hoy falla con
+dos incumplimientos es un test que sirve — se puede investigar en vez de ahogarse
+en ruido.
+
 #### Desagregación de financiación
 
 `presupuesto_general_de_la_nacion_pgn`, `sistema_general_de_participaciones`,
@@ -545,9 +738,64 @@ traducir códigos a nombres legibles en la dimensión de categoría.
 `recursos_de_credito`, `recursos_propios`.
 
 **Son seis, no cinco.** La sexta se descubrió al enumerar el esquema completo;
-este documento decía cinco. En la fila inspeccionada las seis suman exactamente
-`valor_del_contrato`: es la base de RN1, que **queda pendiente de revisión**
-hasta decidir si la sexta entra en la suma.
+este documento decía cinco.
+
+#### Medido el 28/08/2026 contra raw: la sexta entra, y por goleada
+
+Se midió sobre las **2.824.446 filas del barrido del 23**, o sea el universo
+vivo entero, con `scripts/medir_rn1.py`. No contra la API: raw ya tenía las seis
+columnas en disco, y en SoQL un nulo en cualquier sumando anula la suma.
+
+| | Filas | % |
+|---|---|---|
+| La sexta con valor **distinto de cero** | **1.281.254** | 45,4% |
+| Cierran igual con cinco o con seis | 1.449.900 | 51,3% |
+| **Cierran SOLO incluyendo la sexta** | **1.280.989** | **45,4%** |
+| No cierran de ninguna forma | 93.557 | 3,3% |
+
+**RN1 son seis columnas.** Con cinco, la regla fallaría en casi la mitad del
+universo vivo. La pregunta abierta 1 queda cerrada.
+
+⚠ **La expectativa era la contraria, y el error es instructivo.** Se esperaba que
+la sexta no apareciera casi nunca, razonando desde que ninguna muestra de filas
+la había mostrado. Pero *la API omite las claves nulas*, así que una muestra
+subestima el esquema — cosa que este mismo documento advierte. "No apareció en
+las muestras" y "está casi siempre vacía" son afirmaciones distintas, y de la
+primera no se sigue la segunda.
+
+⚠ **Y las seis están presentes en las 2.824.446 filas, sin una sola ausencia ni
+un solo centinela.** Eso acota la advertencia de H6 sobre las claves omitidas:
+vale para `ultima_actualizacion` y las fechas de hito, no para estas. Son
+esquema estable, y `staging` no tiene que rellenarlas.
+
+**La muestra, que es parte del resultado:** el universo vivo, no el histórico.
+RN1 sobre contratos cerrados o liquidados puede comportarse distinto y esto no
+lo mide.
+
+#### Los 93.557 que no cierran — pregunta abierta 13
+
+El 3,31% de los contratos vivos declaran fuentes que **no suman su propio
+valor**, y las diez diferencias inspeccionadas son **todas negativas**: la suma
+de las seis queda por debajo de `valor_del_contrato`. Los montos no son
+menores — uno de 1.062 millones de pesos.
+
+Diez de diez con el mismo signo no es casualidad. Tres explicaciones, sin
+separar:
+
+1. Hay una séptima fuente de financiación que el esquema nombra de otro modo.
+2. `valor_del_contrato` incluye algo que las fuentes no —adiciones ya aprobadas,
+   por ejemplo—, y entonces RN1 hay que formularla contra un valor base y no
+   contra el actual.
+3. Es un incumplimiento real de la fuente, y entonces es un hallazgo de calidad
+   publicable.
+
+La tercera sería material para el README. **Pero antes hay que descartar que el
+error sea nuestro**, y la vía barata es cruzar esos contratos contra Adiciones:
+si la diferencia coincide con el monto de las adiciones registradas, es la
+segunda y RN1 se reformula.
+
+Esto **no bloquea** a `stg_contratos`: la definición de RN1 está cerrada. Lo que
+bloquea es fijar el umbral con el que la regla falla en dbt.
 
 ---
 
@@ -631,17 +879,28 @@ Resultado: 14.459 en 7 días ≈ **2.065 eventos/día**.
 registraron eventos posteriores.
 
 **Nota sobre freshness:** el máximo es 2026-08-17, igual que el de
-`fecha_de_firma`. La fuente tiene ~1 día de rezago. El test de `freshness` de dbt
-debe alertar a las **48 horas**, no a las 24, o va a dar falsos positivos todos
-los días.
+`fecha_de_firma`. La fuente tiene ~1 día de rezago. Se dijo que el test de
+`freshness` de dbt debía alertar a las **48 horas**, no a las 24, para no dar
+falsos positivos todos los días.
 
-**Hora de regeneración (H24).** El `:updated_at` del 21/08/2026 marcaba
-`2026-08-20T09:41:20.358Z`, es decir **04:41 hora de Colombia**. Es el primer
-dato duro sobre *cuándo* se rehace la fuente, y define el `schedule` del DAG:
-programarlo a medianoche leería el corte del día anterior todas las noches.
+⚠ **Las 48 horas no alcanzan.** El 28/08/2026 el corte vivo era el del 25: una
+fuente que no tiene nada roto llevaba tres días sin regenerar. Un `freshness` de
+48 h habría alertado sobre una fuente sana. El umbral no se puede fijar hasta
+tener el registro de sondeo de H34, y hay que decidir además **contra qué se
+mide**: contra `ultima_actualizacion` (el negocio) o contra `:updated_at` (la
+regeneración). Son dos preguntas distintas y hoy el documento solo contempla la
+primera.
 
-Es una observación de una corrida, **no un horario publicado**. Confirmar en dos
-o tres días distintos antes de escribirlo en Airflow.
+**Hora de regeneración (H24, en `02_ecosistema_secop.md`).** Hay tres
+regeneraciones fechadas: `09:22:15Z`, `09:41:20Z` y `09:05:54Z`, o sea **04:22,
+04:41 y 04:06 hora de Colombia**. Se mueven en una ventana de ~35 minutos.
+
+⚠ **04:41 no es un horario y no se puede programar contra él.** Este documento
+decía que ese valor "define el `schedule` del DAG". Es la más tardía de tres
+observaciones, no una hora publicada, y H34 muestra además que hay días sin
+ninguna regeneración: ningún `schedule` acierta contra un evento que a veces no
+ocurre. → *El disparador es el corte, no el calendario: ver D11 en*
+`03_decisiones_capa_raw.md`.
 
 ---
 
@@ -667,7 +926,7 @@ el dataset no lo dice.
 **Consecuencias:**
 
 1. Ningún watermark puede capturar el avance de ejecución financiera. Requiere el
-   flujo 3 de H2: refresco nocturno del universo vivo.
+   flujo 3 de H2: refresco del universo vivo en cada regeneración (H34).
 2. **Este es el hallazgo que más justifica la plataforma.** La serie temporal de
    ejecución financiera por contrato —cuánto se había pagado en cada momento— no
    existe en ninguna fuente pública. Solo puede construirse tomando snapshots a
@@ -688,6 +947,127 @@ truncada agrava, no sostiene.
 
 El único candidato del ecosistema que queda sin evaluar es
 `SECOP II – Ejecución de Contratos` (pregunta abierta 8).
+
+---
+
+### H34 — La fuente no se regenera todos los días (CRÍTICO)
+
+**Por qué se validó:** todo el proyecto se escribió sobre la frase "la fuente se
+regenera cada noche". Nadie la comprobó. La ficha oficial declara frecuencia
+diaria, y una frecuencia declarada es una promesa, no una medición.
+
+**Consulta**, la misma de la etapa 1 de H2:
+
+```
+?$select=min(:updated_at) as mas_viejo,max(:updated_at) as mas_nuevo
+```
+
+**Resultado el 28/08/2026, ~10:00 COT:**
+
+```json
+{"mas_viejo":"2026-08-25T09:05:54.277Z","mas_nuevo":"2026-08-25T09:05:54.277Z"}
+```
+
+El corte vivo era del **martes 25**. La consulta se hizo un **viernes**.
+
+#### El registro completo
+
+| Día | Evidencia | Lectura |
+|---|---|---|
+| mar 18 | corte fechado `09:22:15.735Z` | regeneró |
+| mié 19 | — | sin observación |
+| jue 20 | corte fechado `09:41:20.358Z` | regeneró |
+| **vie 21** | a las ~09:37 COT el corte vivo era el del 20 | **no regeneró** |
+| sáb 22 – lun 24 | — | sin observación |
+| mar 25 | corte fechado `09:05:54.277Z` | regeneró |
+| **mié 26** | a las 20:30 COT el corte vivo era el del 25 | **no regeneró** |
+| **jue 27** | deducido: si hubiera regenerado, el corte vivo del 28 sería suyo | **no regeneró** |
+| **vie 28** | a las ~10:00 COT el corte vivo sigue siendo el del 25 | **no regeneró** |
+
+Tres regeneraciones y cuatro días sin regenerar, tres de ellos consecutivos.
+Saltos observados entre cortes: **dos días** (18→20) y **cinco días** (20→25).
+**Ningún par de cortes separados por exactamente un día**, en todo el registro.
+Ninguna regeneración observada en fin de semana; las tres conocidas caen martes,
+jueves y martes.
+
+**La calidad de cada fila es distinta y conviene no aplanarla:** las del 21, 26 y
+28 son observaciones directas; la del 27 es una deducción —si hubiera habido un
+corte del 27, sería el que está vivo hoy—; el resto son huecos donde nadie miró.
+
+#### No es una caída de la plataforma
+
+El control es el dataset hermano de Adiciones (`cb9c-h8sn`), que escribe en
+continuo (H23) y por lo tanto sirve de testigo:
+
+| Momento | `max(:updated_at)` del hermano |
+|---|---|
+| 26/08 ~20:30 COT | `2026-08-26T11:21:12.119Z` |
+| 28/08 ~10:00 COT | `2026-08-28T09:51:29.013Z` |
+
+La plataforma transaccional está viva y escribiendo. Lo que no corre es el ETL
+que regenera la vista publicada. Son dos sistemas y solo uno está detenido.
+
+#### El dato del 21 estaba en este documento desde el principio
+
+La etapa 1 de H2 anotaba: *"Reconfirmado el 21/08/2026: min = max =
+2026-08-20T09:41:20.358Z"*. Esa consulta se hizo cerca de las 09:37 COT del
+viernes 21 —lo fecha la FASE 3 de H23, cuyos hermanos marcaban 14:28Z y 14:36Z—,
+o sea cinco horas después del final de la ventana de regeneración. **La fuente
+llevaba un día sin regenerar y el documento lo registró como confirmación de que
+todo iba bien.**
+
+No es un dato nuevo: es un dato que estaba mal leído. Y no invalida nada de H2,
+que era lo que la consulta buscaba comprobar. → *ver la lección de método 9.*
+
+#### Qué se cae
+
+- **La palabra "noche"** en todas las frases del proyecto. Lo correcto es "cada
+  vez que se regenera".
+- **El `schedule` del DAG contra las 04:41.** Ningún horario acierta contra un
+  evento que a veces no ocurre. → *D11.*
+- **El `freshness` de 48 h**, que hoy alertaría sobre una fuente sana. → *ver la
+  nota de H8.*
+- **El delta de veinticuatro horas** como cosa que se puede medir a voluntad:
+  exige un par de cortes separados por un día, y no existe ninguno.
+- **El ancho del intervalo de la corrida incremental del 25/08**, que estaba
+  anotado como dos días y está entre dos y cinco. Irrecuperable. → *ver
+  `03_decisiones_capa_raw.md`.*
+
+#### Qué NO se cae
+
+**H2, que sale reforzado.** El reemplazo total se observó cuatro veces. Lo que
+cambia es cada cuánto ocurre, no qué ocurre.
+
+**La premisa del proyecto.** Cada regeneración destruye el estado anterior; que
+ocurra tres veces por semana en vez de siete no la debilita en nada. Si acaso al
+revés: menos cortes significa menos oportunidades de capturar la historia, y
+perder una cuesta más.
+
+**El diseño de la capa raw.** `observado_desde` / `observado_hasta` ya había
+decidido no prometer resolución diaria, y ya estaba escrito que la serie iba a
+tener huecos. La cadencia irregular confirma esa decisión por un camino que no
+se había previsto.
+
+#### El supuesto que se adopta para poder seguir
+
+**Se supone que hay al menos una regeneración por semana.** Es un supuesto de
+planificación y **no un dato**: el salto máximo observado es de cinco días y el
+salto en curso, al cerrar esta nota, es de tres. Se verifica con un **registro de
+sondeo**: una línea por día con la fecha, la hora COT y el valor de
+`max(:updated_at)`. Si algún intervalo pasa de siete días, este hallazgo hay que
+reescribirlo.
+
+Del registro dependen tres cosas que hoy no se pueden fijar: el umbral de
+`freshness`, el margen del DAG y si existe un patrón de días hábiles.
+
+#### Preguntas que deja abiertas
+
+1. ¿Regenera los fines de semana? Ninguna observación, y los tres cortes
+   conocidos son de días hábiles.
+2. ¿Hay un anuncio público de la ANCP-CCE sobre interrupciones del proceso ETL?
+   Si lo hay, es una cita para el README.
+3. ¿La ventana de 35 minutos aguanta con más observaciones, o es un artefacto de
+   tener solo tres?
 
 ---
 
@@ -772,6 +1152,18 @@ Aplicables a cualquier fuente futura, no solo a esta.
    una vista derivada, siéndolo. Adentro: el tipo `ADICION EN EL VALOR` existe
    como categoría pero no sirve como filtro, porque hay adiciones escondidas en
    el tipo genérico. Que una categoría exista no significa que sea exhaustiva.
+9. **Una frecuencia declarada no es una medición, y una confirmación puede tapar
+   un hallazgo.** La ficha declaraba frecuencia diaria y nadie la comprobó
+   durante ocho días de exploración. Peor: la evidencia de lo contrario **ya
+   estaba en este documento**, anotada como "reconfirmado" porque confirmaba lo
+   que se le estaba preguntando (H2, el reemplazo total) mientras contradecía en
+   silencio lo que no se le preguntaba (la cadencia). Ver H34.
+
+   El corolario es incómodo y general: **una consulta hecha para confirmar A
+   puede contener la refutación de B, y solo se ve si uno mira el dato entero.**
+   La defensa concreta es barata: anotar siempre *cuándo* se hizo la consulta,
+   no solo qué devolvió. Fue la hora de la corrida del 21 —recuperada desde los
+   datasets hermanos— lo que permitió releer ese dato ocho días después.
 
 ---
 
@@ -823,13 +1215,39 @@ Aplicables a cualquier fuente futura, no solo a esta.
    cierra recontando el PDF contra el endpoint de metadatos.
 5. **¿`origen_de_los_recursos` es redundante con las seis fuentes de
    financiación?** En una fila coincidía; una fila genera hipótesis, no
-   conclusión. Requiere un cruce sobre el dataset completo.
+   conclusión. Requiere un cruce sobre el dataset completo. Se puede contestar
+   contra raw, con el mismo recorrido que cerró RN1 (ver la pregunta 13): las
+   seis columnas están en las 2.824.446 filas.
 6. **¿Por qué `saldo_cdp` no se consume con la ejecución?**
 7. **¿La llave de `dim_proveedor` es `documento_proveedor` o `codigo_proveedor`?**
 8. **¿Aporta algo `SECOP II – Ejecución de Contratos`?** Sin evaluar. Es el
    candidato obvio para la serie de pagos que H9 demostró que no existe.
 9. **¿Por qué la ANCP-CCE dejó de publicar OCDS en abril de 2022?** Si hay un
    anuncio público, es una cita valiosa para el README.
+10. **¿La fuente regenera los fines de semana?** (H34) Ninguna observación; las
+    tres regeneraciones conocidas caen martes, jueves y martes. Lo contesta el
+    registro de sondeo, no una consulta.
+11. **¿Hay un anuncio público sobre interrupciones del ETL de la ANCP-CCE?**
+    (H34) Tres días consecutivos sin regenerar, con la plataforma transaccional
+    escribiendo normalmente, es lo bastante visible como para que alguien lo
+    haya dicho. Si existe, es cita de README igual que la pregunta 9.
+12. **¿Contra qué se mide el `freshness` de dbt?** Contra `ultima_actualizacion`
+    mide el rezago del negocio; contra `:updated_at` mide si la fuente se
+    regeneró. Son dos alertas distintas y hoy solo está contemplada la primera,
+    con un umbral —48 h— que H34 dejó sin piso.
+13. **¿Por qué 93.557 contratos vivos no cierran RN1, y siempre por defecto?**
+    Medido el 28/08 contra raw: el 3,31% del universo vivo declara fuentes de
+    financiación que suman **menos** que su propio `valor_del_contrato`, con
+    diferencias de hasta 1.062 millones. Las tres explicaciones posibles y la
+    vía para separarlas están en H6, desagregación de financiación. **No bloquea
+    a `stg_contratos`**: bloquea el umbral con el que RN1 falla en dbt.
+14. **¿Por qué `liquidaci_n = "Si"` y `fecha_inicio_liquidacion` no coinciden?**
+    290.792 contra 292.694, 1.902 de diferencia. O miden cosas distintas, o hay
+    incoherencia en la fuente. Se cierra con una consulta cruzada sobre raw.
+15. **¿Cuántos de los 32 contratos por encima del billón son reales?** El
+    mínimo es 1,07 billones, que una obra grande puede valer; el máximo supera
+    23 veces el PGN. Separar los legítimos de la basura es lo que RN13 tiene que
+    resolver, y el umbral de sospecha todavía no está fijado.
 
 ---
 
