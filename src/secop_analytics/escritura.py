@@ -39,23 +39,23 @@ abrir el manifiesto.
 El trabajo caro no es escribir —con la deduplicación de D3 son ~2 MB
 comprimidos por noche— sino las ~566 llamadas a la API, veinte minutos.
 
-Los límites de trozo son los puntos donde el stream de compresión **se cierra**.
-Un `.gz` cortado a la mitad tiene la cola corrupta y el archivo entero se vuelve
-sospechoso; por eso no se apendea a un archivo abierto y se reanuda (era la
+Los límites de trozo son los puntos donde el stream de compresión se cierra. Un
+`.gz` cortado a la mitad tiene la cola corrupta y el archivo entero se vuelve
+sospechoso, así que no se apendea a un archivo abierto y se reanuda (era la
 opción 2 de D2, descartada).
 
 ## Cómo se reanuda
 
 `punto_de_control()` anota el último `id_contrato` visto. Al reabrir la
 partición, `_retomar()` lo recupera en `self.cursor`, y el orquestador se lo
-pasa al flujo como `desde_cursor`. Morir en la página 550 no cuesta volver a
+pasa al flujo como `desde_cursor`. Morir en la página 550 cuesta volver a
 bajar las 550.
 
-**El cursor del manifiesto nunca va por delante del disco.** Anotar una página
-no la confirma: el cursor solo pasa al manifiesto cuando el buffer está vacío,
-o sea cuando esas líneas ya están dentro de un `.gz` cerrado. Si no lo fuera,
-una muerte dura —`SIGKILL`, corte de luz, OOM; no una excepción, que el `with`
-sí alcanza a cubrir— dejaría el manifiesto diciendo "ya pasé por acá" con las
+El cursor del manifiesto nunca va por delante del disco. Anotar una página no
+la confirma: el cursor solo pasa al manifiesto cuando el buffer está vacío, o
+sea cuando esas líneas ya están dentro de un `.gz` cerrado. Si no lo fuera, una
+muerte dura —`SIGKILL`, corte de luz, OOM; no una excepción, que el `with` sí
+alcanza a cubrir— dejaría el manifiesto diciendo "ya pasé por acá" con las
 filas evaporadas en memoria, y la reanudación no volvería a pedirlas nunca.
 
 Por eso el trozo se cierra por **dos** cotas, la que ocurra primero: líneas
@@ -71,7 +71,7 @@ El cursor es el mismo mecanismo que hace avanzar la paginación normal: retomar
 es idéntico a pedir la página siguiente. No hay un camino especial de
 reanudación que pueda pudrirse sin que nadie lo note.
 
-## Los dos invariantes que este módulo hace cumplir
+## Los dos invariantes que este módulo sostiene
 
 1. **La línea se escribe antes de que el índice se entere.** Este módulo no
    conoce el índice: el orquestador llama primero acá y después a `registrar()`.
@@ -92,11 +92,11 @@ en raw lo dice.
 Por eso el manifiesto lleva el corte, y `ingestas_previas()` lo lee. Ver D10 y
 D11.
 
-⚠ **El guardarraíl de `_solo_lectura` no cubre ese eje.** Reabrir un directorio
-ya completo está bloqueado, pero eso protege una unidad de trabajo contra sí
-misma *en la misma fecha*. Correr hoy y mañana contra el mismo corte da dos
-directorios distintos: no falla, no avisa, y escribe una partición vacía después
-de bajar 2,8 millones de filas.
+El guardarraíl de `_solo_lectura` protege una unidad de trabajo contra sí misma
+en la misma fecha, bloqueando reaperturas de un directorio ya completo. Pero no
+cubre el eje de regeneración: correr hoy y mañana contra el mismo corte da dos
+directorios distintos, y puede escribir una partición vacía después de bajar
+2,8 millones de filas sin fallar ni avisar.
 
 ## Atomicidad
 
@@ -147,13 +147,13 @@ PAGINAS_POR_TROZO: Final[int] = 20
 def _validar_particion(particion: str) -> str:
     """La partición va en una ruta, así que no puede traer separadores.
 
-    Un `particion="2020/01"` crearía un nivel extra de directorio en silencio y
-    rompería la regla de un directorio por unidad de trabajo. Falla temprano.
+    Un `particion="2020/01"` crearía un nivel extra de directorio en silencio
+    y rompería la regla de un directorio por unidad de trabajo.
     """
     if not particion:
         raise ValueError(
-            "La partición no puede estar vacía: es lo que distingue dos "
-            "unidades de trabajo del mismo flujo en la misma fecha."
+            "La partición no puede estar vacía: es lo que distingue dos unidades "
+            "de trabajo del mismo flujo en la misma fecha."
         )
     prohibidos = set('/\\ =') & set(particion)
     if prohibidos:
@@ -166,6 +166,8 @@ def _validar_particion(particion: str) -> str:
 
 class ParticionRaw:
     """Escribe una partición de raw. Reanudable y atómica.
+
+    Ejemplo de uso:
 
         with ParticionRaw(base, flujo="refresco_de_vivos",
                           fecha_extraccion="2026-08-21",
@@ -180,7 +182,7 @@ class ParticionRaw:
             p.completar()
 
     Si `completar()` no se llama, la partición queda sin `_COMPLETO` y dbt la
-    ignora. Eso es deliberado: una partición a medias no debe ser legible.
+    ignora. Eso es deliberado: una partición incompleta no debe ser legible.
     """
 
     def __init__(
@@ -242,8 +244,8 @@ class ParticionRaw:
         self._inicio: float = 0.0
         # Si la partición ya estaba completa al abrirla, este objeto no debe
         # tocar nada: sus contadores están en cero y guardar el manifiesto lo
-        # pisaría con ceros, dejándolo mintiendo sobre los trozos que sí están
-        # en disco. No falla y no avisa.
+        # pisaría con ceros, dejándolo con información falsa sobre los trozos
+        # que sí están en disco.
         self._solo_lectura: bool = False
 
     # -- ciclo de vida ----------------------------------------------------
@@ -324,7 +326,7 @@ class ParticionRaw:
         ):
             if self.verboso:
                 print(
-                    f"  ⚠ el progreso en disco es de otro corte de la fuente\n"
+                    f"  el progreso en disco es de otro corte de la fuente\n"
                     f"     en disco: {corte_viejo}\n"
                     f"     ahora:    {self.corte_al_iniciar}\n"
                     f"     Retomarlo mezclaría dos estados en un directorio. Se "
@@ -368,10 +370,10 @@ class ParticionRaw:
         El cursor es el último `id_contrato` de la página confirmada: el punto
         desde el que `paginar()` reanuda el keyset si la partición se retoma.
 
-        Anotarlo acá **no** lo confirma. Solo pasa al manifiesto cuando el
-        buffer está vacío, o sea cuando sus líneas ya están en disco; de eso se
-        encarga `_guardar_manifiesto()`. El trozo se cierra al llenarse por
-        líneas o al cumplirse `paginas_por_trozo`, lo que ocurra primero (I5).
+        Anotarlo acá no lo confirma. Solo pasa al manifiesto cuando el buffer
+        está vacío, o sea cuando sus líneas ya están en disco. El trozo se
+        cierra al llenarse por líneas o al cumplirse `paginas_por_trozo`, lo
+        que ocurra primero (I5).
         """
         if cursor is not None:
             self._cursor_pendiente = cursor
@@ -403,17 +405,16 @@ class ParticionRaw:
     # -- manifiesto y cierre ----------------------------------------------
 
     def _guardar_manifiesto(self) -> None:
-        # EL INVARIANTE DE I5, y vive acá porque este es el único punto donde el
-        # cursor llega al disco. El manifiesto nunca puede anunciar un avance
-        # mayor que lo efectivamente escrito: si quedan líneas en el buffer, el
-        # cursor se queda donde estaba y la próxima corrida rebaja esas páginas.
-        # Reescribir filas es el error que sobra; perderlas es el que falta, y
-        # la fuente se sobrescribe cada noche.
+        # El invariante de I5: el manifiesto nunca puede anunciar un avance
+        # mayor que lo efectivamente escrito. Si quedan líneas en el buffer, el
+        # cursor se queda donde estaba y la próxima corrida rebaja esas
+        # páginas. Reescribir filas es el error que sobra; perderlas es el que
+        # falta, y la fuente se sobrescribe cada noche.
         #
         # La condición es "el buffer está vacío", no "se acaba de cerrar un
-        # trozo": en una corrida donde no cambió nada no se escribe ni una
-        # línea, nunca se cierra un trozo, y con la regla del trozo el cursor
-        # no avanzaría jamás.
+        # trozo": en una corrida donde no cambió nada no se escribe ni una línea,
+        # nunca se cierra un trozo, y con la regla del trozo el cursor no
+        # avanzaría jamás.
         if not self._buffer:
             self._cursor = self._cursor_pendiente
 
@@ -479,7 +480,7 @@ class ParticionRaw:
         )
         if a_caballo and self.verboso:
             print(
-                f"  ⚠ PARTICIÓN A CABALLO DE DOS CORTES\n"
+                f"  PARTICIÓN A CABALLO DE DOS CORTES\n"
                 f"     empezó con {self.corte_al_iniciar}\n"
                 f"     terminó con {self.corte_al_terminar}\n"
                 f"     Las primeras páginas y las últimas vienen de estados "

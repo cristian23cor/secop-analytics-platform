@@ -70,12 +70,12 @@ def canonicalizar(fila: dict[str, Any]) -> bytes:
     Dos diccionarios con las mismas claves y valores producen los mismos bytes,
     sin importar en qué orden los devolvió la API.
 
-    ⚠ NO rellena las claves que la API omitió. D1 prohíbe normalizar en raw.
+    No rellena las claves que la API omitió. D1 prohíbe normalizar en raw.
 
-    La consecuencia hay que conocerla antes de "arreglarla": si una noche la API
+    La consecuencia hay que conocerla antes de cambiar esto: si una noche la API
     omite `ultima_actualizacion` y a la siguiente la manda como `null` sin que
     nada haya cambiado, el hash cambia y se guarda una fila de más. Es el error
-    que SOBRA, o sea el aceptable — el diseño entero está construido sobre
+    que sobra, o sea el aceptable — el diseño entero está construido sobre
     preferir el error que sobra al que falta. Rellenar acá lo convertiría en un
     error que falta, y además rompería D1.
     """
@@ -148,7 +148,7 @@ def verificar_linea(linea: bytes) -> bool:
     Vive acá y no en el script de verificación porque el invariante es de este
     módulo. Reimplementarla afuera crea dos definiciones de lo mismo.
 
-    ⚠ **Depende de que todos los valores sean texto** (H6). El viaje de ida y
+    Depende de que todos los valores sean texto (H6). El viaje de ida y
     vuelta por `json.loads` preserva los strings exactamente, pero no
     necesariamente los números: un `1.10` volvería como `1.1` y esta función
     reportaría una discrepancia sin que nada esté roto. Hoy la fuente entrega

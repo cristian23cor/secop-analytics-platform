@@ -69,7 +69,7 @@ ESTADOS_VIVOS: Final[tuple[str, ...]] = (
 class Flujo(StrEnum):
     """Etiqueta de por qué se pidió cada fila.
 
-    ⚠ **Este módulo no la agrega a las filas.** Los tres flujos devuelven lo
+    Este módulo no la agrega a las filas. Los tres flujos devuelven lo
     que la API entregó, sin tocar nada; etiquetar es trabajo del cargador. Acá
     solo viven los nombres, para que el cargador y la ruta en disco usen los
     mismos.
@@ -77,9 +77,9 @@ class Flujo(StrEnum):
     Los flujos se solapan a propósito: un contrato firmado y modificado el
     mismo día llega por dos caminos. No se deduplica acá.
 
-    ⚠ Y una consecuencia de la deduplicación por bytes: cuando dos flujos traen
+    Una consecuencia de la deduplicación por bytes: cuando dos flujos traen
     la misma fila idéntica, solo se guarda una vez, con la etiqueta del que
-    llegó **primero**. O sea que en raw la etiqueta significa "quién lo trajo
+    llegó primero. O sea que en raw la etiqueta significa "quién lo trajo
     antes", no "por qué caminos podía llegar". Si algún día hace falta lo
     segundo, se cuenta en el cargador antes de deduplicar y se anota en el
     manifiesto.
@@ -183,19 +183,19 @@ def refresco_de_vivos(
     justifica la arquitectura: detecta los avances de ejecución financiera, que
     no tienen ninguna columna de fecha que los delate (H9).
 
-    Sus parámetros de fecha **no son una ventana de cambio** como en los otros
-    dos flujos —no existe tal ventana, ese es el punto— sino una **partición de
-    paralelismo**: un reparto del universo vivo entre varios procesos de la
-    **misma corrida**. Sin ellos, recorre los ~2.825.685 contratos vivos.
+    Sus parámetros de fecha no son una ventana de cambio como en los otros
+    dos flujos —no existe tal ventana, ese es el punto— sino una partición de
+    paralelismo: un reparto del universo vivo entre varios procesos de la
+    misma corrida. Sin ellos, recorre los ~2.825.685 contratos vivos.
 
     La corrida ocurre una vez por cada regeneración de la fuente, que no es
     todos los días (H34). Qué dispara el flujo lo decide el corte, no el
     calendario: ver D11 en `03_decisiones_capa_raw.md`.
 
-    ⚠ **No confundir con una ventana de backfill.** Darle fechas viejas no
-    reprocesa el pasado: devuelve el estado de hoy de los contratos firmados
-    entonces. El guardarraíl que lo impide vive en el orquestador, no acá —
-    este módulo no sabe con qué fecha se está escribiendo. Ver R1 en
+    Los parámetros de fecha no son una ventana de backfill. Darle fechas
+    viejas no reprocesa el pasado: devuelve el estado de hoy de los contratos
+    firmados entonces. El guardarraíl que lo impide vive en el orquestador, no
+    acá — este módulo no sabe con qué fecha se está escribiendo. Ver R1 en
     `03_decisiones_capa_raw.md`.
     """
     condiciones = [_en_estados_vivos()]

@@ -179,15 +179,17 @@ def paginar(
         # Una página incompleta significa que no hay más: evita una petición
         # de más por cada recorrido.
         #
-        # ⚠ Esto asume que la API devuelve exactamente `limite` filas cuando
-        # hay al menos esas. Si algún día capara el `$limit` por debajo de lo
-        # pedido —por ejemplo a 1.000 cuando se piden 5.000— **cada página
-        # parecería la última** y el recorrido terminaría tras la primera, sin
-        # error y sin aviso.
+        # El diseño asume que la API devuelve exactamente `limite` filas cuando
+        # hay al menos esas cantidades disponibles. Si en el futuro capara el
+        # `$limit` por debajo de lo pedido —por ejemplo limitándose a 1.000
+        # cuando se solicitan 5.000— cada página parecería ser la última y el
+        # recorrido terminaría tras la primera sin error ni aviso, perdiendo el
+        # resto del dataset en silencio.
         #
-        # La red que cubre eso es `scripts/verificar_extraccion.py`, que
-        # compara el total recorrido contra un `count(*)` del servidor. Si esa
-        # verificación se borra, este atajo se queda sin respaldo.
+        # El respaldo que sostiene este atajo es `scripts/verificar_extraccion.py`,
+        # que compara el total de filas recorridas contra un `count(*)` del servidor.
+        # Si esa verificación se borra, este razonamiento queda sin fundamento y
+        # habría que revisar la lógica de terminación.
         if len(pagina) < limite:
             return
 
@@ -280,10 +282,14 @@ def corte(
       fuente saltando días, dos particiones con fechas distintas pueden
       contener el mismo estado (D10).
 
-    ⚠ **`:updated_at` sirve como llave del corte y NO como watermark de fila.**
-    Son usos opuestos y conviene no confundirlos: el inventario lo descarta como
-    watermark, con razón, porque es idéntico en todas las filas. Esa misma
-    propiedad es la que lo hace único por regeneración.
+    ## `:updated_at` como llave del corte, no como watermark de fila
+
+    Estos son usos opuestos que es fácil confundir. El inventario descarta
+    `:updated_at` como watermark para detectar cambios, y con razón: es idéntico
+    en todas las filas de un corte. Pero esa misma propiedad —el hecho de que
+    sea invariante dentro de un estado— es precisamente lo que lo hace funcionar
+    como llave única de ese estado. Son dos cosas que se contradicen solo si
+    uno olvida que las usa en contextos opuestos.
 
     Si la petición falla —429, 5xx, timeout— la excepción sube y la corrida se
     aborta. Es deliberado: reintentar es volver a escribir el comando y no se

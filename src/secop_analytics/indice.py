@@ -48,8 +48,8 @@ Medición de carga, con 2.825.685 contratos (ver I4):
 
 La opción "prudente" resultó 47× más lenta para proteger 185 MB. Se carga todo.
 
-⚠ Cuatro particiones en paralelo son cuatro copias: ~740 MB. Manejable hoy; si
-el dataset se duplica, reevaluar.
+Cuatro particiones en paralelo son cuatro copias: ~740 MB. Manejable hoy; si
+el dataset se duplica, hay que reevaluar el costo de memoria.
 """
 
 from __future__ import annotations
@@ -227,7 +227,15 @@ class IndiceHashes:
     def registrar(
         self, id_contrato: str, huella: str, *, fecha_extraccion: str, flujo: str
     ) -> None:
-        """Anota en memoria. **Llamar DESPUÉS de escribir la línea al archivo.**"""
+        """Anota en memoria el hash de esta observación.
+
+    Se llama **después** de escribir la línea al archivo, no antes. El orden
+    es el invariante D2/1: si falla entre escribir el archivo e anotar el
+    índice, la próxima corrida ve el archivo en raw pero el índice no lo
+    registra como conocido, y por eso lo vuelve a guardar — duplicado aceptable.
+    Si fuera al revés (índice primero, archivo después), un fallo a mitad dejaría
+    el índice diciendo "ya vi este contrato" con la fila en ninguna parte.
+    """
         self._pendientes[id_contrato] = (huella, fecha_extraccion, flujo)
 
     def volcar(self) -> int:
@@ -290,20 +298,22 @@ class IndiceHashes:
         el objetivo es reproducir el estado del índice, no reauditar raw. Para
         eso segundo está `hashing.verificar_linea()`.
 
-        ⚠ **`desde_cero` cambia el significado de la operación.**
+        ## El parámetro `desde_cero` cambia la semántica de la operación
 
-        En `False` —el defecto— esto es una **fusión**: los contratos que estén
-        en la tabla y no en las observaciones **sobreviven**. Es lo correcto si
-        se está alimentando el índice partición por partición.
+        En `False` —el defecto— funciona como una **fusión**: los contratos
+        presentes en la tabla pero ausentes en las observaciones **se conservan**.
+        Es el comportamiento correcto al alimentar el índice partición por
+        partición, donde cada llamada aporta solo una ventana del raw total.
 
-        En `True` se vacía la tabla antes de escribir, y el resultado refleja
-        exactamente lo que traen las observaciones. Es lo correcto si se está
-        rehaciendo el índice entero desde todo raw, y es la única forma de
-        sacar entradas equivocadas de un índice corrupto: una fusión las
-        conservaría.
+        En `True` se vacía la tabla antes de escribir, de modo que el resultado
+        refleja **exactamente** lo que traen las observaciones. Es lo correcto al
+        reconstruir el índice entero desde todo raw, y es la única vía para
+        expurgar entradas inválidas de un índice corrupto: una fusión las
+        mantendría indefinidamente.
 
-        Elegir mal no falla ni avisa. Deja un índice que dice conocer contratos
-        que raw no respalda, y esos contratos no se vuelven a guardar nunca.
+        Elegir el modo equivocado no levanta error ni emite aviso. Solo deja el
+        índice en un estado incoherente: con contratos registrados como conocidos
+        que raw nunca respalda, y que en consecuencia nunca vuelven a guardarse.
         """
         self._conocidos.clear()
         self._pendientes.clear()
