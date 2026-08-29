@@ -1,27 +1,27 @@
 {#-
-  Ayudantes de `stg_contratos`. Escritos a mano, a diferencia de
-  `columnas_generado.sql`: acá vive la LÓGICA de limpieza, allá los DATOS del
-  esquema. Mezclarlas obligaría a regenerar el archivo cada vez que cambia una
-  regla que no tiene nada que ver con las columnas.
+  Estos helper macros viven en `stg_contratos` porque representan la lógica de
+  limpieza, mientras que `columnas_generado.sql` guarda la definición del esquema.
+  Separarlos ayuda a mantener ambas capas estables: cuando una regla de limpieza
+  cambia, no obliga a regenerar la lista de columnas ni a tocar el esquema.
 -#}
 
 {#-
-  El valor sin el centinela de texto.
+  Esta limpieza quita los centinelas de texto antes del casteo.
 
-  "No definido" y "No Definido" son nulos disfrazados, en las dos
-  capitalizaciones que la fuente usa (H6). Se limpian ANTES de castear: si no,
-  "No definido" en una columna monetaria fallaría el cast y contaría como
-  basura, cuando en realidad es un nulo.
+  "No definido" y "No Definido" son nulos disfrazados en las dos capitalizaciones
+  que usa la fuente (H6). Si no se eliminan antes del cast, un valor como "No
+  definido" en una columna monetaria termina en un casting fallido que se cuenta
+  como basura, aunque en realidad representa un nulo.
 
-  La lista de centinelas viene de `columnas.py` y no está escrita acá, para que
-  agregar uno no requiera tocar dos archivos.
+  La lista de centinelas viene desde `columnas.py`, y no se replica aquí para que
+  agregar uno no requiera tocar dos archivos distintos.
 -#}
-{#- ⚠ `namespace` y no un `set` suelto: en Jinja, una asignación hecha DENTRO
-    de un bucle no sobrevive al bucle. Escrito de la forma obvia, este macro
-    devolvía el nombre de la columna pelado y los centinelas no se limpiaban
-    nunca — y el modelo seguía compilando y corriendo. Lo delató el contador de
-    castings fallidos, que los contó como basura porque el `try_cast` los
-    volvía nulos por la vía equivocada. -#}
+{#- La forma con `namespace` aparece por un detalle de Jinja: una asignación hecha
+    dentro de un bucle no sobrevive al ciclo si se usa un `set` simple. Cuando se
+    escribió de la forma obvia, el macro devolvía el nombre de la columna sin
+    transformar y los centinelas nunca se limpiaban. Esa falla quedó visible en el
+    contador de castings fallidos, que registraba esos valores como basura aunque el
+    problema venía del tratamiento previo. -#}
 {% macro sin_centinela(columna) -%}
     {%- set ns = namespace(valor=columna) -%}
     {%- for centinela in centinelas() -%}
@@ -31,12 +31,12 @@
 {%- endmacro %}
 
 {#-
-  El tipo al que va cada columna. Un solo lugar donde se decide, usado tanto
-  por la proyección como por el contador de fallos: si estuvieran escritos por
-  separado, podrían discrepar y el contador mediría otra cosa que lo que la
-  columna guarda.
+  Este macro centraliza el tipo de cada columna. La misma decisión se usa tanto en
+  la proyección como en el contador de fallos: si la clasificación se repitiera en
+  varios puntos, podrían separarse las reglas y el contador mediría algo distinto a
+  lo que realmente guarda la columna.
 
-  Devuelve `none` para las que quedan como texto.
+  Devuelve `none` para las columnas que se mantienen como texto.
 -#}
 {% macro tipo_de(columna) -%}
     {%- if columna in columnas_monetarias() -%}

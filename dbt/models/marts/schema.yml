@@ -2,42 +2,40 @@ version: 2
 
 # Tests de `fct_contratos_snapshot`.
 #
-# ## Por qué éstos son `error` y los de staging son `warn`
+# ## Por qué estos son `error` y los de staging son `warn`
 #
-# Los de staging —RN12, RN13— fallan por datos sucios de la fuente, que no
-# controlamos: puestos como `error` dejarían la construcción roja para siempre y
-# eso enseña a ignorar la suite.
+# Los de staging, RN12 y RN13, fallan por datos sucios de la fuente, que no
+# controlamos. Como `error` dejarían la construcción roja para siempre, y una suite
+# siempre roja enseña a ignorarse.
 #
-# Éstos son distintos. Los tres dan **cero hoy** y comprueban invariantes del
-# modelo, no calidad del dato. Si alguno falla, el SCD2 está mal construido: la
-# ventana quedó mal particionada, o el `lead` se rompió. Eso es un fallo NUESTRO
-# y tiene que detener la construcción.
+# Estos verifican invariantes del modelo, no la calidad del dato en bruto. Hoy dan
+# cero. Si alguno falla, el SCD2 quedó mal construido: la ventana mal particionada, o
+# el `lead` sin reflejar el patrón esperado. Eso es un fallo nuestro y tiene que
+# detener la construcción.
 #
-# ## Lo que los hace valiosos: los tres fallos son silenciosos
-#
-# Un SCD2 roto no explota. Produce una tabla que se ve bien, con las columnas
-# esperadas y un conteo plausible, y devuelve resultados de más o de menos sin
-# que nada avise. Estos tests son la única forma de notarlo.
+# Vale la pena porque un SCD2 roto no explota. Produce una tabla que se ve bien, con
+# las columnas esperadas y un conteo razonable, y devuelve resultados de más o de
+# menos sin avisar.
 
 models:
   - name: fct_contratos_snapshot
     description: >
-      La serie temporal que la fuente destruye: una fila por cada estado
-      distinto que un contrato tuvo, con intervalos semiabiertos. Versiona por
-      las 28 columnas materiales (D6); las cosméticas quedan congeladas en la
-      observación que abrió la versión.
+      Esta tabla reconstruye la historia del contrato con una fila por cada estado
+      distinto que tuvo, usando intervalos semiabiertos. Versiona por las 28 columnas
+      materiales (D6); las cosméticas quedan congeladas en la observación que abrió la
+      versión.
     data_tests:
       - unique:
           column_name: "id_contrato || '#' || version"
           config:
             severity: error
-            # La llave de la tabla. Un duplicado significa que la ventana quedó
-            # mal particionada, y entonces `version` no numera lo que dice.
+            # La llave de la tabla. Un duplicado indica que la ventana quedó mal
+            # particionada y que `version` ya no numeró lo que en realidad sucedió.
             #
             # El separador es un carácter que no aparece en los `id_contrato`
-            # observados —son alfanuméricos con puntos— para que ('a#1', 2) y
-            # ('a', '1#2') no colisionen. Concatenar sin separador es el error
-            # clásico de esta clase de test.
+            # observados —son alfanuméricos con puntos— para que (`a#1`, 2) y
+            # (`a`, `1#2`) no colisionen. Concatenar sin separador es el error
+            # clásico de este tipo de test.
 
     columns:
       - name: id_contrato
@@ -55,9 +53,9 @@ models:
 
       - name: observado_desde
         description: >
-          Cuándo se vio este estado por primera vez. ⚠ NO es cuándo empezó a
-          valer: la fuente no se regenera a diario (H34), así que entre dos
-          observaciones puede haber días en los que nadie miró.
+          Cuándo se vio este estado por primera vez. No es el momento en que empezó a
+          valer: la fuente no se regenera a diario (H34), así que entre dos observaciones
+          puede haber días en los que nadie lo miró.
         data_tests:
           - not_null:
               config:
@@ -65,9 +63,9 @@ models:
 
       - name: observado_hasta
         description: >
-          Cuándo se vio el estado siguiente. Nulo en la versión vigente, que es
-          D8: no se usa una fecha futura falsa para ahorrarse manejar nulos.
-          Intervalo semiabierto, igual que `_rango()` en la ingesta.
+          Cuándo se vio el estado siguiente. Es nulo en la versión vigente, que es D8:
+          no se usa una fecha futura falsa para ahorrarse manejar nulos. El intervalo es
+          semiabierto, igual que `_rango()` en la ingesta.
 
       - name: es_version_vigente
         data_tests:
@@ -77,10 +75,9 @@ models:
 
   - name: dim_entidad
     description: >
-      Quién contrata, con historia. 5.162 entidades. La llave es
-      `codigo_entidad`, medida: cada código tiene exactamente un NIT y un
-      nombre. Se une con el hecho por llave Y rango de fechas — usar el macro
-      `vigente_en()`, no escribir la unión a mano.
+      Quién contrata, con historia. Hay 5.162 entidades. La llave es `codigo_entidad`,
+      y cada código tiene exactamente un NIT y un nombre. La unión con el hecho se hace
+      por llave y rango de fechas usando el macro `vigente_en()`.
     data_tests:
       - unique:
           column_name: "codigo_entidad || '#' || version"
@@ -89,27 +86,26 @@ models:
     columns:
       - name: codigo_entidad
         description: >
-          Llave. ⚠ NO usar `nit_entidad` en su lugar: 281 NITs tienen más de un
-          código, porque hay entidades jurídicas con varias unidades ejecutoras
-          que contratan por separado (el SENA y sus regionales).
+          Llave. `nit_entidad` no sirve como reemplazo: 281 NITs tienen más de un código,
+          porque hay entidades jurídicas con varias unidades ejecutoras que contratan por
+          separado (por ejemplo, el SENA y sus regionales).
         data_tests:
           - not_null:
               config:
                 severity: error
       - name: nombre_entidad
         description: >
-          ⚠ 5.140 nombres para 5.162 códigos: 22 nombres se repiten entre
-          entidades distintas. Puede ser homonimia real —dos hospitales San José
-          en departamentos distintos— o suciedad. No agrupar por nombre en un
-          tablero sin saber esto.
+          Hay 5.140 nombres para 5.162 códigos: 22 nombres se repiten entre entidades
+          distintas. Puede ser homonimia real —dos hospitales San José en departamentos
+          distintos— o suciedad. Eso importa si se quiere agrupar por nombre en un tablero.
       - name: observado_hasta
         description: Nulo en la versión vigente. Intervalo semiabierto, igual que el hecho.
 
   - name: dim_proveedor
     description: >
-      Quién recibe el dinero, con historia. 929.946 proveedores. La llave es
-      `codigo_proveedor`: cero nulos, y solo 15 con más de un documento contra
-      1.297 al revés. Se une con el hecho por llave Y rango — usar
+      Quién recibe el dinero, con historia. Hay 929.946 proveedores. La llave es
+      `codigo_proveedor`: tiene cero nulos y solo 15 casos con más de un documento,
+      frente a 1.297 al revés. La unión con el hecho se hace por llave y rango usando
       `vigente_en()`.
     data_tests:
       - unique:
@@ -124,28 +120,28 @@ models:
                 severity: error
       - name: documento_proveedor
         description: >
-          Identificador legal, y la vía hacia cruces con fuentes externas. NO es
-          la llave: tiene 8.917 nulos. ⚠ 1.297 documentos aparecen con más de un
-          `codigo_proveedor` — duplicación de catálogo de la fuente. Agrupar por
-          documento los une, y para "cuánto contrató esta empresa en total" eso
-          es lo correcto; es decisión del consumidor.
+          Identificador legal y vía hacia cruces con fuentes externas. No es la llave:
+          tiene 8.917 nulos. Hay 1.297 documentos con más de un `codigo_proveedor`,
+          que refleja duplicación del catálogo de la fuente. Agrupar por documento los
+          une, y para preguntas del tipo "cuánto contrató esta empresa en total" esa
+          es la respuesta correcta.
       - name: tipodocproveedor
         description: >
-          ⚠ NO sirve para derivar tipo de persona. Falla en las dos direcciones:
-          S.A.S. marcadas como cédula y personas naturales marcadas como NIT. Se
-          conserva como evidencia de lo que la fuente declara.
+          No sirve para derivar el tipo de persona. Falla en ambas direcciones: hay
+          S.A.S. marcadas como cédula y personas naturales marcadas como NIT. Se conserva
+          como evidencia de lo que la fuente declara.
       - name: tiene_documentos_en_conflicto
         description: >
-          El mismo código con más de un documento en la misma observación. 15
-          casos: dedazos, uniones temporales, y al menos uno donde el código
-          apunta a una empresa y a una persona natural. Se marca, no se corrige.
+          El mismo código con más de un documento en la misma observación. Hay 15 casos:
+          digitaciones, uniones temporales y al menos uno donde el código apunta a una
+          empresa y a una persona natural. Se marca, no se corrige.
 
   - name: dim_modalidad
     description: >
-      Cómo se contrató. 232 filas, sin historia: cero contratos cambiaron de
-      modalidad en 2,9 millones de observaciones. La llave es un hash de los
-      tres valores, calculado con `llave_de_modalidad()` — el mismo macro que
-      usa el hecho.
+      Cómo se contrató. Tiene 232 filas y no conserva historia: cero contratos
+      cambiaron de modalidad en 2,9 millones de observaciones. La llave es un hash de
+      los tres valores, calculado con `llave_de_modalidad()`, el mismo macro que usa
+      el hecho.
     data_tests:
       - unique:
           column_name: llave_modalidad
@@ -159,14 +155,14 @@ models:
                 severity: error
       - name: modalidad_de_contratacion
         description: >
-          15 valores. El 74% de los contratos son contratación directa; sumando
+          Tiene 15 valores. El 74% de los contratos son contratación directa; sumando el
           régimen especial, la contratación sin licitación abierta supera el 90%.
 
   - name: dim_geografia
     description: >
-      Dónde se ejecuta el contrato. 958 combinaciones de departamento y ciudad,
-      sin historia: cero contratos cambiaron de geografía. `localizaci_n` NO
-      entra — ver el modelo para las tres mediciones que la descartaron.
+      Dónde se ejecuta el contrato. Hay 958 combinaciones de departamento y ciudad, sin
+      historia: cero contratos cambiaron de geografía. `localizaci_n` no entra; la razón
+      quedó documentada en el modelo y en las mediciones que la descartaron.
     data_tests:
       - unique:
           column_name: llave_geografia
@@ -180,7 +176,7 @@ models:
                 severity: error
       - name: sin_ciudad
         description: >
-          ⚠ 611.751 observaciones no tienen ciudad — el 21%. El dato NO está
+          Hay 611.751 observaciones sin ciudad, el 21% del total. El dato no está
           escondido en `localizaci_n`: la fuente no lo publica. Un análisis por
-          municipio deja fuera esa quinta parte, y hay que decirlo en el
-          tablero en vez de compensarlo.
+          municipio deja fuera esa quinta parte, y esa limitación hay que decirla en
+          el tablero en lugar de compensarla.

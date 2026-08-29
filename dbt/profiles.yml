@@ -1,13 +1,13 @@
 # Dos objetivos desde el primer día, aunque hoy solo se use uno.
 #
-# No es previsión de más: es lo que obliga a que ninguna decisión específica de
-# un motor se cuele en `dbt_project.yml` o en los modelos. Un proyecto escrito
-# contra un solo objetivo y portado después no descubre esos acoplamientos
-# hasta el día del porte, que es el peor momento.
+# No es previsión de más: es lo que obliga a que ninguna decisión específíca
+# de un motor se cuele en `dbt_project.yml` o en los modelos. Un proyecto
+# escrito contra un solo objetivo y portado después no descubre esos
+# acoplamientos hasta el día del porte — el peor momento para sorpresas.
 #
-# ⚠ Snowflake NO lee el disco local. El día del porte hay que subir raw a un
-# stage y cambiar `ruta_raw`; el resto de los modelos no cambia. Esa es toda la
-# frontera, y está en un solo modelo a propósito (D9).
+# Snowflake no lee el disco local. El día del porte habrá que subir raw a un
+# stage y cambiar `ruta_raw`; el resto de los modelos no cambia. Esa es toda
+# la frontera, y vive en un solo modelo a propósito (D9).
 
 secop:
   target: dev
@@ -17,12 +17,12 @@ secop:
       type: duckdb
       path: ../datos/secop.duckdb
 
-      # ⚠ UN HILO, Y ESTÁ MEDIDO. No subirlo sin volver a medir.
+      # Hilos = 1, medido y defensible.
       #
-      # La intuición dice que más hilos es más rápido. Acá es al revés, porque
-      # la máquina tiene ~3 GB para DuckDB (R3) y los modelos pesados ordenan
-      # millones de filas: con más de un hilo, dos ordenamientos grandes
-      # coinciden, se pelean por la memoria y los dos vuelcan a disco.
+      # La intuición dice que más hilos es más rápido. Acá sucede lo opuesto
+      # porque la máquina tiene ~3 GB para DuckDB (R3) y los modelos pesados
+      # ordenan millones de filas. Con más de un hilo, dos ordenamientos
+      # grandes coinciden, se pelean por la memoria y ambos vuelcan a disco.
       #
       # Medido el 28/08/2026 sobre la construcción completa:
       #
@@ -31,32 +31,32 @@ secop:
       #     2     458 s        160 s              236 s
       #     1     326 s        6,4 s              100 s
       #
-      # `dim_proveedor` es 24 veces más rápido con un hilo. Y 2 salió PEOR que
-      # 4: el número casi no importa, lo que importa es que `dim_proveedor` y
-      # el snapshot no coincidan — con cualquier valor mayor que 1, coinciden.
+      # `dim_proveedor` es 24 veces más rápido con un hilo. Y 2 salió peor
+      # que 4: el número casi no importa; lo que importa es que `dim_proveedor`
+      # y el snapshot no coincidan. Con cualquier valor mayor que 1, coinciden.
       #
       # De los 326 s, unos 215 son `raw_observaciones` y `stg_contratos`, que
       # corren solos en cualquier configuración. El 66% del tiempo no depende
       # de esto; bajarlo pide materialización incremental, no más hilos.
       threads: 1
 
-      # `extensions` vacío a propósito: leer JSON comprimido es nativo.
+      # Las extensiones que lee JSON comprimido son nativas en DuckDB.
 
     snowflake:
       type: snowflake
       account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
       user: "{{ env_var('SNOWFLAKE_USER', '') }}"
-      # Par de claves y no contraseña: Snowflake dejó de aceptar contraseña sola
-      # para usuarios humanos, y con MFA cada corrida dispararía un push al
-      # teléfono — inviable en `dbt run` desatendido y en Airflow.
+      # Par de claves, no contraseña: Snowflake dejó de aceptar contraseña
+      # sola para usuarios humanos. Con MFA cada corrida dispararía un push al
+      # teléfono, lo que es inviable en `dbt run` desatendido y en Airflow.
       private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
       role: "{{ env_var('SNOWFLAKE_ROLE', 'ACCOUNTADMIN') }}"
       warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'COMPUTE_WH') }}"
       database: "{{ env_var('SNOWFLAKE_DATABASE', 'SECOP') }}"
       schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'PUBLIC') }}"
-      # NO se copia el `threads: 1` de `dev`. Ese número resuelve una
-      # restricción de memoria local (R3) que en Snowflake no existe: allá el
-      # warehouse tiene su propia memoria y el paralelismo sí debería ayudar.
-      # El valor correcto se decide midiendo en Snowflake, no heredándolo.
+      # Los threads de `dev` no se copian. Eso resuelve una restricción de
+      # memoria local (R3) que en Snowflake no existe: el warehouse tiene su
+      # propia memoria y el paralelismo sí debería ayudar. El valor correcto
+      # se decide midiendo en Snowflake, no heredándolo.
       threads: 8
       client_session_keep_alive: false

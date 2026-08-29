@@ -1,65 +1,65 @@
 {#
-  `stg_contratos` — donde se paga todo lo que D1 dejó para después.
+  `stg_contratos` es la capa donde se paga el costo de haber dejado la fuente tal cual
+  llegó en raw. Raw guarda lo que la API devolvió sin tocar un carácter, que era lo
+  correcto porque la fuente ya se sobrescribió, y el costo de esa elección se ve acá.
 
-  Raw guarda lo que la API devolvió sin tocar un carácter, a propósito: lo que se
-  guarde mal no se puede volver a pedir, porque la fuente ya se sobrescribió. El
-  costo de esa decisión se paga acá, y este modelo es ese pago.
+  Este modelo hace tres cosas y ninguna más:
 
-  Hace tres cosas y ninguna más:
+  1. Castea 16 columnas monetarias, 7 fechas y 2 enteras. Las 42 restantes quedan como
+     texto: castear de más inventa estructura, castear de menos posterga el problema.
+  2. Convierte los centinelas a nulo. "No definido" y "No Definido" son nulos
+     disfrazados, en las dos capitalizaciones que usa la fuente (H6).
+  3. Aplana `urlproceso` y le saca el `noticeUID`, un tercer identificador que no
+     aparece en ninguna otra columna.
 
-  1. **Castea.** 16 columnas monetarias, 7 fechas, 2 enteras. Las 42 restantes
-     quedan texto — castear de más inventa estructura, castear de menos solo
-     posterga.
-  2. **Convierte los centinelas a nulo.** "No definido" y "No Definido" son
-     nulos disfrazados, en las dos capitalizaciones que la fuente usa (H6).
-  3. **Aplana `urlproceso`** y le saca el `noticeUID`, que es un tercer
-     identificador que no aparece en ninguna otra columna.
+  No filtra. El corte de 2020 y los estados pre-firma son reglas de negocio y viven más
+  arriba, donde son reversibles.
 
-  No filtra. El corte de 2020 y los estados pre-firma son reglas de negocio y
-  viven más arriba, donde son reversibles.
+  ## `try_cast` y un contador
 
-  ## `try_cast` y un contador, en vez de elegir entre fallar y mentir
-
-  Un valor que no se puede castear tiene tres respuestas posibles y las tres son
-  malas de a una:
+  Un valor que no se puede castear tiene tres respuestas posibles y las tres son malas:
 
   - `cast` a secas: una fila basura en 2,9 millones tumba la corrida.
-  - `try_cast` a secas: la corrupción entra disfrazada de nulo y ya no se
-    distingue de un nulo legítimo. Es el error que falta, en su peor forma:
-    silencioso.
-  - No castear: posterga el problema a quien consuma esto.
+  - `try_cast` a secas: la corrupción entra disfrazada de nulo y ya no se distingue de un
+    nulo legítimo.
+  - No castear: se lo pasa a quien consuma esto.
 
-  Acá se usa `try_cast` **más una columna que cuenta cuántos castings fallaron
-  en esa fila**. Nada rompe la corrida y nada se pierde en silencio, y de paso
-  se contesta una pregunta que hoy nadie sabe responder: cuánta basura tiene
-  esta fuente.
+  Acá se usa `try_cast` junto con una columna que cuenta cuántos castings fallaron en esa
+  fila. Nada rompe la corrida, nada queda perdido en silencio, y de paso se responde una
+  pregunta que no se contesta de otra forma: cuánta basura tiene esta fuente. Es el mismo
+  patrón que el canario del descarte, contar en vez de abortar, y que RN12, que nace con
+  sus incumplimientos ya medidos.
 
-  Es el mismo patrón que el canario del descarte —contar en vez de abortar— y
-  el de RN12, que nace con sus incumplimientos ya medidos.
+  Un casting que no falla no significa que el dato esté bien. `valor_del_contrato` trae un
+  contrato de 12.858.450.316.000.000 pesos, veintitrés veces el Presupuesto General de la
+  Nación, y castea limpio a `decimal(20,2)`, con `castings_fallidos = 0`. Es H33 otra vez:
+  una columna sistemáticamente corrupta que parsea sin quejarse. El contador mide la forma,
+  no la verdad, y los valores imposibles los tiene que atrapar una regla de negocio con un
+  techo defendible (RN13).
 
-  ⚠ **Un casting que no falla no significa que el dato esté bien**, y hay un caso
-  concreto en los datos reales. `valor_del_contrato` trae un contrato de
-  **12.858.450.316.000.000 pesos** —doce mil ochocientos cincuenta y ocho
-  billones, veintitrés veces el Presupuesto General de la Nación— y castea
-  limpio a `decimal(20,2)`. `castings_fallidos = 0` para esa fila.
-
-  Es H33 otra vez: una columna de fechas sistemáticamente corrupta que parsea
-  sin quejarse. **El contador mide la forma, no la verdad.** Los valores
-  imposibles los tiene que atrapar una regla de negocio con un techo defendible
-  (RN13), no el sistema de tipos.
-
-  Y en la otra punta: otro contrato trae 21 dígitos y `try_cast` lo rechaza.
-  ⚠ **Agrandar el `decimal` para que entre sería lo peor que se puede hacer** —
-  el valor pasaría a contaminar toda suma, promedio y máximo. Que se rechace es
-  el sistema funcionando.
+  En la otra punta, otro contrato trae 21 dígitos y `try_cast` lo rechaza. Agrandar el
+  `decimal` para que entre sería lo peor: el valor pasaría a contaminar toda suma, promedio
+  y máximo. Que se rechace es el sistema funcionando.
 
   ## De dónde salen las listas
 
-  De `columnas.py`, vía el macro generado. Las cuatro listas de tipo son un eje
-  distinto de la clasificación material/cosmética: aquella decide qué genera una
-  versión nueva en el SCD2, ésta decide a qué se castea. Una columna puede ser
-  monetaria y cosmética a la vez.
+  De `columnas.py`, a través del macro generado. Las cuatro listas de tipo son un eje
+  distinto de la clasificación material/cosmética: aquella decide qué genera versión nueva
+  en el SCD2, esta decide a qué se castea. Una columna puede ser monetaria y cosmética a
+  la vez.
 #}
+
+{#- El centinela a nulo, salvo donde es un valor con significado. -#}
+
+{#- Objeto anidado. Se aplana acá porque raw no puede (D2): aplanar es normalizar, y raw
+    guarda lo que llegó. El `noticeUID` sale como columna propia porque no se puede
+    reconstruir desde `proceso_de_compra`: son dos identificadores distintos (H6). -#}
+
+{#- Tres estados: "No Definido" no equivale a "No" (RN10). -#}
+
+{#- El contador. Una columna falló el casting si tenía valor, ya sin el centinela, y el
+    `try_cast` dio nulo. Usa los mismos ayudantes que la proyección de arriba: escritos
+    por separado, el contador podría medir algo distinto de lo que la columna guarda. -#}
 
 {{ config(materialized="table") }}
 

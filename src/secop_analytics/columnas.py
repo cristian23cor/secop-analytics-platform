@@ -1,68 +1,63 @@
-"""Catálogo de columnas de SECOP II – Contratos Electrónicos (`jbjy-vk9h`).
+"""Catálogo de columnas de SECOP II, Contratos Electrónicos (`jbjy-vk9h`).
 
 Fuente de verdad única para dos cosas que en otros proyectos se escriben dos
 veces y se desincronizan:
 
-1. **Qué se le pide a la API.** `COLUMNAS_EXTRAIDAS` arma el `$select`. Lo que
-   no está acá no se descarga.
-2. **Cómo se compara cada columna** entre dos observaciones consecutivas, según
-   la clasificación de `01_modelo_dimensional.md` §5.
+1. Qué se le pide a la API. `COLUMNAS_EXTRAIDAS` arma el `$select`. Lo que no
+   está acá no se descarga.
+2. Cómo se compara cada columna entre dos observaciones consecutivas, según la
+   clasificación de `01_modelo_dimensional.md` §5.
 
-Advertencia sobre la palabra "cosmética": no quiere decir excluida. Una columna
-cosmética se descarga, se guarda y alimenta las dimensiones. Lo único que no
-hace es generar una versión nueva en `fct_contratos_snapshot`. El conjunto que
-no se descarga es `PERSONALES`, y es un eje aparte.
+La palabra "cosmética" no quiere decir excluida. Una columna cosmética se
+descarga, se guarda y alimenta las dimensiones. Lo único que no hace es generar
+una versión nueva en `fct_contratos_snapshot`. El conjunto que no se descarga
+es `PERSONALES`, que es un eje aparte.
 
-Los 85 nombres se verificaron contra el endpoint de metadatos del dataset, no
-contra una muestra de filas: la API omite las claves nulas, así que una muestra
+Los 85 nombres se verificaron contra el endpoint de metadatos del dataset y no
+contra una muestra de filas, porque la API omite las claves nulas y una muestra
 subestima el esquema.
 
 Los cuatro conjuntos cubren las 85 sin solaparse, y `tests/test_columnas.py` lo
-verifica. Ese test importa más de lo que parece: una columna puesta en dos
-conjuntos no rompe nada visible —el `$select` funciona igual— pero cambia con
-qué criterio se compara, según el orden de los `if` en `clasificacion()`.
+verifica. Una columna puesta en dos conjuntos no rompe nada visible, el
+`$select` funciona igual, pero cambia con qué criterio se compara, según el
+orden de los `if` en `clasificacion()`.
 
 Referencias: `exploration/01_modelo_dimensional.md` §5 (la clasificación),
 `00_inventario_fuentes.md` (H6 el esquema, H7 los datos personales) y
 `03_decisiones_capa_raw.md` (D1 y D6, cómo se usa esta clasificación).
 
-Dos advertencias para quien construya la detección de cambios encima:
+## Comportamiento de nulos en la API
 
-1. **La API omite las claves nulas.** Una fila real trajo 81 de 85, y las
-   cuatro ausentes eran `ultima_actualizacion` y las tres fechas de
-   liquidación/prórroga: las cuatro son MATERIALES. Cuando el hito ocurre, la
-   clave aparece.
+La API omite las claves nulas. Una fila real trajo 81 de 85 columnas, y las
+cuatro ausentes eran `ultima_actualizacion` y las tres fechas de liquidación y
+prórroga, todas materiales. Cuando el hito ocurre, la clave aparece.
 
-   ⚠ **El relleno con nulo vive en `staging`, NO en raw.** Raw guarda la fila
-   tal como llegó, con las claves ausentes ausentes (D1, I1). Rellenar antes
-   de escribir sería normalizar, y un defecto de normalización quedaría
-   grabado en la única copia que existe, porque la fuente ya se sobrescribió.
-   El costo se asume a conciencia: cuando una clave aparece, los bytes
-   cambian y la fila se guarda de más. Es el error que sobra, que es el
-   aceptable.
+El relleno con nulo vive en `staging`, no en raw. Raw guarda la fila tal como
+llegó, con las claves ausentes ausentes (D1, I1). Rellenar antes de escribir
+sería normalizar, y un defecto de normalización quedaría grabado en la única
+copia que existe. El costo se asume: cuando una clave aparece, los bytes
+cambian y la fila se guarda de más. Es el error que sobra, que es el aceptable.
 
-   Sobre `staging` ya rellenado, la comparación de D6 lee el paso de nulo a
-   fecha como lo que es —el cambio más informativo del snapshot— y no como un
-   cambio de esquema. Son dos filtros de finura distinta y no hay que
-   confundirlos: bytes en Python decide qué se guarda en disco, la
-   clasificación en dbt decide qué merece una versión.
+Sobre `staging` ya rellenado, la comparación de D6 lee el paso de nulo a fecha
+como el cambio más informativo del snapshot y no como un cambio de esquema.
+Bytes en Python decide qué se guarda en disco; la clasificación en dbt decide
+qué merece una versión.
 
-2. **Los nulos también vienen como centinela de texto**, y con dos
-   capitalizaciones: "No definido" y "No Definido". No son nulos de verdad, así
-   que el punto anterior no los cubre. Se normalizan en `staging`.
+Los nulos también vienen como centinela de texto, con dos capitalizaciones:
+"No definido" y "No Definido". Ésos no son nulos de verdad, así que el punto
+anterior no los cubre. Se normalizan en `staging`.
 """
 
 from typing import Final
 
-# --------------------------------------------------------------------------
 # MATERIALES — cambió el contrato en el mundo real y una pregunta de negocio
 # lo necesita. Genera versión nueva.
-# --------------------------------------------------------------------------
 MATERIALES: Final[frozenset[str]] = frozenset({
     "estado_contrato",
     # Bloque monetario. `valor_pagado` es la columna que justifica el proyecto:
-    # si no genera versión, los 735.809 contratos con pagos se quedan sin serie
-    # temporal y ningún test falla. Es el error más caro posible del diseño.
+    # si no generara versión, los 735.809 contratos con pagos se quedarían sin
+    # serie temporal y ningún test fallaría. Es el error más caro posible del
+    # diseño.
     "valor_del_contrato",
     "valor_pagado",
     "valor_facturado",
@@ -88,20 +83,19 @@ MATERIALES: Final[frozenset[str]] = frozenset({
     "fecha_inicio_liquidacion",
     "fecha_fin_liquidacion",
     "fecha_de_notificaci_n_de_prorrogaci_n",
-    # ⚠ `liquidaci_n` NO es un hito que arranca nulo: es BOOLEANA y está poblada
+    # — `liquidación` NO es un hito que arranca nulo: es BOOLEANA y está poblada
     # en el 100% de las filas. Medido el 28/08/2026 sobre 2.902.163
     # observaciones: "No" en 2.611.371 y "Si" en 290.792, sin nulos ni
-    # centinelas. Estaba acá arriba, entre los hitos, y el comentario de ellos
-    # no le aplicaba.
+    # centinelas. Estaba arriba entre los hitos, y el comentario de ellos no le
+    # aplicaba.
     #
-    # Sigue siendo material, y por un motivo mejor que el que tenía: pasar de
-    # "No" a "Si" es un cambio de estado real del contrato. El motivo importa
-    # porque un motivo equivocado es el que justifica la siguiente decisión
-    # equivocada.
+    # Sigue siendo material, y por un motivo mejor: pasar de "No" a "Si" es un
+    # cambio de estado real del contrato. El motivo importa porque un motivo
+    # equivocado es el que justifica la siguiente decisión equivocada.
     #
-    # ⚠ Y no calza con `fecha_inicio_liquidacion`: 290.792 contra 292.694, o sea
-    # 1.902 de diferencia. Si fueran lo mismo dicho de dos formas, coincidirían.
-    # Pregunta abierta 14 del inventario.
+    # Y no calza con `fecha_inicio_liquidacion`: 290.792 contra 292.694, o sea
+    # 1.902 de diferencia. Si fueran lo mismo dicho de dos formas,
+    # coincidirían. Pregunta abierta 14 del inventario.
     "liquidaci_n",
     # Fecha del último evento contractual. No es auditoría técnica: su nulo es
     # información. Además es el watermark del flujo 2.
@@ -114,7 +108,7 @@ MATERIALES: Final[frozenset[str]] = frozenset({
     # `valor_del_contrato`; si el valor sube por una adición y las fuentes no
     # versionan, quedan versiones históricas donde RN1 no se cumple (RN6).
     #
-    # ⚠ Son SEIS, no cinco. La última solo aparece enumerando el esquema
+    # Son SEIS, no cinco. La última solo aparece enumerando el esquema
     # completo: ninguna muestra de filas la mostró. Se clasifica como material
     # por el mismo criterio que las otras cinco, pero la definición de RN1
     # queda pendiente de revisión (ver `00_inventario_fuentes.md`).
@@ -126,13 +120,11 @@ MATERIALES: Final[frozenset[str]] = frozenset({
     "recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_",
 })
 
-# --------------------------------------------------------------------------
 # IMPOSIBLES — no deberían cambiar nunca. No se comparan para versionar: si
 # cambian, se dispara una alerta.
 #
 # El criterio de separación con MATERIALES es la pregunta: si esto cambia
 # mañana, ¿quiero una alarma o quiero un registro?
-# --------------------------------------------------------------------------
 IMPOSIBLES: Final[frozenset[str]] = frozenset({
     "id_contrato",
     "fecha_de_firma",
@@ -143,11 +135,9 @@ IMPOSIBLES: Final[frozenset[str]] = frozenset({
     "codigo_de_categoria_principal",
 })
 
-# --------------------------------------------------------------------------
-# COSMÉTICAS — cambió el registro, no el contrato. Se pisa el valor actual sin
-# generar versión. Se descargan igual: acá viven casi todos los atributos de
-# las dimensiones.
-# --------------------------------------------------------------------------
+# COSMÉTICAS — cambió el registro, no el contrato. Se pisa el valor actual
+# sin generar versión. Se descargan igual: acá viven casi todos los atributos
+# de las dimensiones.
 COSMETICAS: Final[frozenset[str]] = frozenset({
     # --- dim_entidad. `orden`, `rama` y `sector` entran como atributos con la
     # advertencia documentada; no se construye lógica de negocio encima (H6).
@@ -175,7 +165,7 @@ COSMETICAS: Final[frozenset[str]] = frozenset({
     "condiciones_de_entrega",
     "documentos_tipo",
     "descripcion_documentos_tipo",
-    # --- Geografía. `localizaci_n` es redundante con las otras dos y trae
+    # --- Geografía. `localización` es redundante con las otras dos y trae
     # espacios dobles (H6); entra igual, se resuelve en `staging`.
     "departamento",
     "ciudad",
@@ -189,11 +179,10 @@ COSMETICAS: Final[frozenset[str]] = frozenset({
     "obligaci_n_ambiental",
     "obligaciones_postconsumo",
     "reversion",
-    # --- LAS QUE HUBO QUE EVALUAR UNA POR UNA --------------------------
-    # No clasificar por descarte: "el resto es cosmética" es una frase que se
-    # escribe sin la lista de 85 delante. Las seis siguientes quedaron
-    # cosméticas, pero **por razones distintas entre sí**, y dos con pendientes
-    # abiertos. Una categoría definida como "todo lo demás" no está definida.
+    # --- LAS QUE HUBO QUE EVALUAR UNA POR UNA
+    # No clasificar por descarte: una categoría definida como "el resto es
+    # cosmética" no está definida. Las seis siguientes quedaron cosméticas,
+    # pero por razones distintas entre sí, y dos con pendientes abiertos.
     #
     # `origen_de_los_recursos`: en la fila inspeccionada vale "Recursos
     #   Propios" y la única de las seis fuentes con valor es `recursos_propios`.
@@ -202,9 +191,9 @@ COSMETICAS: Final[frozenset[str]] = frozenset({
     #   antes de darlo por cerrado (una fila genera hipótesis, no conclusión).
     "origen_de_los_recursos",
     # `destino_gasto`: corte funcionamiento / inversión. Estable por contrato.
-    #   Cosmética para comparación, pero comercialmente relevante: vender
-    #   contra presupuesto de inversión y contra funcionamiento son negocios
-    #   distintos. Candidata a atributo de mart.
+    # Cosmética para comparación, pero comercialmente relevante: vender
+    # contra presupuesto de inversión y contra funcionamiento son negocios
+    # distintos. Candidata a atributo de mart.
     "destino_gasto",
     # Las dos siguientes cumplen la primera condición de "material" (una
     # modificación podría darlas vuelta) y fallan la segunda: ninguna pregunta
@@ -217,34 +206,32 @@ COSMETICAS: Final[frozenset[str]] = frozenset({
     "el_contrato_puede_ser_prorrogado",
     "habilita_pago_adelantado",
     # `referencia_del_contrato`: numeración interna de la entidad
-    #   ("CPS-3548-2022" = tipo, consecutivo, año). No es identificador global
-    #   —otra entidad usa el mismo string— y las entidades la editan a mano.
-    #   Ponerla en IMPOSIBLES llenaría la alerta de ruido, y una alerta ruidosa
-    #   enseña a ignorarla. Queda cosmética.
+    # ("CPS-3548-2022" = tipo, consecutivo, año). No es identificador global
+    # —otra entidad usa el mismo string— y las entidades la editan a mano.
+    # Ponerla en IMPOSIBLES llenaría la alerta de ruido, y una alerta ruidosa
+    # enseña a ignorarla. Queda cosmética.
     "referencia_del_contrato",
     # `urlproceso`: objeto anidado `{"url": "..."}` (H6). NO se puede
-    #   reconstruir desde `proceso_de_compra`: la URL trae
-    #   `noticeUID=CO1.NTC.xxx` mientras que `proceso_de_compra` es
-    #   `CO1.BDOS.xxx`. Es un tercer identificador que no aparece en ninguna
-    #   otra columna, y probablemente la llave hacia el dataset de Procesos de
-    #   Contratación (candidato v2). Se extrae; en `staging` se parsea el
-    #   `noticeUID` a columna propia y se aplana el objeto.
+    # reconstruir desde `proceso_de_compra`: la URL trae
+    # `noticeUID=CO1.NTC.xxx` mientras que `proceso_de_compra` es
+    # `CO1.BDOS.xxx`. Es un tercer identificador que no aparece en ninguna
+    # otra columna, y probablemente la llave hacia el dataset de Procesos de
+    # Contratación (candidato v2). Se extrae; en `staging` se parsea el
+    # `noticeUID` a columna propia y se aplana el objeto.
     #
-    #   ⚠ Raw NO aplana: guarda el objeto tal como llegó. Fue justamente esta
-    #   columna la que descartó Parquet como formato de raw — aplanarla habría
-    #   sido normalizar, y D1 prohíbe normalizar antes de comparar. Por eso raw
-    #   es JSONL comprimido. Ver `03_decisiones_capa_raw.md`, D2.
+    # Raw no aplana: guarda el objeto tal como llegó. Fue justamente esta
+    # columna la que descartó Parquet como formato de raw — aplanarla habría
+    # sido normalizar, y D1 prohíbe normalizar antes de comparar. Por eso raw
+    # es JSONL comprimido. Ver `03_decisiones_capa_raw.md`, D2.
     "urlproceso",
 })
 
-# --------------------------------------------------------------------------
 # PERSONALES — no se descargan. Eje aparte, no una cuarta categoría de
 # comparación: nunca llegan a compararse porque nunca entran.
 #
 # Legalmente son datos abiertos, pero republicarlos en un tablero es otra cosa
 # (H7). El filtro corre en el `$select`, no después: la exclusión más barata de
 # auditar es la que hace que el dato no viaje.
-# --------------------------------------------------------------------------
 PERSONALES: Final[frozenset[str]] = frozenset({
     # Representante legal — incluye domicilio residencial.
     "nombre_representante_legal",
@@ -272,7 +259,6 @@ PERSONALES: Final[frozenset[str]] = frozenset({
 })
 
 
-# --------------------------------------------------------------------------
 # TIPOS DE DESTINO — a qué se castea cada columna en `stg_contratos`.
 #
 # Es un eje DISTINTO de la clasificación de comparación de arriba. Aquella
@@ -287,7 +273,6 @@ PERSONALES: Final[frozenset[str]] = frozenset({
 #
 # Lo que no está en ninguno de los tres queda como TEXTO, que es el defecto
 # correcto: castear de más inventa estructura, castear de menos solo posterga.
-# --------------------------------------------------------------------------
 
 MONETARIAS: Final[frozenset[str]] = frozenset({
     "valor_del_contrato",
@@ -324,8 +309,8 @@ FECHAS: Final[frozenset[str]] = frozenset({
 
 ENTERAS: Final[frozenset[str]] = frozenset({
     "dias_adicionados",
-    # ⚠ `duraci_n_del_contrato` NO está acá, y estuvo. Medido el 28/08/2026
-    # sobre 2.902.163 observaciones: **ni un solo valor castea a entero**. La
+    # `duración_del_contrato` NO está acá, aunque estuvo. Medido el 28/08/2026
+    # sobre 2.902.163 observaciones: ni un solo valor castea a entero. La
     # unidad viene pegada al número.
     #
     #   1.648.333  "N Dia(s)"
@@ -348,7 +333,6 @@ ENTERAS: Final[frozenset[str]] = frozenset({
     # `fecha_de_fin_del_contrato`, que son fechas de verdad.
 })
 
-# --------------------------------------------------------------------------
 # Columnas donde el centinela de texto NO se convierte a nulo.
 #
 # "No definido" y "No Definido" son nulos disfrazados en casi todas las
@@ -358,7 +342,6 @@ ENTERAS: Final[frozenset[str]] = frozenset({
 #
 # La lista es explícita y tiene un solo miembro a propósito: así agregar el
 # segundo es una decisión y no un descubrimiento.
-# --------------------------------------------------------------------------
 CENTINELA_ES_VALOR: Final[frozenset[str]] = frozenset({
     "habilita_pago_adelantado",
 })
@@ -388,6 +371,7 @@ def validar_cobertura(columnas_de_la_fuente: set[str]) -> dict[str, set[str]]:
     Se corre como chequeo barato (una llamada al endpoint de metadatos), en su
     propia tarea, no en el camino caliente de la ingesta.
 
+    Devuelve dos conjuntos:
     - `sin_clasificar`: columnas nuevas en la fuente. Un `$select` con lista
       explícita las ignoraría en silencio; acá se vuelven ruidosas.
     - `desaparecidas`: columnas que clasificamos y la fuente ya no entrega. Si
@@ -403,8 +387,7 @@ def clasificacion(columna: str) -> str:
     """Categoría de comparación de una columna.
 
     La consumen dbt —vía el generador de D1— y los scripts de diagnóstico.
-    **Raw no la usa:** ahí la comparación es de bytes y no distingue
-    categorías.
+    Raw no la usa: ahí la comparación es de bytes y no distingue categorías.
     """
     if columna in IMPOSIBLES:
         return "imposible"

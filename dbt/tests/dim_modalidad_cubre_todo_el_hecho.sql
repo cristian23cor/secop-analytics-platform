@@ -1,18 +1,18 @@
 {#-
-  Toda fila del hecho encuentra su modalidad, y encuentra exactamente una.
+  Toda fila del hecho encuentra su modalidad, y exactamente una.
 
-  Es el test que protege la decisión de fabricar la llave con un hash calculado
-  en dos lugares. Si los dos cálculos divergieran —alguien toca uno y no el
-  otro, o el orden de los argumentos cambia— las llaves dejarían de coincidir y
-  la unión devolvería cero filas para las afectadas.
+  Este test protege la decisión de fabricar la llave con un hash calculado en dos
+  lugares. Si los dos cálculos divergieran —porque alguien toca uno y no el otro, o
+  cambia el orden de los argumentos— las llaves dejarían de coincidir y la unión
+  devolvería cero filas para las versiones afectadas.
 
-  ⚠ **Ese fallo NO se nota en una consulta normal.** Un `join` que no encuentra
-  pareja simplemente omite la fila: los totales bajan, nada falla, y hay que
-  sospechar del número para darse cuenta. Es el mismo modo de fallo que el de
-  unir sin rango de fechas, pero al revés — aquel duplica, éste desaparece.
+  Ese fallo no se nota en una consulta normal. Un `join` que no encuentra pareja
+  simplemente omite la fila: los totales bajan, nada falla y hay que sospechar del
+  número para darse cuenta. Es el mismo tipo de fallo que el de unir sin rango de
+  fechas, pero al revés: allí se duplica, aquí desaparece.
 
-  El macro compartido `llave_de_modalidad()` hace la divergencia improbable.
-  Este test la hace visible.
+  El macro compartido `llave_de_modalidad()` hace que la divergencia sea muy poco
+  probable, y este test la vuelve visible.
 
   Medido el 28/08/2026: cero incumplimientos sobre 2.881.640 versiones.
 -#}

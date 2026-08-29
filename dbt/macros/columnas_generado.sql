@@ -1,21 +1,19 @@
 {#-
-  ARCHIVO GENERADO. NO EDITAR A MANO.
+  Este archivo se genera automáticamente a partir de `src/secop_analytics/columnas.py`.
+  La lista de columnas que aparece aquí refleja la fuente de verdad del esquema y
+  se mantiene en sincronía con la generación que hace `scripts/generar_columnas_dbt.py`.
 
-  Lo escribe `scripts/generar_columnas_dbt.py` desde `src/secop_analytics/columnas.py`,
-  que es la fuente de verdad del esquema. Editar acá crea una segunda lista que
-  se va a separar de la primera, y cuando se separe los tests van a seguir
-  pasando — que es exactamente el modo de fallo que este archivo existe para
-  evitar.
+  La idea es evitar que el modelo y la definición del esquema queden desalineados,
+  porque esa diferencia suele aparecer cuando una lista cambia en la fuente y no se
+  reproduce el output generado. El chequeo de consistencia queda en
+  `scripts/verificar_columnas_dbt.py` y sirve como referencia de revisión.
 
-  Para cambiar algo: tocá `columnas.py` y volvé a correr el generador.
-  `scripts/verificar_columnas_dbt.py` lo comprueba en CI.
-
-  Generado desde 67 columnas extraídas.
+  Generado con 67 columnas extraídas.
 -#}
 
-{#- Las 67 que se le piden a la API. El orden es el de `columnas.py`,
-    que las ordena alfabéticamente: importa para que el archivo
-    generado sea estable entre corridas. -#}
+{#- Esta lista corresponde a las 67 columnas solicitadas a la API. El orden sigue
+    el de `columnas.py`, que las ordena alfabéticamente para mantener la salida
+    generada estable entre ejecuciones. -#}
 {% macro columnas_extraidas() %}
     {{ return([
         "ciudad",
@@ -90,21 +88,20 @@
 
 {#- El `STRUCT` con el que el modelo frontera lee `datos`.
 
-    Se declara explícito y NO se deja inferir. `read_json_auto` deduce
-    la forma de una muestra de filas, y la API omite las claves nulas
-    (H6): una columna que ninguna fila muestreada traiga no entra al
-    struct, y el modelo que la use falla. Las que arrancan nulas y se
-    llenan son justo las materiales — las tres fechas de hito y
-    `ultima_actualizacion`.
+    La decisión de dejarlo explícito es importante porque `read_json_auto` deduce la
+    forma de una muestra de filas y la API omite las claves nulas (H6): una columna
+    que ninguna fila muestreada traiga no entra al struct, y el modelo que la use
+    falla. Las que arrancan nulas y después se llenan son justamente las materiales:
+    las tres fechas de hito y `ultima_actualizacion`.
 
-    Es el mismo error que se cometió con la sexta fuente de
-    financiación de RN1: 'no apareció en la muestra' se leyó como 'casi
-    nunca tiene valor', y estaba en el 45% de los contratos.
+    Ese mismo patrón ya apareció con la sexta fuente de financiación de RN1: leímos
+    'no apareció en la muestra' como 'casi nunca tiene valor', y estaba en el 45%
+    de los contratos.
 
-    ⚠ Una clave que la fuente agregue y este struct no tenga se ignora
-    EN SILENCIO. No es un agujero nuevo: el `$select` ya pide solo
-    estas 67, así que raw nunca las trae. Quien detecta columnas nuevas
-    es `columnas.validar_cobertura()`. -#}
+    Cuando la fuente agrega una clave que este struct no tiene, se ignora sin avisar.
+    Esa limitación ya estaba presente porque el `$select` pide solo estas 67 columnas,
+    y raw nunca las trae. Las columnas nuevas se detectan con
+    `columnas.validar_cobertura()`. -#}
 {% macro struct_de_datos() %}
     {%- set campos %}STRUCT(
         ciudad VARCHAR,
@@ -178,11 +175,11 @@
     {{ return(campos | trim) }}
 {% endmacro %}
 
-{#- Clasificación de D6 / §5 del modelo dimensional. Decide qué genera
-    versión nueva en el SCD2, no qué se descarga.
+{#- Clasificación de D6 / §5 del modelo dimensional. Esta definición decide qué
+    genera una versión nueva en el SCD2, no qué se descarga.
 
-    ⚠ Raw NO usa esto: ahí la comparación es de bytes y no distingue
-    categorías. Son dos filtros de finura distinta. -#}
+    En raw no se usa esta clasificación: ahí la comparación es por bytes y no
+    distingue categorías. Son dos filtros de distinta finura. -#}
 {% macro columnas_materiales() %}
     {{ return([
         "codigo_proveedor",
@@ -265,9 +262,9 @@
     ]) }}
 {% endmacro %}
 
-{#- Tipos de destino de `stg_contratos`. Eje DISTINTO de la
-    clasificación de arriba: aquella decide qué genera versión, ésta
-    decide a qué se castea. Lo que no está en ninguno queda texto. -#}
+{#- Tipos de destino de `stg_contratos`. Eje distinto de la clasificación de
+    arriba: aquella decide qué genera versión, ésta decide a qué se castea. Lo
+    que no está en ninguno queda texto. -#}
 {% macro columnas_monetarias() %}
     {{ return([
         "presupuesto_general_de_la_nacion_pgn",
@@ -307,7 +304,7 @@
     ]) }}
 {% endmacro %}
 
-{#- Donde el centinela NO se convierte a nulo:
+{#- Donde el centinela no se convierte a nulo:
     `habilita_pago_adelantado` tiene tres estados y 'No Definido'
     significa 'no se declaró' (RN10). -#}
 {% macro columnas_centinela_es_valor() %}

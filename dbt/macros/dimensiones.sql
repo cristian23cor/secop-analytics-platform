@@ -1,29 +1,24 @@
 {#-
-  Unir un hecho con una dimensión con historia, sin equivocarse.
-
-  ## Por qué existe este macro
-
-  La unión correcta es por llave **y** rango de fechas:
+  Para unir un hecho con una dimensión con historia no alcanza la llave. Hay que
+  comparar también contra el rango de validez:
 
       on  h.codigo_entidad = d.codigo_entidad
       and h.observado_desde >= d.observado_desde
       and (d.observado_hasta is null or h.observado_desde < d.observado_hasta)
 
-  Escribirla a mano en cada consulta es pedir que alguien olvide las dos últimas
-  líneas. Y olvidarlas **no falla**: duplica filas.
+  Escrito a mano, las dos últimas condiciones se olvidan fácil, y la unión no
+  falla: duplica filas.
 
-  Medido sobre datos de prueba con una entidad reclasificada: 3 filas del hecho
-  se convierten en 5 al unir solo por llave, porque cada una se cruza con las
-  dos versiones de su entidad. Sobre los datos reales, las seis entidades
-  reclasificadas arrastran 20.675 contratos, así que una consulta de "cuánto
-  contrató cada entidad" devolvería casi el doble para esas seis.
+  En un caso de prueba con una entidad reclasificada, 3 filas del hecho salen 5 si
+  unís solo por llave, porque cada una cruza con las dos versiones de la entidad.
+  En los datos reales hay seis entidades reclasificadas y arrastran 20.675
+  contratos, así que un "cuánto contrató cada entidad" devuelve casi el doble para
+  esas seis.
 
-  ⚠ **Y para las otras 5.156 entidades el resultado sería idéntico.** El error
-  es silencioso en el 99,9% de los casos, que es justo lo que lo hace
-  peligroso: se prueba con una entidad cualquiera, sale bien, y se da por buena
-  la consulta.
+  Para las otras 5.156 el resultado está bien, que es de donde sale el daño:
+  probás con una entidad cualquiera, sale bien, y das la consulta por correcta.
 
-  ## Uso
+  Uso:
 
       select f.*, e.nombre_entidad
       from {{ ref('fct_contratos_snapshot') }} f
@@ -32,9 +27,8 @@
                  hecho='f', dimension='e', llave='codigo_entidad'
              ) }}
 
-  Sirve para cualquier dimensión con historia que use la convención de
-  `observado_desde` / `observado_hasta` semiabiertos: `dim_proveedor`,
-  `dim_modalidad` y las que vengan.
+  Sirve para cualquier dimensión que use `observado_desde` / `observado_hasta`
+  semiabiertos: `dim_proveedor`, `dim_modalidad`.
 -#}
 
 {% macro vigente_en(hecho, dimension, llave, fecha="observado_desde") -%}
@@ -48,31 +42,25 @@
 
 
 {#-
-  La llave de `dim_modalidad`, calculada igual en los dos lados.
+  La llave de `dim_modalidad` se calcula igual en los dos lados.
 
-  ## Por qué un hash y no un número secuencial
+  La combinación de modalidad no tiene una columna que la identifique sola: la
+  llave son los tres valores que la describen.
 
-  La combinación de modalidad no tiene una columna que la identifique: la llave
-  **son** los tres valores. Hay que fabricarla, y hay dos formas.
+  Un `row_number()` sobre las 232 combinaciones sería más legible, pero depende
+  del orden de las filas. Si ese orden cambia entre corridas, por concurrencia o
+  por una versión distinta del motor o por el porte a Snowflake, el hecho apunta a
+  la modalidad equivocada y ningún test lo nota: las llaves siguen uniendo, con la
+  fila de al lado. Por eso va un hash de los valores, que es estable en cualquier
+  motor.
 
-  Un `row_number()` sobre las 232 combinaciones sería más legible y **dependería
-  del orden de las filas**. Si ese orden cambiara entre corridas —por
-  concurrencia, por una versión distinta del motor, por el porte a Snowflake—
-  el hecho apuntaría a la modalidad equivocada y **ningún test lo notaría**: las
-  llaves seguirían uniendo, solo que con la fila de al lado.
-
-  Un hash de los valores es el mismo siempre y en cualquier motor. Ilegible, y
-  correcto.
-
-  ## Por qué vive en un macro
-
-  Se calcula en dos lugares —`dim_modalidad` y `fct_contratos_snapshot`— y dos
-  definiciones de lo mismo se separan. Es la lección del generador de
-  `columnas.py` y la del conteo de tests: **una definición, no dos.**
+  El cálculo vive en un macro porque se usa en `dim_modalidad` y en
+  `fct_contratos_snapshot`. Misma razón por la que `columnas.py` tiene generador:
+  una definición, no dos.
 
   El `coalesce` con un marcador y el separador que no aparece en los datos son el
-  mismo cuidado que `canonicalizar()` tiene en la ingesta: sin ellos,
-  `('a', null)` y `('a', '')` producirían la misma llave.
+  mismo cuidado que `canonicalizar()` en la ingesta. Sin eso, `('a', null)` y
+  `('a', '')` dan la misma llave.
 -#}
 
 {% macro llave_de_modalidad() -%}
@@ -86,12 +74,12 @@
 
 
 {#-
-  La llave de `dim_geografia`. Mismo criterio que `llave_de_modalidad()`: un
-  hash determinista, calculado con este macro en la dimensión y en el hecho.
+  La llave de `dim_geografia` sigue el mismo criterio que `llave_de_modalidad()`:
+  un hash determinista calculado tanto en la dimensión como en el hecho.
 
-  ⚠ **`localizaci_n` NO entra**, aunque describa el mismo lugar y tenga cero
-  nulos contra los 611.751 de `ciudad`. Ver `dim_geografia` para las tres
-  mediciones que lo descartaron.
+  `localizaci_n` no participa en esta clave, aunque describa el mismo lugar y tenga
+  cero nulos frente a los 611.751 de `ciudad`. Esa decisión quedó respaldada por las
+  tres mediciones documentadas en `dim_geografia`.
 -#}
 
 {% macro llave_de_geografia() -%}

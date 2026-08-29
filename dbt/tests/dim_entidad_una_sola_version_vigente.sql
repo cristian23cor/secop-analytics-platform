@@ -1,13 +1,12 @@
 {#-
   Cada entidad tiene exactamente una versión vigente.
 
-  Mismo invariante que en el hecho y por la misma razón: si el `lead()`
-  estuviera mal particionado, habría entidades con dos versiones vigentes o con
-  ninguna, y las dos cosas son invisibles hasta que alguien nota que los
-  conteos no cuadran.
+  Es el mismo invariante que en el hecho y por la misma razón: si el `lead()` estuviera
+  mal particionado, habría entidades con dos versiones vigentes o con ninguna, y ambas
+  cosas son invisibles hasta que alguien nota que los conteos no cuadran.
 
-  Con dos vigentes, además, la unión por rango duplicaría — que es exactamente
-  lo que `dim_entidad_no_duplica_al_unir` intenta evitar desde el otro lado.
+  Con dos vigentes, la unión por rango duplicaría las filas, y eso es exactamente lo
+  que `dim_entidad_no_duplica_al_unir` intenta evitar desde el otro lado.
 
   Medido el 28/08/2026: cero incumplimientos sobre 5.162 entidades.
 -#}
