@@ -231,6 +231,7 @@ select
         justamente porque nunca cambia — lo que la vuelve un atributo estable
         con el que agrupar. Ver `dim_modalidad`. -#}
     {{ llave_de_modalidad() }} as llave_modalidad,
+    {{ llave_de_geografia() }} as llave_geografia,
 
     {#- Trazabilidad hasta el archivo. `notice_uid` es un tercer identificador
         que no aparece en ninguna otra columna (H6) y probablemente la llave

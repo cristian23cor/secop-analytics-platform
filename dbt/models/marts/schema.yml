@@ -161,3 +161,26 @@ models:
         description: >
           15 valores. El 74% de los contratos son contratación directa; sumando
           régimen especial, la contratación sin licitación abierta supera el 90%.
+
+  - name: dim_geografia
+    description: >
+      Dónde se ejecuta el contrato. 958 combinaciones de departamento y ciudad,
+      sin historia: cero contratos cambiaron de geografía. `localizaci_n` NO
+      entra — ver el modelo para las tres mediciones que la descartaron.
+    data_tests:
+      - unique:
+          column_name: llave_geografia
+          config:
+            severity: error
+    columns:
+      - name: llave_geografia
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+      - name: sin_ciudad
+        description: >
+          ⚠ 611.751 observaciones no tienen ciudad — el 21%. El dato NO está
+          escondido en `localizaci_n`: la fuente no lo publica. Un análisis por
+          municipio deja fuera esa quinta parte, y hay que decirlo en el
+          tablero en vez de compensarlo.

@@ -83,3 +83,21 @@
         coalesce(justificacion_modalidad_de, chr(0) || 'NULO')
     ))
 {%- endmacro %}
+
+
+{#-
+  La llave de `dim_geografia`. Mismo criterio que `llave_de_modalidad()`: un
+  hash determinista, calculado con este macro en la dimensión y en el hecho.
+
+  ⚠ **`localizaci_n` NO entra**, aunque describa el mismo lugar y tenga cero
+  nulos contra los 611.751 de `ciudad`. Ver `dim_geografia` para las tres
+  mediciones que lo descartaron.
+-#}
+
+{% macro llave_de_geografia() -%}
+    md5(concat_ws(
+        chr(31),
+        coalesce(departamento, chr(0) || 'NULO'),
+        coalesce(ciudad,       chr(0) || 'NULO')
+    ))
+{%- endmacro %}
