@@ -16,7 +16,30 @@ secop:
     dev:
       type: duckdb
       path: ../datos/secop.duckdb
-      threads: 4
+
+      # ⚠ UN HILO, Y ESTÁ MEDIDO. No subirlo sin volver a medir.
+      #
+      # La intuición dice que más hilos es más rápido. Acá es al revés, porque
+      # la máquina tiene ~3 GB para DuckDB (R3) y los modelos pesados ordenan
+      # millones de filas: con más de un hilo, dos ordenamientos grandes
+      # coinciden, se pelean por la memoria y los dos vuelcan a disco.
+      #
+      # Medido el 28/08/2026 sobre la construcción completa:
+      #
+      #   hilos   total    dim_proveedor   fct_contratos_snapshot
+      #     4     432 s        152 s              207 s
+      #     2     458 s        160 s              236 s
+      #     1     326 s        6,4 s              100 s
+      #
+      # `dim_proveedor` es 24 veces más rápido con un hilo. Y 2 salió PEOR que
+      # 4: el número casi no importa, lo que importa es que `dim_proveedor` y
+      # el snapshot no coincidan — con cualquier valor mayor que 1, coinciden.
+      #
+      # De los 326 s, unos 215 son `raw_observaciones` y `stg_contratos`, que
+      # corren solos en cualquier configuración. El 66% del tiempo no depende
+      # de esto; bajarlo pide materialización incremental, no más hilos.
+      threads: 1
+
       # `extensions` vacío a propósito: leer JSON comprimido es nativo.
 
     snowflake:
@@ -31,5 +54,9 @@ secop:
       warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'COMPUTE_WH') }}"
       database: "{{ env_var('SNOWFLAKE_DATABASE', 'SECOP') }}"
       schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'PUBLIC') }}"
+      # NO se copia el `threads: 1` de `dev`. Ese número resuelve una
+      # restricción de memoria local (R3) que en Snowflake no existe: allá el
+      # warehouse tiene su propia memoria y el paralelismo sí debería ayudar.
+      # El valor correcto se decide midiendo en Snowflake, no heredándolo.
       threads: 8
       client_session_keep_alive: false

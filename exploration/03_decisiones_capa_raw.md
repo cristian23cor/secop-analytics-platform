@@ -1783,6 +1783,37 @@ esquemas en vez de dejarlos inferir, bajar los hilos —cada uno mantiene su pro
 juego de vectores—, `preserve_insertion_order=false` cuando el orden no signifique
 nada, y `temp_directory` para volcar a disco antes de morir.
 
+#### Segunda vez que R3 decide, y la más cara: el SCD2 pasó de 734 s a 52
+
+`fct_contratos_snapshot` hacía `select *` y arrastraba las 73 columnas de
+staging. Tardaba **734 segundos**, cinco veces más que `stg_contratos`.
+
+El desglose, medido el 28/08/2026 sobre 2,9 millones de filas:
+
+| Etapa | Costo |
+|---|---|
+| Construir la huella de 28 columnas | 3,6 s |
+| Las dos ventanas (`lag` y `lead`) | 5,1 s |
+| Escribir **11** columnas con ventana | 8,9 s |
+| Escribir **73** columnas sin ventana | 109 s |
+| El modelo completo | **734 s** |
+
+**Toda la lógica sospechada suma nueve segundos: el 98,8% del tiempo era
+escribir columnas anchas después de ordenar.** Y la relación no es lineal —seis
+veces más columnas costaban ochenta veces más tiempo—, que es la firma del
+volcado a disco cuando el ancho deja de entrar en memoria.
+
+El arreglo fue dejar en el hecho solo las 28 columnas materiales más las llaves.
+Resultado: **52 s**, catorce veces más rápido, y el snapshot pasó a tardar menos
+que `stg_contratos`.
+
+⚠ **El problema de rendimiento y el de modelado eran el mismo.** Una tabla de
+hechos lleva llaves, fechas y medidas; los atributos descriptivos van en las
+dimensiones. Eso ya estaba escrito en el modelo dimensional, y el `select *` lo
+violaba duplicando 1,2 GB en disco sin agregar información. **R3 empujó hacia el
+diseño correcto en vez de alejar de él**, igual que había hecho con el modelo
+frontera.
+
 **Y no se negocia subiendo la memoria.** Un proyecto que necesita 16 GB para
 procesar 916 MB tiene un problema de diseño, y se nota. Que quepa en 3 GB es una
 propiedad del trabajo, no una limitación heredada: esta restricción ya produjo un

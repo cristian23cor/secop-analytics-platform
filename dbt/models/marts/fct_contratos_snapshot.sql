@@ -66,6 +66,43 @@
   inventa un dato para ahorrarse manejar nulos, y el nulo acá significa algo
   preciso —"es el último estado que vimos"— que una fecha falsa borraría.
 
+  ## Por qué el hecho es ESTRECHO: 28 columnas materiales, no las 67
+
+  Una tabla de hechos lleva llaves, fechas y medidas; los atributos descriptivos
+  viven en las dimensiones. Eso ya estaba en el modelo dimensional, y acá se
+  cumple: entran las 28 materiales —que son las medidas y los estados cuya
+  historia el proyecto existe para reconstruir— y las 32 cosméticas se van a
+  `dim_entidad`, `dim_proveedor` y `dim_modalidad`.
+
+  **Y resultó ser también la diferencia entre 734 segundos y una fracción de
+  eso.** La primera versión hacía `select *` y arrastraba las 73 columnas de
+  staging: una copia entera de `stg_contratos` con cuatro columnas más, 1,2 GB
+  duplicados en disco sin agregar información.
+
+  Medido el 28/08/2026, sobre 2,9 millones de filas y con 3 GB de RAM (R3):
+
+  | Etapa | Costo |
+  |---|---|
+  | Construir la huella de 28 columnas | 3,6 s |
+  | Las dos ventanas (`lag` y `lead`) | 5,1 s |
+  | Escribir **11** columnas con ventana | 8,9 s |
+  | Escribir **73** columnas sin ventana | 109 s |
+  | El modelo completo, con `select *` | **734 s** |
+
+  Toda la lógica —la huella, el ordenamiento— suma nueve segundos: **el 98,8%
+  del tiempo era escribir columnas anchas después de ordenar.** Y la relación no
+  es lineal: seis veces más columnas costaban ochenta veces más tiempo, que es
+  la firma del volcado a disco cuando el ancho deja de entrar en memoria.
+
+  ⚠ **La lección es de método, no de SQL.** Antes de medir, el sospechoso era la
+  huella de 28 columnas concatenadas, y optimizarla habría costado una tarde
+  para ahorrar 3,6 segundos. Era el tercer caso del día en que la medición
+  contradijo la hipótesis.
+
+  Y R3 volvió a hacer lo que ya había hecho con el modelo frontera: la
+  restricción de memoria empujó hacia el diseño correcto en vez de alejar de él.
+  El problema de rendimiento y el de modelado eran el mismo.
+
   ## Sobre el orden y la memoria
 
   La ventana particiona por `id_contrato`. Medido el 28/08/2026: 2.849.209
@@ -170,10 +207,34 @@ select
     flujo,
     hash,
 
-    {%- for columna in columnas_extraidas() if columna != "urlproceso" %}
+    {#- Solo las MATERIALES. Las cosméticas viven en las dimensiones: son
+        atributos descriptivos, no medidas, y repetirlas acá duplicaría 1,2 GB
+        sin agregar información. Ver arriba. -#}
+    {%- for columna in columnas_materiales() %}
     {{ columna }},
     {%- endfor %}
-    url_proceso,
+
+    {#- Las IMPOSIBLES que son llaves hacia las dimensiones. No son medidas
+        —no cambian nunca, ese es su punto— pero sin ellas el hecho no se puede
+        unir con nada y la tabla queda inservible. -#}
+    codigo_entidad,
+    nit_entidad,
+    proceso_de_compra,
+    codigo_de_categoria_principal,
+
+    {#- La llave hacia `dim_modalidad`. Se calcula con el mismo macro que la
+        dimensión: dos definiciones de lo mismo se separan.
+
+        ⚠ Las tres columnas de modalidad son COSMÉTICAS y aun así el hecho las
+        lleva, en forma de llave. Que una columna no genere versión (D6) no la
+        excluye del hecho: son dos ejes distintos, y la modalidad es cosmética
+        justamente porque nunca cambia — lo que la vuelve un atributo estable
+        con el que agrupar. Ver `dim_modalidad`. -#}
+    {{ llave_de_modalidad() }} as llave_modalidad,
+
+    {#- Trazabilidad hasta el archivo. `notice_uid` es un tercer identificador
+        que no aparece en ninguna otra columna (H6) y probablemente la llave
+        hacia el dataset de Procesos de Contratación. -#}
     notice_uid,
     castings_fallidos
 

@@ -582,42 +582,61 @@ traducir códigos a nombres legibles en la dimensión de categoría.
 premisa del proyecto no es teórica.**
 
 Comparando el barrido del 23 contra la corrida del 25, **20.675 contratos**
-cambiaron `entidad_centralizada` de `"Centralizada"` a `"Descentralizada"`.
-Ninguno en sentido contrario. Pertenecen a **seis entidades**:
+cambiaron `entidad_centralizada`. Pertenecen a **seis entidades**, y el cambio
+va **en las dos direcciones**:
 
-| Entidad | `orden` | Contratos |
-|---|---|---|
-| Gobernación del Cauca | Territorial | 8.955 |
-| SENA Regional Valle — Grupo de Apoyo Administrativo | Nacional | 5.553 |
-| SENA Secretaría General | Nacional | 3.014 |
-| Instituto Municipal de Cultura y Turismo de B… | Territorial | 1.274 |
-| Instituto Departamental de Salud de Nariño | Territorial | 1.156 |
-| Hospital de Castilla la Nueva — ESE | Territorial | 723 |
+| Entidad | `orden` | Contratos | Cambio |
+|---|---|---|---|
+| Gobernación del Cauca | Territorial | 8.955 | → Descentralizada |
+| SENA Regional Valle — Grupo de Apoyo Administrativo | Nacional | 5.553 | → **Centralizada** |
+| SENA Secretaría General | Nacional | 3.014 | → Descentralizada |
+| Instituto Municipal de Cultura y Turismo de B… | Territorial | 1.274 | → **Centralizada** |
+| Instituto Departamental de Salud de Nariño | Territorial | 1.156 | → **Centralizada** |
+| Hospital de Castilla la Nueva — ESE | Territorial | 723 | → Descentralizada |
+
+⚠ **La primera versión de esta nota decía que todas iban hacia
+"Descentralizada", y era falso.** El error salió de la consulta que lo midió:
+pedía `min()` y `max()` de la columna y los mostraba como "de → a".
+Alfabéticamente "Centralizada" precede a "Descentralizada", así que **toda fila
+salía como "Centralizada → Descentralizada" sin importar hacia dónde hubiera ido
+de verdad**. La consulta no podía dar otro resultado.
+
+Se detectó al construir `dim_entidad`, que versiona en orden cronológico y por
+lo tanto muestra la dirección real. Es la regla 6 en versión fina: no era una
+lista truncada, era una agregación que no medía lo que se creía.
 
 **Nadie que consulte SECOP hoy puede saber que esto pasó.** La fuente se
 sobrescribió: hoy solo dice `"Descentralizada"` y no queda rastro del estado
 anterior. Existe únicamente porque se guardaron las dos fotos y se compararon.
 
-#### ⚠ Pero la lectura fácil no se sostiene
+#### ⚠ Y la bidireccionalidad descarta la lectura cómoda
 
-Sería cómodo enunciarlo como "se corrigieron seis clasificaciones erróneas".
-Cuatro de las seis encajan: dos regionales del SENA, un instituto municipal, un
-instituto departamental de salud y una ESE son entidades con personería jurídica
-propia, o sea descentralizadas por definición.
+Sería fácil enunciarlo como "se corrigieron seis clasificaciones erróneas". Con
+los datos correctos, no se sostiene:
 
-**La Gobernación del Cauca no encaja, y son 8.955 contratos — el 43% del
-total.** Una gobernación *es* el nivel central de la administración
-departamental; reclasificarla como descentralizada parece incorrecto.
+- **El SENA se mueve en las dos direcciones el mismo día.** Su Secretaría
+  General pasó a Descentralizada mientras su Regional Valle pasó a Centralizada.
+  Dos unidades de la misma entidad jurídica, sentidos opuestos.
+- **Dos entidades descentralizadas por definición legal fueron marcadas como
+  centralizadas.** Un instituto departamental de salud y un instituto municipal
+  de cultura tienen personería jurídica propia; eso *es* la descentralización.
+- **Y una gobernación fue marcada como descentralizada.** Una gobernación es el
+  nivel central de la administración departamental.
 
-A menos que "centralizada/descentralizada" en SECOP no signifique lo que dice la
-doctrina administrativa — que es exactamente el problema de la **pregunta abierta
-2**: el diccionario define `orden` y `rama` de forma circular, y sus valores ya
-contradicen la intuición (un hospital departamental figura como "Nacional"). Es
-el mismo defecto en la columna de al lado.
+O sea que los movimientos van, en su mayoría, **en contra** de lo que dice la
+doctrina administrativa. La explicación más simple ya no es que se corrigieran
+errores: es que **la columna no significa lo que su nombre sugiere**.
+
+Eso engancha con la **pregunta abierta 2**: el diccionario define `orden` y
+`rama` de forma circular, y sus valores ya contradicen la intuición — un hospital
+departamental figura como "Nacional". `entidad_centralizada` es el mismo defecto
+en la columna de al lado, y ahora con evidencia de que sus valores se mueven sin
+un criterio que se pueda inferir desde afuera.
 
 **La afirmación que se sostiene:** la fuente reclasificó seis entidades en un
-solo movimiento, sobre una taxonomía cuyo significado su propio diccionario no
-define bien. No que haya corregido errores.
+solo movimiento, en ambas direcciones, sobre una taxonomía cuyo significado su
+propio diccionario no define. No que haya corregido errores — y **no se puede
+construir lógica de negocio sobre esa columna** hasta saber qué mide.
 
 #### Y el evento pertenece a la dimensión, no al contrato
 
@@ -625,9 +644,28 @@ define bien. No que haya corregido errores.
 para esos 20.675 contratos. La clasificación es correcta: no cambió nada del
 contrato, cambió la ficha de su entidad.
 
-Pero el evento es real e interesante, y eso convierte una decisión pendiente en
-una con evidencia: **`dim_entidad` necesita historia propia**, y ya tiene su
-primer caso documentado para probarla.
+**Resuelto el 28/08/2026: `dim_entidad` se construyó con historia** y captura las
+seis reclasificaciones — 5.168 filas para 5.162 entidades, con las seis
+cortando el 25 de agosto. El evento existe en el modelo aunque ya no exista en la
+fuente.
+
+Fue además lo que corrigió la dirección: la dimensión versiona en orden
+cronológico, así que muestra hacia dónde fue cada cambio en vez de agregarlo.
+
+#### Otras dos cosas que salieron al construir la dimensión
+
+**`codigo_entidad` es la llave, medido.** 5.162 valores, cada uno con
+**exactamente un** NIT y **exactamente un** nombre, sin excepciones.
+
+⚠ **`nit_entidad` NO sirve como llave: 281 NITs tienen más de un código.** Son
+entidades jurídicas con varias unidades ejecutoras que contratan por separado —el
+SENA y sus regionales es el caso visible acá—. Agrupar por NIT colapsaría
+unidades distintas, y eso cambia cualquier conteo por entidad.
+
+⚠ **Y hay 5.140 nombres para 5.162 códigos: 22 nombres se repiten.** Puede ser
+homonimia real —dos hospitales San José en departamentos distintos— o suciedad.
+En cualquier caso, **agrupar por nombre en un tablero da un resultado
+equivocado**.
 
 #### Valores imposibles en `valor_del_contrato` — medido el 28/08/2026
 
