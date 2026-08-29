@@ -39,6 +39,36 @@
   "cuánto contrató esta empresa en total" eso es lo correcto. **Es una decisión
   del consumidor, no de la dimensión**, y por eso el documento está acá.
 
+  ## ⚠ Las marcas de conflicto dan CERO, y hay que entender por qué
+
+  Las columnas `tiene_documentos_en_conflicto` y `tiene_nombres_en_conflicto`
+  marcan **cero filas** sobre 930.071. No es que estén rotas: es que detectan un
+  caso que no ocurre.
+
+  Los 15 códigos con varios documentos y los 101 con varios nombres se midieron
+  agrupando **solo por código, sin la fecha**. O sea que esos conflictos son
+  **entre observaciones distintas** —el mismo código traía un documento el 23 y
+  otro el 25—, no dentro de una misma foto. La dimensión los captura
+  correctamente como dos versiones, que es lo que son.
+
+  Eso es un dato en sí mismo y bueno: **la fuente es internamente coherente
+  dentro de cada partición.** Las columnas se conservan porque cuestan nada y el
+  día que eso deje de ser cierto, avisan.
+
+  ## Lo que la historia capturó, sin adornarlo
+
+  **125 proveedores de 929.946 cambiaron algo en cinco días**, y la mayoría
+  fueron correcciones de escritura, no cesiones:
+
+      "Daniela Córdoba Murillo"      → "DANIELA CORDOBA MURILLO"
+      "FRANCISCO  ROBLEDO  CASTRO"   → "FRANCISCO ROBLEDO CASTRO"
+      "UTPA2025"                     → "UNIÓN TEMPORAL PRODUCTORES A…"
+
+  Hay excepciones reales —uno cambió `es_pyme` de No a Sí— pero **todavía no hay
+  ninguna cesión capturada**, y decir lo contrario sería adornar. La historia se
+  justifica igual: el trío del proveedor es material, las cesiones existen —28.557
+  contratos con estado `cedido`— y la ventana de observación son cinco días.
+
   ## Los 15 casos raros, que no son todos el mismo problema
 
   Se revisaron uno por uno y hay al menos tres fenómenos distintos:

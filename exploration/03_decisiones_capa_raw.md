@@ -1814,6 +1814,35 @@ violaba duplicando 1,2 GB en disco sin agregar información. **R3 empujó hacia 
 diseño correcto en vez de alejar de él**, igual que había hecho con el modelo
 frontera.
 
+#### Tercera vez que R3 decide, y la más contraintuitiva: menos hilos, más rápido
+
+Con siete modelos, la construcción de dbt tardaba 432 s con los 4 hilos por
+defecto. Medido el 28/08/2026:
+
+| Hilos | Construcción completa | `dim_proveedor` | `fct_contratos_snapshot` |
+|---|---|---|---|
+| 4 | 432 s | 152 s | 207 s |
+| 2 | **458 s** | 160 s | 236 s |
+| **1** | **326 s** | **6,4 s** | **100 s** |
+
+**`dim_proveedor` es 24 veces más rápido con un solo hilo**, y 2 hilos salió
+peor que 4. La curva no es monótona en el número: lo que importa es que los dos
+modelos que ordenan millones de filas —el snapshot y los proveedores— **no
+coincidan en el tiempo**. Con cualquier valor mayor que 1, coinciden, se pelean
+por los 3 GB y los dos vuelcan a disco.
+
+`threads: 1` quedó fijado en `profiles.yml` con la tabla al lado, porque es
+justo el tipo de valor que alguien sube "para mejorarlo".
+
+⚠ **Y no se hereda al objetivo de Snowflake.** Ese 1 resuelve una restricción de
+memoria local que allá no existe; el valor correcto se mide en Snowflake.
+
+⚠ **El techo está en otro lado.** De los ~330 s, unos 200 son
+`raw_observaciones` y `stg_contratos`, que corren solos en cualquier
+configuración: **el 58% del tiempo no depende de la concurrencia**. Bajarlo pide
+materialización incremental, no más hilos. Las cuatro dimensiones juntas cuestan
+6,5 s.
+
 **Y no se negocia subiendo la memoria.** Un proyecto que necesita 16 GB para
 procesar 916 MB tiene un problema de diseño, y se nota. Que quepa en 3 GB es una
 propiedad del trabajo, no una limitación heredada: esta restricción ya produjo un

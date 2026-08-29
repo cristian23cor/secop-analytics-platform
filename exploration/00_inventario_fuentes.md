@@ -667,6 +667,66 @@ homonimia real —dos hospitales San José en departamentos distintos— o sucie
 En cualquier caso, **agrupar por nombre en un tablero da un resultado
 equivocado**.
 
+#### `localizaci_n` no completa a `departamento` y `ciudad` — medido el 28/08/2026
+
+Este documento la clasifica como redundante y con espacios dobles. Al construir
+`dim_geografia` pareció lo contrario: **tiene cero nulos**, contra 56.335 en
+`departamento` y **611.751 en `ciudad`** —el 21% de las observaciones—. Parecía
+la columna completa que rellenaba a las otras dos.
+
+**No lo es, por tres razones independientes.**
+
+**1. No hay casi nada que recuperar.** De los 611.751 contratos sin ciudad, la
+cadena permite recuperar **2.875**: el 0,47%. Los otros 608.876 traen
+`"No Definido"` **dentro** de la cadena. De departamento se recuperan **cero**.
+
+⚠ Y eso explica sus cero nulos: **su ausencia de dato viene escrita adentro del
+texto**, así que la limpieza de centinelas de `staging` no la toca — ahí se
+limpian valores que *son* el centinela, no que lo *contienen*.
+
+**2. El formato no es fijo, y la causa es una trampa.** 2.885.078 filas tienen
+tres campos separados por coma y **17.085 tienen cuatro**. El motivo: un
+departamento se llama *San Andrés, Providencia y Santa Catalina* — **tiene comas
+en el nombre**. Un parseo ingenuo habría inventado un departamento llamado
+"Providencia y Santa Catalina" con 13.102 contratos, y nada habría fallado.
+
+**3. Discrepa en el 34% de las filas, pero no es una contradicción.** Son tres
+diferencias de nomenclatura y nada más:
+
+| En la cadena | En la columna | Filas |
+|---|---|---|
+| `Bogotá` | `Distrito Capital de Bogotá` | 965.212 |
+| `San Andrés` | `San Andrés, Providencia y…` | 16.044 |
+| `Departamento del Amazonas` | `Amazonas` | 13.021 |
+
+Bogotá explica el 97%, y el nombre largo es el correcto: Bogotá no pertenece a
+ningún departamento, es Distrito Capital.
+
+**Esto CIERRA la duda sobre `localizaci_n`**, a diferencia de `orden`, `rama` y
+`entidad_centralizada`, que siguen sin explicación. Las columnas son las
+confiables; la cadena usa otra convención de nombres.
+
+⚠ **Y por lo tanto los 611.751 contratos sin ciudad no tienen ciudad.** El dato
+no está escondido en otra columna: la fuente no lo publica. **Cualquier análisis
+por municipio deja fuera el 21% de la contratación**, y eso hay que decirlo en el
+tablero, no compensarlo.
+
+#### El 74% de la contratación pública colombiana es directa
+
+De `dim_modalidad`, sobre las 2.902.163 observaciones:
+
+| Modalidad | Contratos |
+|---|---|
+| Contratación directa | 2.141.401 |
+| Contratación régimen especial | 486.517 |
+| Mínima cuantía | 141.405 |
+| Contratación Directa (con ofertas) | 30.303 |
+| Selección Abreviada de Menor Cuantía | 29.083 |
+
+**Sumando directa, directa con ofertas y régimen especial, la contratación sin
+licitación abierta supera el 90%.** Es el dato de negocio más citable que salió
+del modelo hasta ahora, y sale de una dimensión de 232 filas.
+
 #### Valores imposibles en `valor_del_contrato` — medido el 28/08/2026
 
 La columna que justifica el proyecto entero tiene basura, y de dos clases que
@@ -1257,7 +1317,18 @@ Aplicables a cualquier fuente futura, no solo a esta.
    contra raw, con el mismo recorrido que cerró RN1 (ver la pregunta 13): las
    seis columnas están en las 2.824.446 filas.
 6. **¿Por qué `saldo_cdp` no se consume con la ejecución?**
-7. **¿La llave de `dim_proveedor` es `documento_proveedor` o `codigo_proveedor`?**
+7. ~~**¿La llave de `dim_proveedor` es `documento_proveedor` o
+   `codigo_proveedor`?**~~ **Cerrada el 28/08/2026: `codigo_proveedor`.** Tres
+   razones, en orden de peso: cero nulos contra 8.917 del documento; 15 códigos
+   con más de un documento contra 1.297 al revés; y —lo que decidía— **el código
+   no se reusa entre proveedores distintos**, comprobado revisando los 101
+   códigos con más de un nombre, que resultaron variantes de escritura del mismo.
+
+   ⚠ `documento_proveedor` no queda descartado, queda **reubicado como
+   atributo**: es el identificador legal y la vía hacia cruces externos. Y sus
+   1.297 duplicados son duplicación de catálogo de la fuente — agrupar por
+   documento los une, y para "cuánto contrató esta empresa en total" eso es lo
+   correcto. Es decisión del consumidor, no de la dimensión.
 8. **¿Aporta algo `SECOP II – Ejecución de Contratos`?** Sin evaluar. Es el
    candidato obvio para la serie de pagos que H9 demostró que no existe.
 9. **¿Por qué la ANCP-CCE dejó de publicar OCDS en abril de 2022?** Si hay un
