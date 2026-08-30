@@ -1,0 +1,86 @@
+version: 2
+
+# La capa intermedia: lógica de negocio derivada de comparar observaciones.
+#
+# Los tests de acá son `error` porque no miden la calidad de la fuente sino si la
+# derivación quedó bien hecha. Un `motivo_del_cambio` mal calculado no explota: produce
+# una tabla con las columnas esperadas y responde las preguntas 6 y 7 con números que
+# nadie puede auditar.
+
+models:
+
+  - name: int_cambios_por_columna
+    description: >
+      Qué columna material cambió en cada versión del snapshot, y cuánto. Es
+      `motivo_del_cambio` de D6, con grano de una fila por contrato, versión y columna.
+      Son 88.395 filas para 32.431 contratos, medido el 29/08/2026.
+
+      Está acá y no en el hecho por una medición: solo el 39,6% de los contratos con dos
+      versiones cambió exactamente una columna, y el resto hasta 12 a la vez. Un motivo
+      escalar no describe eso.
+
+      La versión 1 de cada contrato no aparece, y no es una omisión: no había nada antes,
+      así que "apareció" no es un cambio. Cualquier análisis de deltas mide contratos que
+      cambiaron *mientras los observábamos*, no un total nacional.
+    columns:
+
+      - name: id_contrato
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+
+      - name: version
+        description: >
+          La versión del hecho que este cambio explica. Siempre mayor que 1.
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+
+      - name: columna
+        description: >
+          Cuál de las 28 materiales cambió. Es un valor, no un nombre de columna en un
+          `like`: `valor_pendiente_de` es prefijo de `valor_pendiente_de_pago` y de
+          `valor_pendiente_de_ejecucion`, así que filtrar por subcadena devuelve tres
+          columnas distintas sin avisar. Se compara con `=`.
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+
+      - name: delta_valor
+        description: >
+          Cuánto cambió, en pesos o en días adicionados según la columna. Nulo en las
+          fechas y en las de texto.
+
+          Puede ser negativo y ninguna lógica debe asumir monotonía: existe el tipo
+          `REDUCCION EN EL VALOR` en el dataset oficial de modificaciones (H27). Medido el
+          29/08/2026, de las 1.925 versiones que cambiaron `valor_del_contrato`, 101 son
+          reducciones. La que sí es acumulada es `valor_pagado`, y eso lo protege RN5.
+
+      - name: delta_dias
+        description: >
+          Cuántos días se corrió la fecha. Nulo en las numéricas y en las de texto.
+
+          Va en una columna aparte de `delta_valor` a propósito: pesos y días no se suman
+          entre sí, y una sola columna invitaría a un `sum()` que no corresponde a nada.
+
+      - name: valor_anterior
+        description: >
+          El valor antes del cambio, como texto. Es el único lugar del proyecto donde algo
+          que `staging` ya casteó vuelve a texto, y es el precio del grano largo: una
+          tabla con una fila por columna tiene una sola columna para valores de ocho tipos
+          distintos. Sirve para leer el cambio, no para operarlo — para eso están los dos
+          deltas, que vienen calculados.
+
+      - name: valor_nuevo
+        description: El valor después del cambio, como texto. Ver `valor_anterior`.
+
+# ---------------------------------------------------------------------------
+# Test singular:
+#
+#   tests/int_toda_version_tiene_su_motivo.sql
+#       Cruza esta tabla contra el hecho en los tres sentidos posibles: una
+#       versión sin motivo, un motivo huérfano, y un motivo sobre la versión 1.
+# ---------------------------------------------------------------------------

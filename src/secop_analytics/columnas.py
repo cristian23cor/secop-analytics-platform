@@ -52,6 +52,32 @@ from typing import Final
 
 # MATERIALES — cambió el contrato en el mundo real y una pregunta de negocio
 # lo necesita. Genera versión nueva.
+# Las seis fuentes de financiación del contrato.
+#
+# Existen como constante propia porque son un CONCEPTO, no una coincidencia de
+# clasificación: RN1 exige que sumen `valor_del_contrato`, y RN6 que eso valga en
+# toda versión histórica. Aparecen en MATERIALES —cambian con una adición— y en
+# MONETARIAS —se comparan como número—, y esa doble pertenencia hacía que la lista
+# estuviera escrita dos veces en este archivo, además de en `medir_rn1.py` y de
+# la copia que iba a hacer falta en dbt. Cuatro listas de lo mismo.
+#
+# Es la regla que este módulo ya aplica a las 85 columnas: no duplicar la lista,
+# nombrarla una vez.
+#
+# ⚠ Son SEIS, no cinco. La sexta solo aparece enumerando el esquema completo:
+# ninguna muestra de filas la mostró, porque la API omite las claves nulas.
+# Medido el 28/08/2026 sobre las 2.824.446 filas del barrido, trae valor en
+# 1.281.254 contratos y 1.280.989 filas cierran RN1 SOLO incluyéndola. Con cinco,
+# RN1 fallaría en el 45% del universo vivo.
+FUENTES_DE_FINANCIACION: Final[frozenset[str]] = frozenset({
+    "presupuesto_general_de_la_nacion_pgn",
+    "sistema_general_de_participaciones",
+    "sistema_general_de_regal_as",
+    "recursos_de_credito",
+    "recursos_propios",
+    "recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_",
+})
+
 MATERIALES: Final[frozenset[str]] = frozenset({
     "estado_contrato",
     # Bloque monetario. `valor_pagado` es la columna que justifica el proyecto:
@@ -112,13 +138,7 @@ MATERIALES: Final[frozenset[str]] = frozenset({
     # completo: ninguna muestra de filas la mostró. Se clasifica como material
     # por el mismo criterio que las otras cinco, pero la definición de RN1
     # queda pendiente de revisión (ver `00_inventario_fuentes.md`).
-    "presupuesto_general_de_la_nacion_pgn",
-    "sistema_general_de_participaciones",
-    "sistema_general_de_regal_as",
-    "recursos_de_credito",
-    "recursos_propios",
-    "recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_",
-})
+}) | FUENTES_DE_FINANCIACION
 
 # IMPOSIBLES — no deberían cambiar nunca. No se comparan para versionar: si
 # cambian, se dispara una alerta.
@@ -287,13 +307,7 @@ MONETARIAS: Final[frozenset[str]] = frozenset({
     "saldo_vigencia",
     # Las seis fuentes de financiación. RN1 exige que sumen
     # `valor_del_contrato`, así que tienen que ser comparables entre sí.
-    "presupuesto_general_de_la_nacion_pgn",
-    "sistema_general_de_participaciones",
-    "sistema_general_de_regal_as",
-    "recursos_de_credito",
-    "recursos_propios",
-    "recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_",
-})
+}) | FUENTES_DE_FINANCIACION
 
 FECHAS: Final[frozenset[str]] = frozenset({
     "fecha_de_firma",

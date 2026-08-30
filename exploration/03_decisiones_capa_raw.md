@@ -85,14 +85,39 @@ mismo criterio del `$select` explícito .
 1. ~~El cargador con deduplicación por bytes, trozos y manifiesto.~~ Escrito.
 2. ~~El índice de hashes en DuckDB, con su reconstrucción desde raw.~~ Escrito.
 2b. ~~La consulta del corte, los campos de procedencia y el guardarraíl.~~
- Escrito y corrido contra la fuente el 28/08. Queda anotar hacia atrás el
- manifiesto de la partición del 25 con
- `corte_al_iniciar = 2026-08-25T09:05:54.277Z`, que es legítimo porque la fuente
- quedó congelada en ese valor y esa corrida arrancó de día.
-3. El generador `columnas.py` → dbt, con el test de deriva en CI.
-4. `stg_contratos`: relleno H13, centinelas, tipos, `urlproceso`, `noticeUID`.
-5. El modelo SCD2 propio, incremental, con `motivo_del_cambio` y
- `motivo_de_cierre`.
+ Escrito y corrido contra la fuente el 28/08, y el manifiesto del 25 anotado
+ hacia atrás con `corte_al_iniciar = 2026-08-25T09:05:54.277Z`.
+3. ~~El generador `columnas.py` → dbt, con el test de deriva.~~ Escrito. El
+ 29/08 se le sumaron dos macros más:
+
+ - `estados_vivos()`, que sale de `flujos.py` y no de `columnas.py`: no es una
+   propiedad del esquema sino del universo que el flujo 3 barre, y
+   `motivo_de_cierre` la necesita para que "sigue en observación" signifique
+   exactamente "la ingesta lo sigue barriendo".
+ - `fuentes_de_financiacion()`, que obligó a crear la constante que faltaba.
+   **Las seis fuentes estaban escritas a mano en tres lugares** —dos veces
+   dentro de `columnas.py`, en MATERIALES y en MONETARIAS, y otra en
+   `medir_rn1.py`— y el modelo de dbt iba a ser el cuarto. Son un concepto y no
+   una coincidencia de clasificación: RN1 exige que sumen `valor_del_contrato` y
+   RN6 que eso valga en toda versión histórica. Ahora son
+   `FUENTES_DE_FINANCIACION` en `columnas.py`, y MATERIALES y MONETARIAS se
+   arman uniéndola.
+
+   Es la regla 5 en el lugar donde nadie la había buscado: el módulo que existe
+   para no duplicar la lista de las 85 columnas tenía una lista de seis
+   duplicada adentro. El refactor se comprobó **byte a byte**: el archivo
+   generado no cambió, o sea que los conjuntos son los mismos.
+
+ **Falta el CI que corra el chequeo de deriva.**
+4. ~~`stg_contratos`: relleno H13, centinelas, tipos, `urlproceso`,
+ `noticeUID`.~~ Escrito.
+5. ~~El modelo SCD2 propio, con `motivo_del_cambio` y `motivo_de_cierre`.~~
+ Escrito el 28 y el 29/08. **`motivo_del_cambio` no quedó como columna del
+ hecho**: quedó como modelo propio, `int_cambios_por_columna`, porque medido no
+ cabe en una columna — solo el 39,6% de las versiones cambian una sola material
+ y el resto hasta doce a la vez. Ver §3 de `01_modelo_dimensional.md`.
+ **Falta que sea incremental**, que es lo que D5 pide: hoy se reconstruye
+ entero en cada corrida.
 6. La tabla de alertas de imposibles.
 
 
@@ -563,6 +588,24 @@ Deja de ser detalle de implementación y pasa a ser hallazgo del proyecto:
 
 > La clasificación oficial de modificaciones es incompleta; la plataforma la
 > reconstruye desde el delta observado.
+
+#### Cuántas columnas cambian a la vez — medido el 29/08/2026
+
+D6 decidió comparar columna por columna y guardar **qué** cambió. Al implementarlo
+apareció un dato que la decisión no tenía: **el motivo casi nunca es una columna.**
+
+De los 32.431 contratos con dos versiones, solo **12.838 —el 39,6%— cambiaron
+exactamente una** material. El resto cambió entre 2 y **12 a la vez**.
+
+Eso no toca la decisión de D6 —comparar columna por columna sigue siendo lo
+correcto, y de hecho es lo único que puede describir esto— pero sí toca dónde vive
+el resultado: `01_modelo_dimensional.md` lo tenía escrito como una columna del
+hecho, y una columna no describe un conjunto de hasta doce elementos. Quedó como
+modelo propio con grano de una fila por contrato, versión y columna.
+
+Y confirma el argumento de D6 contra el hash por un camino que no se había
+previsto: si se hubiera guardado un hash de las 28 materiales, se sabría que seis
+de cada diez versiones cambiaron "algo" y nunca cuántas cosas ni cuáles.
 
 #### Dos trampas técnicas, ambas golpean al hash
 

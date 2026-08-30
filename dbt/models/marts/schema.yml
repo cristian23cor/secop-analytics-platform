@@ -73,6 +73,118 @@ models:
               config:
                 severity: error
 
+      - name: motivo_de_cierre
+        description: >
+          Por qué esta versión no tiene sucesora. Existe porque un `observado_hasta` nulo
+          significaba tres cosas distintas, y un nulo con tres significados es un fallo
+          silencioso esperando (D8). `version_nueva` es que llegó una observación
+          distinta; `abierta` es que el contrato sigue en el universo vivo y se lo sigue
+          observando; `fuera_de_observacion` es que pasó a un estado terminal y el flujo 3
+          ya no lo barre, así que su última versión queda abierta para siempre sin que eso
+          signifique que sigue activo.
+
+          Medido el 29/08/2026 sobre 2.881.640 versiones: 32.431 · 2.842.560 · 6.649,
+          y la suma cierra exacta.
+
+          La lista de estados vivos sale del macro generado desde `flujos.py`, que es la
+          misma con la que el flujo 3 arma su `$where`. Ese cruce puede romperse en
+          silencio y lo vigila `fct_los_estados_vivos_siguen_calzando`.
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+          - accepted_values:
+              values: ["version_nueva", "abierta", "fuera_de_observacion"]
+              config:
+                severity: error
+                # Hoy no puede fallar: los tres valores salen de un `case` de tres ramas
+                # en el mismo `select`. Se escribe porque deja de ser tautológico en
+                # cuanto alguien agregue una cuarta rama —una partición a caballo de dos
+                # cortes es la candidata— y se olvide de que hay marts leyendo estos
+                # tres.
+
+  - name: fct_contratos
+    description: >
+      Un contrato por fila, en su estado más reciente conocido. Sale de filtrar
+      `es_version_vigente` sobre el snapshot, así que las dos tablas son consistentes
+      por construcción y no por coincidencia. Son 2.849.209 contratos.
+
+      Lleva solo las medidas ADITIVAS (§7): `valor_del_contrato`, las seis fuentes de
+      financiación y `conteo_contratos`. Las semiaditivas viven en el snapshot, que es
+      donde está el eje temporal que las hace semiaditivas.
+
+      El filtro de 2020 de H3 NO está acá: esta tabla es el inventario completo de lo
+      que el pipeline conoce, y el recorte lo declara cada mart. 71.512 de estos
+      contratos son anteriores a 2020.
+    columns:
+
+      - name: id_contrato
+        description: >
+          Llave primaria, verificada en H1 por dos métodos independientes. Acá sí es
+          única, a diferencia del snapshot, donde el grano es contrato más versión.
+        data_tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+
+      - name: fecha_de_firma
+        description: >
+          RN3 — ningún registro de la tabla de hechos tiene fecha de firma nula.
+
+          Medido el 29/08/2026: cero nulos sobre 2.849.209 contratos. Confirma H4 sobre
+          el universo entero en vez de sobre un `GROUP BY` de estados: los nulos de
+          fecha de firma son todos de estados pre-firma, y ninguno de esos estados está
+          en este universo.
+
+          ⚠ RN2 —"ningún registro tiene estado pre-firma"— NO está escrita como test, y
+          no por olvido: exige una lista de cuáles son los estados pre-firma, esa lista
+          no existe como constante en ninguna parte, y su definición es ambigua. H4
+          documenta cinco estados con fecha de firma nula y uno de ellos es `Aprobado`,
+          con 2 filas de 214.615 — o sea que `Aprobado` es pre-firma casi nunca.
+          Inventar la lista acá crearía una definición del ciclo de vida del contrato
+          escondida en un test. Por H4, RN3 la cubre en la práctica salvo por esas 2
+          filas.
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+
+      - name: fecha_primer_snapshot
+        description: >
+          La primera vez que el pipeline vio este contrato. Es la columna que justifica
+          la tabla: sin ella no se distingue "no tuvo adiciones" de "tuvo adiciones que
+          no vimos".
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+
+      - name: dias_hasta_el_primer_snapshot
+        description: >
+          Cuántos días pasaron entre la firma y la primera observación. Poco significa
+          que vimos el contrato desde que nació, y solo esos tienen historia completa
+          para un análisis de deltas.
+
+          ⚠ Medido el 29/08/2026: el mínimo es 1, la mediana 657 y el máximo 3.876.
+          Con margen de 7 días son 11.066 contratos, el 0,39%; con 30, el 2,7%. El
+          margen no se fija acá porque es decisión del mart, pero **no puede ser cero**:
+          la fuente publica con un día de rezago (H8), así que ningún contrato se
+          observa el mismo día en que se firma.
+
+      - name: versiones_observadas
+        description: >
+          Cuántas versiones tiene este contrato en el snapshot. La suma sobre toda la
+          tabla da 2.881.640, que es el total de filas del snapshot — es el control de
+          que el join no perdió ni duplicó nada.
+
+      - name: conteo_contratos
+        description: >
+          Siempre 1. Existe para contar sin `COUNT(DISTINCT)`, que sobre una tabla de
+          una fila por contrato es trabajo de más (§7).
+
   - name: dim_entidad
     description: >
       Quién contrata, con historia. Hay 5.162 entidades. La llave es `codigo_entidad`,
@@ -180,3 +292,155 @@ models:
           escondido en `localizaci_n`: la fuente no lo publica. Un análisis por
           municipio deja fuera esa quinta parte, y esa limitación hay que decirla en
           el tablero en lugar de compensarla.
+  - name: dim_categoria
+    description: >
+      Qué se compra. 11.231 códigos UNSPSC, 402 familias y 57 segmentos, sin historia:
+      `codigo_de_categoria_principal` cambió cero veces entre versiones, medido.
+
+      La jerarquía se deriva del propio código; el catálogo UNSPSC —dato externo
+      pendiente— solo agrega los nombres. Sin él la pregunta 1 no se puede leer, pero
+      sí agrupar.
+    columns:
+      - name: codigo_de_categoria_principal
+        data_tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+      - name: es_sin_especificar
+        description: >
+          25.597 contratos —el 0,9%— traen el literal `UNSPECIFIED`. Es un tercer
+          centinela, en inglés, que la limpieza de `staging` no toca porque
+          `CENTINELAS` solo tiene los dos en español. La columna reporta cero nulos y
+          aun así ese 0,9% no tiene categoría. Los cuatro niveles quedan nulos en esas
+          filas, para que agrupar por familia no invente una llamada `ECIF`.
+      - name: familia_unspsc
+        description: >
+          Los cuatro dígitos del código, que es el nivel al que un proveedor reconoce
+          su propio mercado. 402 valores.
+
+  - name: mart_extension_de_plazo
+    description: >
+      Las preguntas 6 y 7: qué entidades y categorías extienden sistemáticamente el
+      plazo, cuántos días, y cuánto cuesta en pesos. Son las dos que no se pueden
+      responder con datos públicos y las que justifican la plataforma.
+
+      Grano: entidad × familia UNSPSC × `historia_completa`. Restringido a contratos
+      firmados desde 2020 (H3); el hecho no lleva ese filtro y cada mart declara el
+      suyo.
+
+      Los deltas vienen calculados desde `int_cambios_por_columna`, así que este
+      modelo no tiene ningún `lag()`.
+    columns:
+      - name: historia_completa
+        description: >
+          Si el contrato se observó desde cerca de su firma —margen de 30 días— y por
+          lo tanto tiene historia completa para un análisis de deltas.
+
+          ⚠ Está en el GRANO y no en un filtro a propósito. Con la restricción de §9,
+          la pregunta 7 queda con 39 contratos en 29 entidades: 1,3 cada una, que no
+          sostienen la palabra "sistemáticamente". Sin la restricción hay 1.925, pero
+          es cota inferior — de un contrato de 2021 solo vimos las adiciones de esta
+          semana. Ninguna de las dos responde bien hoy, y separarlas por grano es lo
+          que impide que una consulta las mezcle sin querer.
+
+          La población medible crece sola con cada regeneración ingerida.
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+      - name: contratos_observados
+        description: >
+          El denominador. Sin él, una entidad con 3 extensiones sobre 4 contratos y
+          otra con 3 sobre 4.000 se ven iguales, y "sistemáticamente" no se puede
+          afirmar. La suma sobre todas las celdas da 2.777.697, que es lo que el hecho
+          tiene desde 2020.
+        data_tests:
+          - not_null:
+              config:
+                severity: error
+      - name: pesos_adicionados
+        description: >
+          Solo los cambios POSITIVOS. Las reducciones van aparte, en `pesos_reducidos`,
+          y el neto en `pesos_netos`.
+
+          ⚠ Agregarlos en neto bajo un nombre que afirma el signo fue un defecto real
+          de la primera versión de este modelo, y lo destapó su primer resultado: una
+          celda mostraba "12 extensiones, −12 días". Medido, de los 2.227 cambios de
+          plazo 2.131 alargaron y 96 acortaron; del valor, 1.824 adicionaron y 101
+          redujeron. Es H27 —que documenta `REDUCCION EN EL VALOR`— y su equivalente
+          en el plazo, que no estaba anotado en ninguna parte.
+
+      - name: dias_extendidos
+        description: >
+          Solo los cambios positivos, en días. Los acortamientos van en
+          `dias_acortados`, con signo negativo. Ver `pesos_adicionados`.
+
+      - name: pesos_netos
+        description: >
+          Adiciones más reducciones. Es el que alimenta `sobrecosto`, porque la
+          pregunta 7 es cuánto se encareció el contrato y una reducción posterior sí
+          lo abarata.
+      - name: sobrecosto
+        description: >
+          `pesos_adicionados / (valor_actual − pesos_adicionados)`, o sea cuánto se
+          encareció respecto de lo contratado. Se calcula DESPUÉS de agregar (§7): al
+          revés, un contrato de $5.000 pesaría igual que uno de $50.000 millones.
+# ---------------------------------------------------------------------------
+# Tests singulares del hecho. Van en `tests/` porque expresan relaciones entre
+# filas —entre versiones consecutivas de un contrato— que los tests genéricos de
+# dbt no cubren. Los tres son `error`: verifican que el SCD2 esté bien
+# construido, no la calidad del dato en bruto.
+#
+#   tests/fct_una_sola_version_vigente.sql
+#       Exactamente una versión abierta por contrato. Con dos, toda consulta de
+#       "estado de hoy" duplica; con ninguna, el contrato desaparece de ella.
+#
+#   tests/fct_intervalos_encajan.sql
+#       El `hasta` de una versión es el `desde` de la siguiente. Devuelve un
+#       `motivo` porque los cuatro modos de fallo se arreglan distinto.
+#
+#   tests/fct_una_observacion_por_contrato_y_fecha.sql
+#       Vigila el supuesto del que dependen los otros dos: que un contrato
+#       aparezca a lo sumo una vez por `fecha_extraccion`. Ver §3 de
+#       `01_modelo_dimensional.md`.
+#
+#   tests/fct_los_estados_vivos_siguen_calzando.sql
+#       Canario sobre `motivo_de_cierre`: si `staging` normalizara la
+#       capitalización de `estado_contrato`, o la fuente renombrara un estado,
+#       TODAS las versiones abiertas pasarían a `fuera_de_observacion` sin que
+#       nada falle. El umbral es un piso —hoy 0,23%, roto sería 100%—, no un
+#       valor calibrado.
+#
+#   tests/int_toda_version_tiene_su_motivo.sql
+#       Cruza el hecho contra `int_cambios_por_columna`: son dos cálculos
+#       independientes de "algo material cambió", uno por huella concatenada y
+#       otro columna por columna.
+#
+#   tests/fct_contratos_cuadra_con_el_snapshot.sql
+#       Los dos hechos describen el mismo universo. Cubre los tres sentidos:
+#       falta, sobra y duplicado. El tercero es el que no avisa, porque acá
+#       viven las medidas aditivas.
+#
+#   tests/fct_contratos_no_se_observa_antes_de_la_firma.sql
+#       `warn`: una fecha de firma futura es suciedad de la fuente. Un
+#       `datediff` invertido se distingue por el volumen, no por la severidad.
+#
+#   tests/mart_extension_es_coherente.sql
+#       Las cuentas del mart no se contradicen entre sí. Cubre los dos joins:
+#       el de los cambios, que puede multiplicar filas, y el de la dimensión de
+#       entidad, que puede duplicar la celda.
+#
+#   tests/mart_extension_cuadra_con_el_hecho.sql
+#       El control del denominador. Atrapa lo que una celda sana no delata: que
+#       falten contratos enteros porque el join contra `dim_categoria` dejó de
+#       cubrir el hecho.
+#
+# Los tres se verificaron contra un hecho corrompido a propósito antes de darlos
+# por buenos — siete defectos sembrados, siete detectados, y los dos controles
+# sanos ausentes de todos los resultados. Un test que solo se ve dar cero no
+# demuestra que sepa dar otra cosa; es la lección de I5, donde un test pasaba y
+# afirmaba el defecto.
+# ---------------------------------------------------------------------------

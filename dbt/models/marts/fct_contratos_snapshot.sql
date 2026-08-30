@@ -225,6 +225,46 @@ select
     observado_hasta,
     observado_hasta is null as es_version_vigente,
 
+    {#- `motivo_de_cierre` existe porque un `observado_hasta` nulo significa
+        TRES cosas distintas, y un nulo que significa tres cosas es un fallo
+        silencioso esperando (D8).
+
+        Un contrato que pasa a estado terminal deja de ser barrido por el flujo
+        3, así que su última versión queda abierta para siempre — honesto ("es
+        lo último que observé") pero un lector lo va a leer como "sigue
+        activo".
+
+        Medido el 29/08/2026 sobre 2.881.640 versiones, y la suma cierra exacta:
+
+        | valor | versiones |
+        |---|---|
+        | `version_nueva`        |    32.431 |
+        | `abierta`              | 2.842.560 |
+        | `fuera_de_observacion` |     6.649 |
+
+        ⚠ La lista de estados sale del macro generado, que la toma de
+        `flujos.py` — la MISMA con la que el flujo 3 arma su `$where`. Así,
+        "sigue en observación" significa exactamente "la ingesta lo sigue
+        barriendo". Escribirla acá a mano daría dos definiciones del universo
+        vivo y el día que se separen esta columna mentiría sin fallar.
+
+        ⚠ Y hereda el supuesto sin verificar de la pregunta abierta 3 del
+        inventario: que los estados terminales ya no se mueven. Si un contrato
+        `Cerrado` recibe pagos rezagados, esta columna dice
+        `fuera_de_observacion` sobre algo que sí cambió y nadie está mirando.
+
+        Un `estado_contrato` nulo cae en `fuera_de_observacion`: `null in (...)`
+        no da verdadero. Hoy no hay ninguno, y es la lectura prudente. -#}
+    case
+        when observado_hasta is not null then 'version_nueva'
+        when estado_contrato in (
+            {%- for estado in estados_vivos() %}
+            '{{ estado }}'{{ "," if not loop.last }}
+            {%- endfor %}
+        ) then 'abierta'
+        else 'fuera_de_observacion'
+    end as motivo_de_cierre,
+
     {#- El flujo que trajo esta observación. ⚠ Significa "quién la trajo
         primero", no "por qué caminos podía llegar": la deduplicación por bytes
         se queda con la etiqueta del primero que la vio. -#}
@@ -238,13 +278,22 @@ select
     {{ columna }},
     {%- endfor %}
 
-    {#- Las IMPOSIBLES que son llaves hacia las dimensiones. No son medidas
-        —no cambian nunca, ese es su punto— pero sin ellas el hecho no se puede
-        unir con nada y la tabla queda inservible. -#}
-    codigo_entidad,
-    nit_entidad,
-    proceso_de_compra,
-    codigo_de_categoria_principal,
+    {#- Las IMPOSIBLES. No son medidas —no cambian nunca, ese es su punto— pero
+        sin ellas el hecho no se puede unir con nada y la tabla queda
+        inservible.
+
+        ⚠ La lista sale del macro y NO se escribe acá. Estaban las cuatro que
+        son llaves hacia dimensiones, elegidas a mano, y faltaban
+        `fecha_de_firma` y `fecha_de_inicio_del_contrato`. Eso lo destapó
+        `fct_contratos`, que necesita la fecha de firma para RN3 y para saber si
+        un contrato se observó desde que nació. Una lista a mano se separa de la
+        de `columnas.py` y nadie se entera; generada, agregar una imposible en
+        `columnas.py` la trae hasta acá sola.
+
+        `id_contrato` se excluye porque ya está arriba como llave. -#}
+    {%- for columna in columnas_imposibles() if columna != "id_contrato" %}
+    {{ columna }},
+    {%- endfor %}
 
     {#- La llave hacia `dim_modalidad`. Se calcula con el mismo macro que la
         dimensión: dos definiciones de lo mismo se separan.

@@ -558,6 +558,28 @@ probablemente la llave hacia el dataset de Procesos de Contratación.
 `"No definido"` y `"No Definido"`. No son nulos de verdad, así que la omisión de
 claves no los cubre. Se normalizan en `staging`.
 
+⚠ **Y hay un TERCERO, en inglés, que no estaba documentado: `UNSPECIFIED`.**
+Medido el 29/08/2026 sobre las 67 columnas de `stg_contratos`, aparece en
+**26.156 observaciones** y en **una sola columna**:
+`codigo_de_categoria_principal` — la que responde la pregunta 1 del negocio.
+
+La limpieza de `staging` no lo toca, porque `columnas.py` declara
+`CENTINELAS = ("No definido", "No Definido")` y nada más. El efecto es el de
+siempre: la columna reporta **cero nulos** y aun así el 0,9% de los contratos no
+tiene categoría. Es el mismo patrón que `localizaci_n`, donde la ausencia venía
+escrita adentro del texto.
+
+Por ahora se marca en `dim_categoria` con `es_sin_especificar` y los cuatro
+niveles de la jerarquía quedan nulos, para que un `group by familia` no invente
+una familia llamada `ECIF` — que es lo que devuelve cortar `UNSPECIFIED` por
+donde va el código. **Meterlo en `CENTINELAS` es una decisión pendiente**: aplicaría
+a las 67 columnas y obliga a reconstruir todo el pipeline.
+
+⚠ **Y deja una pregunta de método abierta:** si hay un centinela en inglés que
+ocho días de exploración no encontraron, puede haber otros. La búsqueda que lo
+encontró —contar un valor literal sobre las 67 columnas de texto— es barata y no
+se había hecho nunca de forma sistemática.
+
 El centinela no se limita a columnas de detalle: también aparece en columnas
 **categóricas**, donde es más dañino porque parece una categoría legítima. En el
 dataset de Adiciones es el 22% de los tipos de modificación entre 2015 y 2022

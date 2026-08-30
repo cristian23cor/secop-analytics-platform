@@ -1,4 +1,4 @@
-"""Genera el macro de dbt con el esquema, desde `columnas.py`.
+"""Genera el macro de dbt con el esquema, desde `columnas.py` y `flujos.py`.
 
 ## Por qué existe
 
@@ -20,6 +20,17 @@ compilación**, que es cuando el modelo frontera la necesita para armar el
 `STRUCT`. Las variables en `dbt_project.yml` meterían datos generados en el
 archivo que nadie debe tocar; un seed sería una tabla consultable, disponible
 recién en tiempo de consulta y con un `dbt seed` extra antes de cada corrida.
+
+## Por qué también lee `flujos.py`
+
+El nombre del script dice `columnas` y lee dos módulos. La lista de estados vivos
+no es del esquema —no clasifica una columna— sino del universo que el flujo 3
+barre, así que vive con el flujo. Pero dbt la necesita por el mismo motivo que
+necesita la clasificación: `motivo_de_cierre` distingue una versión que sigue en
+observación de una que salió del universo, y "salió" significa exactamente "ya no
+está en el `$where` del flujo 3". Copiarla al modelo crearía dos definiciones del
+universo vivo, y el día que se separen `motivo_de_cierre` diría "abierta" sobre
+contratos que hace meses que nadie mira.
 
 ## El contrato con `verificar_columnas_dbt.py`
 
@@ -45,11 +56,18 @@ from secop_analytics.columnas import (
     COSMETICAS,
     ENTERAS,
     FECHAS,
+    FUENTES_DE_FINANCIACION,
     IMPOSIBLES,
     MATERIALES,
     MONETARIAS,
     clasificacion,
 )
+
+# `ESTADOS_VIVOS` no vive en `columnas.py` sino en `flujos.py`, porque no es
+# una propiedad del esquema sino del universo que el flujo 3 barre. Se importa
+# igual: es la misma lista con la que se arma el `$where`, y `motivo_de_cierre`
+# tiene que decir "sigue en observación" sobre exactamente esos contratos.
+from secop_analytics.flujos import ESTADOS_VIVOS
 
 DESTINO = Path("dbt/macros/columnas_generado.sql")
 
@@ -63,7 +81,8 @@ CABECERA = """{#-
   ARCHIVO GENERADO. NO EDITAR A MANO.
 
   Lo escribe `scripts/generar_columnas_dbt.py` desde `src/secop_analytics/columnas.py`,
-  que es la fuente de verdad del esquema. Editar acá crea una segunda lista que
+  que es la fuente de verdad del esquema, y desde `flujos.py`, que lo es del
+  universo vivo. Editar acá crea una segunda lista que
   se va a separar de la primera, y cuando se separe los tests van a seguir
   pasando — que es exactamente el modo de fallo que este archivo existe para
   evitar.
@@ -151,6 +170,38 @@ def cuerpo() -> str:
         + "{% macro centinelas() %}\n"
         + "    {{ return([\n"
         + ",\n".join(f'        "{c}"' for c in CENTINELAS)
+        + "\n    ]) }}\n"
+        + "{% endmacro %}\n"
+        + "\n"
+        + "{#- Las seis fuentes de financiación del contrato.\n\n"
+        "    Son un concepto, no una coincidencia de clasificación: RN1 exige\n"
+        "    que sumen `valor_del_contrato` y RN6 que eso valga en toda versión\n"
+        "    histórica. Están en MATERIALES y en MONETARIAS a la vez, así que\n"
+        "    deducirlas de la intersección de esos dos macros sería frágil —hay\n"
+        "    otras diez columnas en las dos—. Van con nombre propio.\n\n"
+        "    ⚠ Son SEIS. La sexta no aparece en ninguna muestra de filas porque\n"
+        "    la API omite las claves nulas, y sin embargo 1.280.989 contratos\n"
+        "    cierran RN1 solo incluyéndola. -#}\n"
+        + bloque("fuentes_de_financiacion", FUENTES_DE_FINANCIACION)
+        + "\n"
+        + "{#- Los estados en los que un contrato todavía puede cambiar (H5).\n\n"
+        "    Sale de `flujos.py`, no de `columnas.py`: es la MISMA lista con la\n"
+        "    que el flujo 3 arma su `$where`. Así, lo que `motivo_de_cierre`\n"
+        "    llama 'sigue en observación' es exactamente lo que la ingesta sigue\n"
+        "    barriendo. Copiarla al modelo daría dos definiciones del universo\n"
+        "    vivo, y el día que se separen la tabla diría 'abierta' sobre\n"
+        "    contratos que ya nadie mira.\n\n"
+        "    ⚠ Los valores van con la capitalización de la API. `staging` no\n"
+        "    normaliza `estado_contrato` —comprobado el 29/08/2026: `terminado`\n"
+        "    y `cedido` siguen en minúscula en el hecho—, así que la\n"
+        "    comparación es directa. Si algún día staging normaliza, esta lista\n"
+        "    deja de calzar y `motivo_de_cierre` se vuelve todo\n"
+        "    'fuera_de_observacion' sin que nada falle.\n\n"
+        "    ⚠ Y arrastra el supuesto sin verificar de la pregunta abierta 3 del\n"
+        "    inventario: que los estados terminales ya no se mueven. -#}\n"
+        + "{% macro estados_vivos() %}\n"
+        + "    {{ return([\n"
+        + ",\n".join(f'        "{e}"' for e in ESTADOS_VIVOS)
         + "\n    ]) }}\n"
         + "{% endmacro %}\n"
     )
