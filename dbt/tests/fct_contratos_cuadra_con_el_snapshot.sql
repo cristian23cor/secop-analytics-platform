@@ -1,32 +1,27 @@
 {#-
-  `fct_contratos` y `fct_contratos_snapshot` describen el mismo universo: uno con
-  todas las versiones y el otro con la última. Los dos conjuntos de contratos
-  tienen que ser **exactamente el mismo**, en los dos sentidos.
+  Los dos hechos describen el mismo universo: uno con todas las versiones y el otro
+  con la última. Los conjuntos de contratos tienen que ser el mismo, en los dos
+  sentidos.
 
-  ## Qué modo de fallo cubre
+  El hecho actual une la versión vigente contra una agregación por contrato, y ese
+  join es donde se rompe:
 
-  `fct_contratos` une la versión vigente contra una agregación por contrato. Ese
-  join es donde puede romperse:
+      falta en el hecho       un contrato del snapshot no llegó
+      sobra en el hecho       un contrato que el snapshot no tiene
+      duplicado en el hecho   el join multiplicó filas
 
-  | motivo | qué pasó |
-  |---|---|
-  | `falta en el hecho` | un contrato del snapshot no llegó: el join lo perdió, o quedó sin versión vigente |
-  | `sobra en el hecho` | un contrato que el snapshot no tiene |
-  | `duplicado en el hecho` | el join multiplicó filas y toda suma quedó inflada |
+  El tercero es el que importa y el que no avisa. Acá viven las medidas aditivas:
+  si un contrato aparece dos veces, la suma del valor lo cuenta dos veces y el
+  número sale mal sin que nada falle. Es el mismo fan-out que apareció al escribir
+  a mano la consulta de la pregunta 7.
 
-  El tercero es el que importa y el que no avisa. `fct_contratos` es donde viven
-  las medidas **aditivas** (§7): si un contrato aparece dos veces,
-  `sum(valor_del_contrato)` lo cuenta dos veces y el número sale mal sin que nada
-  falle. Es el mismo *fan-out* que §9 encontró al escribir la consulta de la
-  pregunta 7, y la razón por la que existe `vigente_en()`.
-
-  Un `unique` sobre `id_contrato` cubre solo el tercero. Los otros dos necesitan
+  Un unique sobre el identificador cubre solo el tercero. Los otros dos necesitan
   comparar contra el snapshot, que es de donde esta tabla sale.
 
-  Medido el 29/08/2026: los tres dan cero. 2.849.209 contratos en las dos tablas,
-  y la suma de `versiones_observadas` da 2.881.640, que es el total de versiones
-  del snapshot.
+  Medido el 29/08/2026: los tres dan cero, con 2.849.209 contratos en las dos
+  tablas.
 -#}
+
 
 {{ config(severity="error") }}
 

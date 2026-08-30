@@ -1,8 +1,8 @@
 """Paginación contra SODA2 de Socrata.
 
 Este es el único módulo del proyecto que conoce `$limit`, `$offset`, `$where`,
-`$order` y el header `X-App-Token`. Todo lo demás —los tres flujos de ingesta,
-la capa raw— habla en términos de "traeme los contratos que cumplen tal
+`$order` y el header `X-App-Token`. Todo lo demás (los tres flujos de ingesta,
+la capa raw) habla en términos de "traeme los contratos que cumplen tal
 condición" y nunca ve una URL.
 
 No todo lo que se le pregunta a la fuente son filas. `contar()` pregunta
@@ -181,8 +181,8 @@ def paginar(
         #
         # El diseño asume que la API devuelve exactamente `limite` filas cuando
         # hay al menos esas cantidades disponibles. Si en el futuro capara el
-        # `$limit` por debajo de lo pedido —por ejemplo limitándose a 1.000
-        # cuando se solicitan 5.000— cada página parecería ser la última y el
+        # `$limit` por debajo de lo pedido (por ejemplo limitándose a 1.000
+        # cuando se solicitan 5.000) cada página parecería ser la última y el
         # recorrido terminaría tras la primera sin error ni aviso, perdiendo el
         # resto del dataset en silencio.
         #
@@ -286,12 +286,12 @@ def corte(
 
     Estos son usos opuestos que es fácil confundir. El inventario descarta
     `:updated_at` como watermark para detectar cambios, y con razón: es idéntico
-    en todas las filas de un corte. Pero esa misma propiedad —el hecho de que
-    sea invariante dentro de un estado— es precisamente lo que lo hace funcionar
+    en todas las filas de un corte. Pero esa misma propiedad (el hecho de que
+    sea invariante dentro de un estado) es precisamente lo que lo hace funcionar
     como llave única de ese estado. Son dos cosas que se contradicen solo si
     uno olvida que las usa en contextos opuestos.
 
-    Si la petición falla —429, 5xx, timeout— la excepción sube y la corrida se
+    Si la petición falla (429, 5xx, timeout) la excepción sube y la corrida se
     aborta. Es deliberado: reintentar es volver a escribir el comando y no se
     pierde nada, mientras que arrancar cincuenta minutos sin saber contra qué
     corte se está corriendo es exactamente lo que D10 vino a eliminar.
@@ -339,7 +339,7 @@ def corte(
 # fallo ruidoso en una corrida lenta que nadie mira. Sigue en pie, pero ahora
 # hay un contrapeso: sin reintento, un solo 429 en la página 550 aborta la
 # corrida. Con `desde_cursor` ya implementado eso cuesta mucho menos que antes
-# —se retoma desde el manifiesto— así que la urgencia bajó, no subió.
+# (se retoma desde el manifiesto) así que la urgencia bajó, no subió.
 #
 # Cuando se agregue, mirar `indice.py::_abrir()`: ahí ya hay un reintento con
 # espera creciente que resolvió el mismo problema para los bloqueos de DuckDB,

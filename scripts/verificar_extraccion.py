@@ -20,7 +20,7 @@ Lo que responde, en orden de importancia:
 Se usa un límite chico a propósito (100): fuerza muchas páginas sobre pocos
 datos, que es donde los errores de cursor aparecen.
 
-⚠ **La verificación aborta si la ventana viene vacía.** Sin filas, todos los
+**La verificación aborta si la ventana viene vacía.** Sin filas, todos los
 chequeos pasan por vacuidad: cero es igual a cero, una lista vacía no tiene
 duplicados y está ordenada, y ninguna columna personal llegó porque no llegó
 ninguna columna. Un script que aprueba sin haber verificado nada da confianza
@@ -83,7 +83,7 @@ def _recorrer(paginas, *, avisar: bool = False) -> tuple[list[str], int, set[str
             ids.append(fila["id_contrato"])
             claves.update(fila)
         if avisar:
-            print(f"\r  página {n_paginas} · {len(ids):,} filas", end="", flush=True)
+            print(f"\r  página {n_paginas} / {len(ids):,} filas", end="", flush=True)
     if avisar and n_paginas:
         print()
     return ids, n_paginas, claves
@@ -121,7 +121,7 @@ def main() -> None:
     )
     if peticiones > MAXIMO_RAZONABLE:
         print(
-            f"  ⚠ Más de {MAXIMO_RAZONABLE} peticiones para una verificación.\n"
+            f"  Más de {MAXIMO_RAZONABLE} peticiones para una verificación.\n"
             "    El script SIGUE igual, pero considerá achicar el rango o subir\n"
             "    LIMITE: la garantía la dan las páginas, no las filas."
         )
@@ -137,16 +137,16 @@ def main() -> None:
             "Si llegaron menos, el cursor se está saltando filas."
         )
     else:
-        print("  OK — el keyset recorre el conjunto completo.")
+        print("  OK: el keyset recorre el conjunto completo.")
 
     duplicados = len(ids) - len(set(ids))
     if duplicados:
         fallos.append(f"DUPLICADOS: {duplicados:,} id_contrato repetidos entre páginas.")
     else:
-        print("  OK — sin duplicados entre páginas.")
+        print("  OK: sin duplicados entre páginas.")
 
     # Este chequeo compara contra el orden de Python, que es por punto de
-    # código. Si la colación del servidor difiriera —con acentos, por ejemplo—
+    # código. Si la colación del servidor difiriera: con acentos, por ejemplo:
     # podría fallar SIN que se haya perdido una sola fila.
     #
     # La autoridad sobre "no se saltó filas" es el conteo de arriba. Este
@@ -161,14 +161,14 @@ def main() -> None:
             "el último id como cursor de reanudación."
         )
     else:
-        print("  OK — el orden se respeta a lo largo de todo el recorrido.")
+        print("  OK: el orden se respeta a lo largo de todo el recorrido.")
 
     # -------------------------------------------------------------------- 3
     filtradas = claves & columnas.PERSONALES
     if filtradas:
         fallos.append(f"DATOS PERSONALES: llegaron {sorted(filtradas)}")
     else:
-        print(f"  OK — ninguna de las {len(columnas.PERSONALES)} columnas personales llegó.")
+        print(f"  OK: ninguna de las {len(columnas.PERSONALES)} columnas personales llegó.")
 
     inesperadas = claves - set(columnas.COLUMNAS_EXTRAIDAS)
     if inesperadas:

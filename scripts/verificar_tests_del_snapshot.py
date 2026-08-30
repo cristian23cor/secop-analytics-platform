@@ -8,8 +8,8 @@ I5, donde `test_el_punto_de_control_guarda_el_cursor` **pasaba y afirmaba el
 defecto**.
 
 Este script arma tablas sintéticas con los defectos sembrados, corre los tests
-reales —lee los `.sql`, les saca el jinja y los ejecuta, así verifica el archivo y
-no una copia— y comprueba que cada defecto salga, que los casos sanos no salgan, y
+reales (lee los `.sql`, les saca el jinja y los ejecuta, así verifica el archivo y
+no una copia) y comprueba que cada defecto salga, que los casos sanos no salgan, y
 que los tests no sean redundantes entre sí.
 
 No toca la base real ni la red. Corre en menos de un segundo, así que puede ir a
@@ -356,7 +356,7 @@ def main() -> int:
         filas = con.execute(sql_de(nombre, esc["tablas"])).fetchall()
         columnas = [d[0] for d in con.description]
 
-        etiqueta = f"{nombre}{'  —  ' + esc['nota'] if 'nota' in esc else ''}"
+        etiqueta = f"{nombre}{': ' + esc['nota'] if 'nota' in esc else ''}"
         print(f"\n{etiqueta}")
         for f in filas:
             print("   ", dict(zip(columnas, f)))
@@ -401,18 +401,18 @@ def main() -> int:
     if not intervalos - vigentes:
         fallas.append("fct_intervalos_encajan no aporta nada que fct_una_sola_version_vigente no vea")
 
-    print(f"\n{'─' * 62}")
+    print(f"\n{'-' * 62}")
     if fallas:
         for f in fallas:
-            print(f"  ✗ {f}")
+            print(f"  FALLA {f}")
         return 1
 
     sembrados = sum(len(e["ids"]) for e in ESCENARIOS if "ids" in e) + 1
-    print(f"  ✓ {sembrados} defectos sembrados, {sembrados} detectados, con su motivo")
-    print(f"  ✓ los casos sanos no salieron donde no correspondía")
-    print(f"  ✓ el canario de estados no canta contra un hecho sano")
-    print(f"  ✓ solo por vigencia: {sorted(vigentes - intervalos)}")
-    print(f"  ✓ solo por intervalos: {sorted(intervalos - vigentes)}")
+    print(f"  ok   {sembrados} defectos sembrados, {sembrados} detectados, con su motivo")
+    print(f"  ok   los casos sanos no salieron donde no correspondía")
+    print(f"  ok   el canario de estados no canta contra un hecho sano")
+    print(f"  ok   solo por vigencia: {sorted(vigentes - intervalos)}")
+    print(f"  ok   solo por intervalos: {sorted(intervalos - vigentes)}")
     return 0
 
 

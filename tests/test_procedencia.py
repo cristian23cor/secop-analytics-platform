@@ -6,8 +6,8 @@ manifiesto diga este corte, con cualquier `fecha_extraccion`.
 
 Cada condición de esa frase descarta un modo de fallo distinto, y cada test de
 acá corresponde a uno. Los dos que más importan son
-`test_bloquea_el_mismo_corte_en_otra_fecha` —el caso del 26 de agosto, que hoy
-no falla y no avisa— y `test_no_bloquea_una_particion_incompleta`, que es el que
+`test_bloquea_el_mismo_corte_en_otra_fecha` (el caso del 26 de agosto, que hoy
+no falla y no avisa) y `test_no_bloquea_una_particion_incompleta`, que es el que
 impide que el guardarraíl convierta la reanudación de I5 en un callejón.
 
 A diferencia de `test_cargar_raw.py`, esto corre contra el módulo real:
@@ -44,7 +44,7 @@ def particion_en_disco(
     """Fabrica una partición como la que deja `ParticionRaw`.
 
     Se escribe a mano y no con `ParticionRaw` a propósito: los casos que hacen
-    falta incluyen manifiestos sin el campo del corte —los anteriores a D10— y
+    falta incluyen manifiestos sin el campo del corte (los anteriores a D10) y
     manifiestos corruptos, que la clase no produce.
     """
     directorio = (
@@ -120,7 +120,7 @@ def test_no_bloquea_una_particion_incompleta(tmp_path):
     """Sin `_COMPLETO` es trabajo a medias, y retomarlo es lo que I5 permite.
 
     Si esto bloqueara, una muerte dura a mitad de barrido dejaría la partición
-    imposible de retomar contra el mismo corte — que es justamente cuando hay
+    imposible de retomar contra el mismo corte, que es justamente cuando hay
     que retomarla.
     """
     particion_en_disco(

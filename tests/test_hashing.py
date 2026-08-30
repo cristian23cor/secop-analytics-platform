@@ -194,7 +194,7 @@ def test_la_linea_envuelta_no_esta_canonicalizada():
     """Documenta lo que el módulo NO promete.
 
     `datos` va al final, pero alfabéticamente iría primero. Si este test
-    empezara a fallar, alguien canonicalizó la línea entera — y eso rompería la
+    empezara a fallar, alguien canonicalizó la línea entera, y eso rompería la
     propiedad de I1, porque los bytes de `datos` dejarían de ser literalmente
     los que se hashearon.
     """

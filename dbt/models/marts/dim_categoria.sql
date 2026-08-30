@@ -1,49 +1,23 @@
 {#
-  Qué se compra. Es la dimensión que responde la pregunta 1 —"¿qué entidades compran
-  lo que yo vendo?"— y la que le da el eje de categoría a las preguntas 6 y 7.
+  Qué se compra. El código es UNSPSC, con una jerarquía de cuatro niveles metida
+  adentro del propio valor:
 
-  `codigo_de_categoria_principal` es un código **UNSPSC**, el clasificador estándar
-  internacional de bienes y servicios, con jerarquía de cuatro niveles:
+      V1.80111701 -> segmento 80 -> familia 8011 -> clase 801117 -> producto 80111701
 
-      V1.80111701  ->  segmento 80  ->  familia 8011  ->  clase 801117  ->  producto 80111701
+  Falta el catálogo oficial para traducir esos códigos a nombres, y eso cambia
+  menos de lo que parece: sin él la pregunta 1 no se puede leer, pero sí agrupar.
+  Son 402 familias y 57 segmentos. Cuando llegue, entra como seed y la dimensión
+  gana columnas de nombre sin que nada más cambie.
 
-  ## La jerarquía se deriva del código; lo que falta son los nombres
+  Sin historia, y esta vez medido: el código no cambió ni una vez entre versiones.
 
-  El inventario apunta al catálogo de colombiacompra.gov.co como dato externo
-  pendiente, y sigue haciendo falta — pero solo para **traducir códigos a nombres**.
-  La estructura está adentro del propio código y no necesita nada de afuera. Medido
-  el 29/08/2026: 11.231 códigos distintos, **402 familias** y **57 segmentos**.
-
-  Esa distinción importa porque cambia qué bloquea qué: sin el clasificador la
-  pregunta 1 no se puede *leer*, pero sí se puede *agrupar*. El usuario objetivo
-  —una empresa que le vende al Estado— conoce su propia familia UNSPSC.
-
-  Cuando llegue el catálogo, se agrega como `seed` y esta tabla gana columnas de
-  nombre sin que nada más cambie.
-
-  ## `UNSPECIFIED` es un tercer centinela y no estaba documentado
-
-  La columna tiene **cero nulos** y aun así 25.597 contratos —el 0,9%— traen el valor
-  literal `UNSPECIFIED`. En inglés, así que la limpieza de `staging` no lo toca:
-  `columnas.py` declara `CENTINELAS = ("No definido", "No Definido")` y nada más.
-  Aparece **solo** en esta columna, comprobado sobre las 67.
-
-  Es el mismo patrón que `localizaci_n`: cero nulos que no significan cero ausencias.
-  Acá se marca con `es_sin_especificar` y los cuatro niveles quedan nulos, para que
-  un `group by familia` no invente una familia llamada `ECIF`, que es lo que da
-  `substr('UNSPECIFIED', 4, 4)`. Meterlo en `CENTINELAS` afectaría a las 67 columnas y
-  obliga a reconstruir todo: es una decisión aparte, todavía sin tomar.
-
-  ## Sin historia, y esta vez medido sobre la columna misma
-
-  `codigo_de_categoria_principal` está clasificada como IMPOSIBLE, o sea que no
-  debería cambiar nunca. Eso era una afirmación de diseño; ahora es una medición:
-  **cero cambios** entre versiones consecutivas, sobre los 32.431 contratos que
-  tienen más de una. Igual que `dim_modalidad` y `dim_geografia`.
-
-  ⚠ La misma consulta encontró que **`fecha_de_inicio_del_contrato` sí cambia**, en
-  685 contratos, y también está clasificada como IMPOSIBLE. Ver `01_modelo_dimensional.md`.
+  25.597 contratos traen el literal UNSPECIFIED, que es un tercer centinela en
+  inglés y que la limpieza de staging no toca. Por eso la columna reporta cero
+  nulos y aun así el 0,9% no tiene categoría. Acá se marca aparte y los cuatro
+  niveles quedan nulos, para que agrupar por familia no invente una llamada ECIF:
+  que es lo que sale de cortar la palabra por donde iría el código.
 #}
+
 
 {{ config(materialized="table") }}
 

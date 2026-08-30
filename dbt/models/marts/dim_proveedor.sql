@@ -50,9 +50,9 @@
   125 proveedores de 929.946 cambiaron algo en cinco días, y la mayoría fueron
   correcciones de escritura:
 
-      "Daniela Córdoba Murillo"      → "DANIELA CORDOBA MURILLO"
-      "FRANCISCO  ROBLEDO  CASTRO"   → "FRANCISCO ROBLEDO CASTRO"
-      "UTPA2025"                     → "UNIÓN TEMPORAL PRODUCTORES A…"
+      "Daniela Córdoba Murillo"      -> "DANIELA CORDOBA MURILLO"
+      "FRANCISCO  ROBLEDO  CASTRO"   -> "FRANCISCO ROBLEDO CASTRO"
+      "UTPA2025"                     -> "UNIÓN TEMPORAL PRODUCTORES A..."
 
   Uno cambió `es_pyme` de No a Sí. Cesiones todavía no hay ninguna capturada.
 
@@ -117,8 +117,8 @@ with observaciones as (
 
 {#- Una fila por proveedor y observación. `min()` y no un valor cualquiera, para
     que el resultado sea determinista: hay 101 códigos cuyos contratos traen
-    nombres distintos en la misma partición —variantes de escritura del mismo
-    proveedor— y un `any_value()` elegiría uno distinto en cada corrida sin que
+    nombres distintos en la misma partición (variantes de escritura del mismo
+    proveedor) y un `any_value()` elegiría uno distinto en cada corrida sin que
     nada falle. -#}
 por_observacion as (
 

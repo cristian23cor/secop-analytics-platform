@@ -1,8 +1,8 @@
 {#-
   Este test pregunta si apareció basura nueva en la fuente.
 
-  Hoy hay exactamente una observación con un casting fallido sobre 2.902.163 —un
-  `valor_del_contrato` de 21 dígitos— y ninguna con dos o más. La medición fue el
+  Hoy hay exactamente una observación con un casting fallido sobre 2.902.163 (un
+  `valor_del_contrato` de 21 dígitos) y ninguna con dos o más. La medición fue el
   28/08/2026.
 
   No comprueba que no haya basura: comprueba que no haya más de la que ya conocemos.

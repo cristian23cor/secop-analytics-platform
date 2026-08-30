@@ -33,7 +33,7 @@
   | En la cadena | En la columna | Filas |
   |---|---|---|
   | `Bogotá` | `Distrito Capital de Bogotá` | 965.212 |
-  | `San Andrés` | `San Andrés, Providencia y…` | 16.044 |
+  | `San Andrés` | `San Andrés, Providencia y...` | 16.044 |
   | `Departamento del Amazonas` | `Amazonas` | 13.021 |
 
   Bogotá explica el 97% del caso, y el nombre largo es el correcto, porque Bogotá no

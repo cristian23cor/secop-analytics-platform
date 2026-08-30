@@ -1,17 +1,17 @@
-# Modelo dimensional — SECOP
+# Modelo dimensional: SECOP
 
 > Diseño del modelo, con el razonamiento que llevó a cada decisión.
-> Se apoya en `00_inventario_fuentes.md` (evidencia empírica H1–H9 y H34) y en
-> `02_ecosistema_secop.md` (los datasets hermanos, H17–H33) y
-> `03_decisiones_capa_raw.md` (las decisiones D1–D8, D10, D11 e I1–I5).
-> **Cómo leerlo:** §0 es un glosario de los términos de modelado; los del
+> Se apoya en `00_inventario_fuentes.md` (evidencia empírica H1-H9 y H34) y en
+> `02_ecosistema_secop.md` (los datasets hermanos, H17-H33) y
+> `03_decisiones_capa_raw.md` (las decisiones D1-D8, D10, D11 e I1-I5).
+> **Cómo leerlo:** sección 0 es un glosario de los términos de modelado; los del
 > dominio están en el glosario del inventario. Este documento dice **qué** se
 > decidió y da una frase de por qué; el razonamiento completo de las decisiones
 > de la capa raw vive en `03_decisiones_capa_raw.md`, y desde acá se lo
-> referencia con →.
+> referencia con ->.
 >
 > **H10 a H16 no existen**: nunca se asignaron, y este documento los citaba como
-> si existieran. Los hallazgos de la fuente principal son H1–H9 y H34.
+> si existieran. Los hallazgos de la fuente principal son H1-H9 y H34.
 >
 > Última revisión: 28 de agosto de 2026.
 
@@ -20,29 +20,29 @@
 ## 0. Glosario
 
 Términos de modelado que este documento usa constantemente. **Los del dominio y
-del pipeline —grano, watermark, backfill, SCD tipo 2, las capas de dbt,
-freshness, columna material, UNSPSC, ESE, SMLMV— están en el glosario de
+del pipeline (grano, watermark, backfill, SCD tipo 2, las capas de dbt,
+freshness, columna material, UNSPSC, ESE, SMLMV) están en el glosario de
 `00_inventario_fuentes.md`.** Acá van solo los que no están allá.
 
-**Modelo dimensional** — forma de organizar datos para analizarlos, no para
+**Modelo dimensional**: forma de organizar datos para analizarlos, no para
 operarlos. En vez de decenas de tablas normalizadas, unas pocas tablas grandes
 de *hechos* rodeadas de tablas chicas de *dimensiones*. Se lee rápido y se
 entiende sin ser ingeniero.
 
-**Tabla de hechos** — la tabla del medio, con lo que se mide: valores, conteos,
+**Tabla de hechos**: la tabla del medio, con lo que se mide: valores, conteos,
 días. Una fila por cada cosa que ocurrió.
 
-**Dimensión** — las tablas de alrededor, con el contexto por el que se filtra y
+**Dimensión**: las tablas de alrededor, con el contexto por el que se filtra y
 se agrupa: qué entidad, qué proveedor, qué categoría, qué fecha. Responden los
 "por" y los "según" de una pregunta de negocio.
 
-**Kimball** — Ralph Kimball, el autor cuyo método de cuatro pasos se sigue en la
+**Kimball**: Ralph Kimball, el autor cuyo método de cuatro pasos se sigue en la
 sección 1. Es el enfoque estándar para diseñar modelos dimensionales.
 
-**Snapshot acumulativo** — una foto que se **pisa**: la fila se actualiza en su
+**Snapshot acumulativo**: una foto que se **pisa**: la fila se actualiza en su
 lugar y solo refleja el presente. Así es `fct_contratos`.
 
-**Snapshot periódico** — fotos que se **acumulan**: cada observación se guarda
+**Snapshot periódico**: fotos que se **acumulan**: cada observación se guarda
 además de las anteriores, así se puede mirar hacia atrás. Así es
 `fct_contratos_snapshot`.
 
@@ -52,52 +52,52 @@ la fuente, que se regenera de forma irregular (H34), así que las observaciones
 llegan a intervalos desiguales. El patrón es el mismo; lo que no se puede es leer
 la palabra como una promesa de cadencia.
 
-**Surrogate key** (`sk_`) — una llave inventada por el pipeline, normalmente un
+**Surrogate key** (`sk_`): una llave inventada por el pipeline, normalmente un
 número, que reemplaza a la llave de la fuente para unir tablas. Se usa porque
 las llaves reales cambian de formato, se reciclan o son largas. Todas las
 columnas que empiezan con `sk_` son esto.
 
-**Aditiva / semiaditiva / no aditiva** — si una medida se puede sumar o no.
+**Aditiva / semiaditiva / no aditiva**: si una medida se puede sumar o no.
 Aditiva se suma por cualquier eje; semiaditiva se suma entre entidades pero no a
 través del tiempo; no aditiva no se suma nunca (porcentajes, promedios). Está
 desarrollado en la sección 7.
 
-**CTE** (*common table expression*) — el `with nombre as (...)` de SQL. Un
+**CTE** (*common table expression*): el `with nombre as (...)` de SQL. Un
 resultado intermedio con nombre, para partir una consulta larga en pasos
 legibles en vez de anidar subconsultas.
 
-**Fan-out** — cuando un `join` multiplica filas sin querer. Si un contrato tiene
+**Fan-out**: cuando un `join` multiplica filas sin querer. Si un contrato tiene
 tres versiones y se une con una tabla de una fila por contrato, el valor de ese
 contrato se cuenta tres veces. Es el error de la sección 9.
 
-**`MERGE`** — instrucción SQL que inserta la fila si no existe y la actualiza si
+**`MERGE`**: instrucción SQL que inserta la fila si no existe y la actualiza si
 ya está. Es lo que permite correr la carga dos veces sin duplicar.
 
-**Idempotencia** — que correr algo dos veces dé el mismo resultado que correrlo
+**Idempotencia**, que correr algo dos veces dé el mismo resultado que correrlo
 una. Sin esto, un reintento de Airflow duplica datos.
 
-**Materialización incremental** — en dbt, recalcular solo las filas nuevas o
+**Materialización incremental**: en dbt, recalcular solo las filas nuevas o
 cambiadas en vez de reconstruir la tabla entera cada vez.
 
-**`--full-refresh`** — la opción de dbt que ignora lo incremental y reconstruye
+**`--full-refresh`**: la opción de dbt que ignora lo incremental y reconstruye
 la tabla desde cero. Es lo que permite corregir el pasado cuando se arregla un
 error de transformación.
 
-**Ventana de reproceso** — cuántos días hacia atrás recalcula una carga
+**Ventana de reproceso**: cuántos días hacia atrás recalcula una carga
 incremental en cada corrida. Cubre las llegadas tardías sin rehacer todo.
 
-**CDP** — Certificado de Disponibilidad Presupuestal. Documento colombiano que
+**CDP**: Certificado de Disponibilidad Presupuestal. Documento colombiano que
 reserva plata del presupuesto antes de firmar un contrato. `saldo_cdp` es lo que
 queda de esa reserva.
 
-**PyME** — pequeña y mediana empresa. La fuente lo trae como marca en
+**PyME**: pequeña y mediana empresa. La fuente lo trae como marca en
 `es_pyme`.
 
 ---
 
 ## 1. Método
 
-Se siguieron los cuatro pasos de Kimball (ver §0), más dos que el método no
+Se siguieron los cuatro pasos de Kimball (ver sección 0), más dos que el método no
 incluye:
 
 1. Identificar los procesos de negocio
@@ -131,11 +131,11 @@ Tres procesos reales. Uno observable como evento **con sus medidas**.
 
 **Por qué "sí, pero sin medidas".** La modificación contractual **sí** queda
 registrada como evento, en un dataset aparte que no es evidente mirando la
-fuente principal: `SECOP II – Adiciones` (`cb9c-h8sn`), con una fila por
+fuente principal: `SECOP II - Adiciones` (`cb9c-h8sn`), con una fila por
 modificación, su tipo y una justificación en texto libre.
 
-Pero no sirve para medir. No tiene **ninguna columna de valor** —el monto está
-enterrado en la prosa (H17)— y su única fecha **trunca mes y día al primer
+Pero no sirve para medir. No tiene **ninguna columna de valor** (el monto está
+enterrado en la prosa (H17)) y su única fecha **trunca mes y día al primer
 dígito significativo** (H33): el día solo sobrevive en el 16,8% de las filas.
 
 Lo que descarta el dataset es la **ausencia de la medida**, no el estado de la
@@ -181,14 +181,14 @@ filtrar `es_version_vigente` sobre el snapshot, así que las dos tablas son
 consistentes por construcción y no por coincidencia. Eso obligó a que el snapshot
 llevara `fecha_de_firma`, que no tenía.
 
-⚠ **El `MERGE` de arriba no se implementó, y conviene decir por qué.** Ese `MERGE`
+**El `MERGE` de arriba no se implementó, y conviene decir por qué.** Ese `MERGE`
 protege contra duplicar cuando se **insertan deltas**, y acá no se insertan
 deltas: se filtra una tabla que ya se reconstruyó entera. La idempotencia sale de
 la construcción y no de la estrategia de carga, que es más fuerte. Cuando el
 pipeline pase a incremental (D5), esta tabla pasa con él y ahí sí la estrategia es
 `merge`, que existe en los dos adaptadores (D9).
 
-⚠ **El filtro de 2020 de H3 tampoco está acá, y es deliberado.** H3 dice "el
+**El filtro de 2020 de H3 tampoco está acá, y es deliberado.** H3 dice "el
 análisis de **los marts**", y los filtros de negocio de este proyecto van lo más
 tarde posible, donde son reversibles. `fct_contratos` es el inventario completo de
 lo que el pipeline conoce; 71.512 de sus contratos son anteriores a 2020. La
@@ -214,9 +214,9 @@ el 28 de agosto solo existía la primera.
 - Llave: `id_contrato` + `observado_desde`
 - Tipo: snapshot periódico, almacenado como SCD tipo 2 (ver sección 4).
 
-⚠ **Esa llave tiene un supuesto que nadie había escrito: que un contrato aparece
-a lo sumo una vez por `fecha_extraccion`.** Si aparece dos veces —el flujo 1 lo
-trae por la mañana, el contrato cambia, y el flujo 3 lo trae esa misma noche— las
+**Esa llave tiene un supuesto que nadie había escrito: que un contrato aparece
+a lo sumo una vez por `fecha_extraccion`.** Si aparece dos veces (el flujo 1 lo
+trae por la mañana, el contrato cambia, y el flujo 3 lo trae esa misma noche) las
 dos escrituras son correctas y aun así `id_contrato + observado_desde` deja de ser
 única.
 
@@ -229,14 +229,14 @@ el mismo contrato discrepan y nada falla.
 Y hay un segundo efecto, que toca D5: con un empate, `order by observado_en` no
 tiene orden definido, así que **cuál de las dos observaciones queda como versión 1
 no está garantizado** entre corridas ni entre motores. La propiedad de que el
-hecho sea *función de raw* —se borra, se corre `dbt build --full-refresh` y sale
-idéntico— deja de estar garantizada.
+hecho sea *función de raw* (se borra, se corre `dbt build --full-refresh` y sale
+idéntico) deja de estar garantizada.
 
 **Medido el 29/08/2026: cero empates sobre 2.902.163 observaciones.** Pero el
 mecanismo está vivo: el 22 de agosto ya hubo tres particiones bajo la misma
 `fecha_extraccion`, una por flujo, y el índice de hashes es global por contrato
 (D3), así que lo único que hace falta es que el contrato cambie entre las dos
-corridas — que es justo cuando queremos guardarlo. **Raw hace lo correcto; el que
+corridas, que es justo cuando queremos guardarlo. **Raw hace lo correcto; el que
 no sabe representarlo es el modelo**, porque su resolución temporal es el día.
 
 Lo vigila `fct_una_observacion_por_contrato_y_fecha` en severidad `error`. Qué se
@@ -248,27 +248,27 @@ Columnas de control, con la decisión que las originó:
 |---|---|---|
 | `observado_desde` / `observado_hasta` | D8 | Intervalo **semiabierto**: `>= desde AND < hasta`. Nulo en `hasta` = versión abierta |
 | `motivo_de_cierre` | D8 | `version_nueva` / `abierta` / `fuera_de_observacion`. **Implementada el 29/08/2026** |
-| `sk_proveedor` | §9, hallazgo 1 | El proveedor cambia con la cesión; entidad y categoría no |
+| `sk_proveedor` | sección 9, hallazgo 1 | El proveedor cambia con la cesión; entidad y categoría no |
 
-⚠ **`motivo_del_cambio` salió de esta tabla y pasó a ser un modelo propio**,
+**`motivo_del_cambio` salió de esta tabla y pasó a ser un modelo propio**,
 `int_cambios_por_columna`, con grano de una fila por contrato, versión y columna
 que cambió. Estaba escrito como una columna del hecho y **no cabe en una**: medido
-el 29/08/2026, de los 32.431 contratos con dos versiones solo **12.838 —el
-39,6%— cambiaron exactamente una columna material**; el resto cambió entre 2 y
+el 29/08/2026, de los 32.431 contratos con dos versiones solo **12.838 (el
+39,6%) cambiaron exactamente una columna material**; el resto cambió entre 2 y
 **12 a la vez**. Un motivo escalar describiría mal seis de cada diez versiones.
 
 Y hay una razón de modelado además de la medición: 28 banderas en el hecho no son
 ni llaves ni fechas ni medidas, y ensancharlo es justo lo que R3 mostró que cuesta
 caro. La tabla larga son 88.395 filas contra 2,88 millones del hecho.
 
-El modelo lleva además los dos deltas ya calculados —`delta_valor` en pesos o días
-adicionados, `delta_dias` en días de corrimiento de fecha— en columnas separadas,
+El modelo lleva además los dos deltas ya calculados (`delta_valor` en pesos o días
+adicionados, `delta_dias` en días de corrimiento de fecha) en columnas separadas,
 porque pesos y días no se suman entre sí. Con eso las preguntas 6 y 7 salen sin
 recalcular, que era lo que la fila de esta tabla prometía.
 
 `motivo_de_cierre` existe porque un contrato que pasa a estado terminal deja de
 ser barrido, y su última versión queda con `observado_hasta` nulo para siempre.
-Sin esa columna, el nulo significaría tres cosas distintas — un fallo silencioso
+Sin esa columna, el nulo significaría tres cosas distintas: un fallo silencioso
 esperando.
 
 Universo: solo los contratos que todavía pueden cambiar. Sumando de H5:
@@ -285,7 +285,7 @@ Antes del filtro 2020+.
 
 **Suposición sin verificar:** que los estados terminales (Cerrado, terminado,
 Cancelado) ya no cambian, y por eso quedan fuera del universo. Es razonable pero
-no está probado — ver la pregunta abierta 3.
+no está probado: ver la pregunta abierta 3.
 
 ---
 
@@ -298,7 +298,7 @@ Son dos decisiones distintas y se confunden con facilidad:
 
 ### Decisión: mirar en cada regeneración, guardar solo cuando algo cambió
 
-⚠ **Esta decisión decía "mirar diario", y la palabra "diario" no describe lo que
+**Esta decisión decía "mirar diario", y la palabra "diario" no describe lo que
 pasa.** La fuente se regenera de forma irregular: en nueve días observados hubo
 tres regeneraciones y cuatro días sin ninguna, con saltos de dos y de cinco días
 entre cortes conocidos (H34, en `00_inventario_fuentes.md`). Lo que sí se decide
@@ -310,7 +310,7 @@ Comparación de las alternativas de almacenamiento:
 
 | | Denso (foto completa por período) | Solo cambios (SCD2) |
 |---|---|---|
-| Filas por año | Mensual: ~34M · Diario: ~1.000M | Del orden de 1 a 3M |
+| Filas por año | Mensual: ~34M / Diario: ~1.000M | Del orden de 1 a 3M |
 | Resolución | La del período | **La de la fuente**: como mucho la de sus regeneraciones |
 | Consulta "estado al 1 de marzo" | `WHERE fecha_snapshot = '2026-03-01'` | `WHERE observado_desde <= '2026-03-01' AND (observado_hasta > '2026-03-01' OR observado_hasta IS NULL)` |
 
@@ -326,7 +326,7 @@ decidir igual qué conserva de cada extracción.
 regeneraciones separadas por cinco días, dos modificaciones del mismo contrato
 son indistinguibles: llegan juntas en el mismo corte. Es exactamente el defecto
 que se le critica al denso mensual, solo que impuesto desde afuera y no elegido.
-El modelo aguanta —D8 ya había decidido no prometer resolución diaria— pero
+El modelo aguanta (D8 ya había decidido no prometer resolución diaria) pero
 **el README tiene que decir que la serie tiene la resolución de la fuente, con
 huecos, y no una resolución diaria**.
 
@@ -342,7 +342,7 @@ El primero descarta el ~99% que no cambió en nada y baja el volumen de raw de
 columna se repiten en cada línea, así que el JSONL comprime unas 47 veces).
 
 El segundo filtro sigue siendo imprescindible: una fila puede cambiar en bytes
-sin cambiar materialmente — una tilde corregida en `nombre_entidad` es
+sin cambiar materialmente: una tilde corregida en `nombre_entidad` es
 cosmética. Esa distinción solo la sabe `columnas.py`.
 
  **La trampa del `BETWEEN`.** Escribir esa consulta como
@@ -375,8 +375,8 @@ un criterio.
 #### Cuánto vale la distinción, medido el 28/08/2026
 
 D6 tenía un argumento y ahora tiene un número. Entre el barrido del 23 y la
-corrida del 25, la fuente publicó **52.954 contratos cambiados** —lo que raw
-detecta comparando bytes sobre las 67 columnas—. De esos, el SCD2 generó versión
+corrida del 25, la fuente publicó **52.954 contratos cambiados** (lo que raw
+detecta comparando bytes sobre las 67 columnas). De esos, el SCD2 generó versión
 para **32.431**.
 
 **Los otros 20.523 cambiaron algo que no es el contrato: el 38,8%.**
@@ -385,16 +385,16 @@ Cuatro de cada diez veces que SECOP publica un contrato como cambiado, al
 contrato no le pasó nada. Sin la clasificación de D6, la serie temporal tendría
 un 60% más de filas y ninguna información adicional.
 
-⚠ **Y casi todo ese ruido es un solo evento, no ruido difuso.**
-`entidad_centralizada` explica 20.675 de los 20.523 —el exceso son contratos que
-además cambiaron algo material—, y son seis entidades reclasificadas de golpe.
+**Y casi todo ese ruido es un solo evento, no ruido difuso.**
+`entidad_centralizada` explica 20.675 de los 20.523 (el exceso son contratos que
+además cambiaron algo material), y son seis entidades reclasificadas de golpe.
 Ver `00_inventario_fuentes.md`.
 
 Eso matiza el 38,8%: es una medición de **un** intervalo, dominada por un evento
 administrativo puntual. Con más regeneraciones ingeridas el número va a moverse,
 y la cifra estable todavía no se conoce.
 
-⚠ **"Se pisa el valor actual" era una descripción equivocada, y se corrige el
+**"Se pisa el valor actual" era una descripción equivocada, y se corrige el
 28/08/2026 al implementar el snapshot.** Esa frase describe un SCD2 de
 dimensiones, donde hay una sola fila por entidad y pisarla tiene sentido.
 `fct_contratos_snapshot` es un **snapshot acumulativo**: no existe "la fila
@@ -433,18 +433,18 @@ la desincronización que ese módulo se escribió para evitar.
 materiales juntas.
 
 `IS DISTINCT FROM` en vez de `!=` porque en SQL `NULL != NULL` no da verdadero,
-da `NULL` — y tres materiales arrancan nulas y se llenan, que es el cambio más
+da `NULL`, y tres materiales arrancan nulas y se llenan, que es el cambio más
 informativo del snapshot.
 
 Columna por columna en vez de hash porque produce **`motivo_del_cambio`**: saber
 *qué* cambió, no solo *que* algo cambió. Eso responde las preguntas 6 y 7
 directamente, y deriva la clasificación del delta observado en lugar de confiar
-en la etiqueta que escribió cada entidad — que H26 mostró que no es de fiar.
+en la etiqueta que escribió cada entidad, que H26 mostró que no es de fiar.
 
 Las monetarias se comparan sobre el valor numérico, no sobre el texto:
 `"1000"` contra `"1000.00"` daría un cambio falso.
 
-→ *Razonamiento completo y alternativas descartadas en `03_decisiones_capa_raw.md`, D6.*
+*Razonamiento completo y alternativas descartadas en `03_decisiones_capa_raw.md`, D6.*
 
 ### Materiales
 
@@ -464,7 +464,7 @@ Cuatro casos que no son obvios:
   de snapshots queda casi vacía y ningún test falla. Es el error más caro
   posible en este diseño.
 - **`duraci_n_del_contrato` no es un número**: trae la unidad pegada al valor
-  —`"6 Mes(es)"`, `"180 Dia(s)"`— y ningún valor castea a entero. Cinco unidades
+  (`"6 Mes(es)"`, `"180 Dia(s)"`) y ningún valor castea a entero. Cinco unidades
   conviven en la misma columna, así que el número solo no significa nada:
   `"1 Año(s)"` y `"365 Dia(s)"` son la misma duración con cifras que difieren 365
   veces. Queda como texto en `staging`. Para duración real están las dos fechas
@@ -476,12 +476,11 @@ Cuatro casos que no son obvios:
 - **Las seis fuentes de financiación** son materiales porque RN1 exige que su
   suma iguale `valor_del_contrato`. Si el valor sube por una adición y las
   fuentes no versionan, quedan versiones históricas donde RN1 no se cumple.
-  (Son seis, no cinco, y las seis entran en la suma: medido el 28/08 contra raw
-  — ver §10.)
+  (Son seis, no cinco, y las seis entran en la suma: medido el 28/08 contra raw: ver sección 10.)
 - **`fecha_de_fin_del_contrato`** se corre con cada prórroga. Es el mismo evento
   que registra `dias_adicionados`, visto desde el otro lado.
 - **El trío del proveedor** se clasificó como material porque cambia con la
-  cesión. ⚠ **Medido el 29/08/2026, el trío no se mueve junto**: el nombre cambió
+  cesión. **Medido el 29/08/2026, el trío no se mueve junto**: el nombre cambió
   en 513 contratos, el documento en 61 y `codigo_proveedor` en **uno**. Ver la
   pregunta abierta 11.
 
@@ -489,7 +488,7 @@ Las **fechas de liquidación y prórroga** arrancan nulas y se llenan cuando el
 hito ocurre. Pasar de nulo a fecha es el cambio más informativo que existe en un
 snapshot acumulativo.
 
-#### Qué cambia de verdad — medido el 29/08/2026
+#### Qué cambia de verdad: medido el 29/08/2026
 
 Sobre los 32.431 contratos que tienen dos versiones, cuántos cambiaron cada
 material:
@@ -505,7 +504,7 @@ material:
 | `fecha_de_fin_del_contrato` | 2.227 |
 | `dias_adicionados` | 2.083 |
 | `valor_del_contrato` | 1.925 |
-| … | cola larga hasta 1 |
+| ... | cola larga hasta 1 |
 
 **Las cuatro de arriba son la ejecución financiera de H9**, el mecanismo que el
 inventario probó que ninguna columna de fecha registra. Y `valor_facturado` sola
@@ -516,7 +515,7 @@ registra.** H9 decía que ese mecanismo existe y era invisible; ahora está cont
 **Las 28 cambiaron al menos una vez.** Ninguna sobra en la clasificación, que era
 una duda razonable con una lista armada en parte por deducción.
 
-⚠ **La muestra es un intervalo de entre 2 y 5 días y una sola regeneración
+**La muestra es un intervalo de entre 2 y 5 días y una sola regeneración
 ingerida.** Las proporciones entre columnas pueden moverse mucho con más cortes;
 lo que no se mueve es que ninguna quedó en cero.
 
@@ -543,20 +542,20 @@ consecutivas de los 32.431 contratos que tienen más de una:
 | `fecha_de_firma` | 0 |
 | **`fecha_de_inicio_del_contrato`** | **685** |
 
-⚠ **Y el desglose dice que no es una alerta, es una clasificación equivocada.**
+**Y el desglose dice que no es una alerta, es una clasificación equivocada.**
 De los 685: **648 van de nulo a fecha**, **cero** de fecha a nulo, y solo **37**
-son mutaciones reales, con mediana de 1 día y rango de −31 a +42.
+son mutaciones reales, con mediana de 1 día y rango de -31 a +42.
 
 O sea que `fecha_de_inicio_del_contrato` **no es una columna inmutable que se
 rompió: es un hito que se llena**, exactamente como
 `fecha_inicio_liquidacion`, `fecha_fin_liquidacion` y
-`fecha_de_notificaci_n_de_prorrogaci_n` — que están clasificadas como
+`fecha_de_notificaci_n_de_prorrogaci_n`, que están clasificadas como
 **MATERIALES**, y de las que este mismo documento dice que *"pasar de nulo a
 fecha es el cambio más informativo que existe en un snapshot acumulativo"*.
 
 Es el error simétrico al de `liquidaci_n`: aquella estaba clasificada como hito y
 resultó booleana; ésta está clasificada como inmutable y resulta ser un hito.
-**Reclasificarla a material es una decisión pendiente** — ver la pregunta abierta
+**Reclasificarla a material es una decisión pendiente**: ver la pregunta abierta
 12.
 
 El control de que la medición vale: el mismo conteo hecho sobre **todas** las
@@ -576,7 +575,7 @@ cosmética. Las versiones históricas conservan lo observado entonces.
 Todos los tests arrancan en severidad `warn` y suben a `error` recién cuando se
 sepa cuántas veces se disparan de verdad.
 
-→ *Razonamiento completo en `03_decisiones_capa_raw.md`, D7.*
+*Razonamiento completo en `03_decisiones_capa_raw.md`, D7.*
 
  `id_contrato` es distinta de las otras seis: es la llave por la que se unen
 las observaciones, así que su modo de fallo no es la mutación sino la
@@ -614,8 +613,8 @@ Con dos precauciones:
   identificador (`noticeUID=CO1.NTC.xxx`) que no aparece en ninguna otra
   columna. Se aplana en `staging` y el `noticeUID` sale a columna propia: es
   probablemente la llave hacia el dataset de Procesos de Contratación.
-- Dos cumplen la primera condición de material y fallan la segunda —ninguna
-  pregunta necesita saber *cuándo* cambiaron—: `el_contrato_puede_ser_prorrogado`
+- Dos cumplen la primera condición de material y fallan la segunda (ninguna
+  pregunta necesita saber *cuándo* cambiaron): `el_contrato_puede_ser_prorrogado`
   y `habilita_pago_adelantado`. Sirven mejor como tests de coherencia sobre la
   fila actual (RN9 y RN10).
 
@@ -682,24 +681,24 @@ Probablemente aplica el mismo patrón que en la entidad, pero no se verificó.
 `V1.` y desplegar los cuatro niveles de la jerarquía:
 
 ```
-V1.80111701 → segmento 80 → familia 8011 → clase 801117 → producto 80111701
+V1.80111701 -> segmento 80 -> familia 8011 -> clase 801117 -> producto 80111701
 ```
 
 La jerarquía es lo que hace utilizable el mart. Un vendedor de servicios de TI
 no busca el código exacto, busca su familia.
 
 **Construida el 29/08/2026, sin nombres.** 11.231 códigos, **402 familias** y
-**57 segmentos**, sin historia — medido: `codigo_de_categoria_principal` cambió
+**57 segmentos**, sin historia: medido: `codigo_de_categoria_principal` cambió
 cero veces.
 
-⚠ **La jerarquía se deriva del código; lo único que falta comprar son los
+**La jerarquía se deriva del código; lo único que falta comprar son los
 nombres.** El inventario lista el catálogo UNSPSC como dato externo pendiente, y
 lo sigue siendo, pero eso cambia qué bloquea: sin el catálogo la pregunta 1 no se
 puede **leer**, y sí se puede **agrupar**. El usuario objetivo conoce su propia
 familia. Cuando llegue, entra como `seed` y la dimensión gana columnas de nombre
 sin que nada más cambie.
 
-⚠ **25.597 contratos —el 0,9%— no tienen categoría**, y la columna reporta cero
+**25.597 contratos (el 0,9%) no tienen categoría**, y la columna reporta cero
 nulos: traen el centinela `UNSPECIFIED`, en inglés, que la limpieza de `staging`
 no toca. Ver `00_inventario_fuentes.md`.
 
@@ -708,9 +707,9 @@ no toca. Ver `00_inventario_fuentes.md`.
 Generada con SQL, no viene de la fuente. Con atributos de año, trimestre, mes y
 día hábil. Sirve para la pregunta 4, la estacionalidad de apertura.
 
-⚠ **"El pico de diciembre" es una expectativa heredada, no una medición**, y
-hay un indicio en contra. El control de H33 sobre `fecha_de_firma` —una columna
-sana— dio **17,4% de contratos firmados entre octubre y diciembre**, cuando lo
+**"El pico de diciembre" es una expectativa heredada, no una medición**, y
+hay un indicio en contra. El control de H33 sobre `fecha_de_firma` (una columna
+sana) dio **17,4% de contratos firmados entre octubre y diciembre**, cuando lo
 uniforme sería 25%. Parte se explica porque 2026 está a mitad de camino y no
 aporta ningún cuarto trimestre, así que el número no es concluyente; pero
 apunta al revés de lo que la frase asume. La pregunta 4 tiene que **medir** la
@@ -766,8 +765,8 @@ mide estados, no eventos.
 ### Medidas derivadas: de estado a flujo
 
 ```
-pago_del_periodo = valor_pagado(observación)       − valor_pagado(anterior)
-delta_valor      = valor_del_contrato(observación) − valor_del_contrato(anterior)
+pago_del_periodo = valor_pagado(observación)       - valor_pagado(anterior)
+delta_valor      = valor_del_contrato(observación) - valor_del_contrato(anterior)
 ```
 
 "Observación", no "corte": el período que cubre cada delta es el que va entre
@@ -822,12 +821,12 @@ proveedor tras una cesión.
 tipo 2, aplicado donde está el movimiento.
 
 **`dbt snapshot`, la funcionalidad nativa, no sirve acá**, por dos razones: compara
-contra la tabla destino en vez de contra raw —lo que impediría corregir el pasado
-con un `--full-refresh`—, y no tiene forma de expresar una clasificación de tres
+contra la tabla destino en vez de contra raw (lo que impediría corregir el pasado
+con un `--full-refresh`), y no tiene forma de expresar una clasificación de tres
 vías: no hay manera de decirle "estas 32 columnas pisan el valor actual sin
 generar versión".
 
-→ *Razonamiento completo en `03_decisiones_capa_raw.md`, D5.*
+*Razonamiento completo en `03_decisiones_capa_raw.md`, D5.*
 
 El SCD2 se implementa a mano: la lógica compara contra la observación anterior
 **en raw**, y la materialización es incremental con ventana de reproceso. Es
@@ -840,7 +839,7 @@ material de README, no una carencia:
 todas, un `--full-refresh` reconstruido desde raw daría un resultado distinto,
 porque el reproceso sí ve la historia de nombres. Efecto que se acepta: las
 versiones viejas muestran nombres de entidad desactualizados. La solución no es
-pisar la historia — el mart une contra `dim_entidad` por la llave y toma el
+pisar la historia: el mart une contra `dim_entidad` por la llave y toma el
 nombre actual. Ese es el trabajo de una dimensión.
 
 **Alternativa considerada y descartada:** `dim_proveedor` en SCD2. Cumpliría el
@@ -924,7 +923,7 @@ El resultado se lee directo: en esta familia UNSPSC, esta entidad adiciona X%
 sobre el valor inicial.
 
 **Nota:** con `motivo_del_cambio` el `where` del CTE `deltas` se acorta una
-línea, pero el `lag()` sigue haciendo falta — el motivo dice *qué* columna
+línea, pero el `lag()` sigue haciendo falta: el motivo dice *qué* columna
 cambió, no *cuánto*. La consulta se deja como está: es el artefacto del ejercicio
 que encontró los tres hallazgos de abajo, y reescribirla borraría ese registro.
 
@@ -973,7 +972,7 @@ que mide el hueco entre la firma y la primera observación:
 Mediana del hueco: **657 días**. Máximo: 3.876, o sea diez años y medio. **El
 99,6% del hecho tiene la historia truncada por la izquierda.**
 
-⚠ **Y el margen no puede ser cero, por construcción.** El mínimo observado es de
+**Y el margen no puede ser cero, por construcción.** El mínimo observado es de
 **un día** y no de cero: ningún contrato se ve el mismo día en que se firma,
 porque la fuente publica con ~1 día de rezago (H8). Escribir la restricción con
 margen cero deja el universo vacío por una propiedad de la fuente y no por falta
@@ -983,17 +982,17 @@ El margen no se fija en el hecho a propósito: es decisión del mart, y hornearl
 acá lo volvería invisible. Lo que sí es del hecho es exponer el hueco medido.
 
 Este número **crece solo** con cada regeneración ingerida, y es la forma concreta
-de la limitación 1 de §11 —"`fct_contratos_snapshot` empieza vacía y madura con el
-tiempo"—. Lo que no se puede es esconderlo.
+de la limitación 1 de sección 11 ("`fct_contratos_snapshot` empieza vacía y madura con el
+tiempo"). Lo que no se puede es esconderlo.
 
 ### El mart, construido el 29/08/2026
 
 `mart_extension_de_plazo` responde las dos preguntas. La consulta de arriba se
 acortó bastante: los deltas ya vienen calculados desde
-`int_cambios_por_columna`, así que **no hay ningún `lag()`** — es lo que D6
+`int_cambios_por_columna`, así que **no hay ningún `lag()`**: es lo que D6
 compró al comparar columna por columna en vez de guardar un hash.
 
-**Grano: entidad × familia UNSPSC × `historia_completa`.** El tercer eje es el
+**Grano: entidad, familia UNSPSC y `historia_completa`.** El tercer eje es el
 hallazgo 2 de esta sección convertido en columna, y hay que explicar por qué está
 en el grano y no en un `where`.
 
@@ -1006,7 +1005,7 @@ Sobre contratos firmados desde 2020:
 | Adicionaron valor, sin restricción | 1.925 | 358 |
 | Adicionaron valor, con historia completa | **39** | **29** |
 
-⚠ **Con 39 contratos en 29 entidades —1,3 cada una— la palabra
+**Con 39 contratos en 29 entidades (1,3 cada una) la palabra
 "sistemáticamente" no se sostiene.** Y usar los 1.925 sin decir nada es
 exactamente lo que el hallazgo 2 advierte: mezcla contratos cuya historia vimos
 entera con otros de los que vimos una semana.
@@ -1017,20 +1016,20 @@ pertenece, ninguna consulta las mezcla por descuido, y las dos traen su tamaño 
 lado. La población medible **crece sola** con cada regeneración ingerida, sin que
 el modelo cambie.
 
-⚠ **Y el primer resultado del mart destapó un defecto del propio mart: el plazo
-también se acorta.** Una celda mostraba *"12 extensiones, −12 días"*, que no es
+**Y el primer resultado del mart destapó un defecto del propio mart: el plazo
+también se acorta.** Una celda mostraba *"12 extensiones, -12 días"*, que no es
 una extensión de nada. Medido: de los 2.227 cambios de
 `fecha_de_fin_del_contrato`, **2.131 alargaron el plazo (+134.296 días) y 96 lo
-acortaron (−2.351)**. Sumarlos en neto esconde dos poblaciones y le pone el
+acortaron (-2.351)**. Sumarlos en neto esconde dos poblaciones y le pone el
 nombre de una a la mezcla.
 
-Es **H27 en el otro eje**. Para el valor ya estaba anotado que puede bajar —el
-dataset oficial de modificaciones tiene un tipo `REDUCCION EN EL VALOR`— y para
+Es **H27 en el otro eje**. Para el valor ya estaba anotado que puede bajar (el
+dataset oficial de modificaciones tiene un tipo `REDUCCION EN EL VALOR`) y para
 el plazo nadie lo había dicho. Medido, del lado del valor son **101 reducciones
-de 1.925**, con −1.027 millones contra +121.078.
+de 1.925**, con -1.027 millones contra +121.078.
 
-El mart separa los cuatro conteos —`extensiones` / `acortamientos`,
-`adiciones` / `reducciones`— y guarda el neto aparte, que es el que responde
+El mart separa los cuatro conteos (`extensiones` / `acortamientos`,
+`adiciones` / `reducciones`) y guarda el neto aparte, que es el que responde
 "cuánto se encareció". Al corregirlo, la entidad que encabezaba el ranking de la
 pregunta 6 desapareció de él.
 
@@ -1043,7 +1042,7 @@ serían 748 contratos con algún cambio; con 30, 1.616.
 **El filtro de 2020 de H3 vive acá**, que es donde H3 dijo. Hoy casi no muerde:
 de los 2.227 contratos que extendieron el plazo, 1.940 se firmaron en 2026 y 240
 en 2025; uno solo es de 2020 y ninguno anterior. Los contratos que se modifican
-ahora son los recientes — pero la tabla madura y el histórico entra.
+ahora son los recientes, pero la tabla madura y el histórico entra.
 
 Lo que el mart todavía no puede decir: **nombres** de categoría, que esperan el
 catálogo UNSPSC.
@@ -1066,10 +1065,10 @@ mensual de ejecución financiera.
 | RN1 | La suma de las **seis** fuentes de financiación iguala `valor_del_contrato` | H6 |
 | RN2 | Ningún registro de la tabla de hechos tiene estado pre-firma | H4, H5 |
 | RN3 | Ningún registro de la tabla de hechos tiene `fecha_de_firma` nula | H3, H4 |
-| RN4 | ⚠ **Umbral sin fijar.** Decía 48 horas de rezago (`freshness`); el 28/08 una fuente sana llevaba tres días sin regenerar, así que ese umbral habría alertado sobre ella. Falta decidir el número y **contra qué columna se mide**: `ultima_actualizacion` mide el rezago del negocio, `:updated_at` mide si la fuente se regeneró | H8, H34 |
-| RN5 | `valor_pagado` no decrece entre versiones consecutivas | H9 — es un acumulado |
+| RN4 | **Umbral sin fijar.** Decía 48 horas de rezago (`freshness`); el 28/08 una fuente sana llevaba tres días sin regenerar, así que ese umbral habría alertado sobre ella. Falta decidir el número y **contra qué columna se mide**: `ultima_actualizacion` mide el rezago del negocio, `:updated_at` mide si la fuente se regeneró | H8, H34 |
+| RN5 | `valor_pagado` no decrece entre versiones consecutivas | H9: es un acumulado |
 | RN6 | RN1 se cumple en toda versión histórica, no solo en la fila actual | RN1 + diseño SCD2 |
-| RN7 | `dias_adicionados` y `fecha_de_fin_del_contrato` cambian juntos | Dominio — son el mismo evento |
+| RN7 | `dias_adicionados` y `fecha_de_fin_del_contrato` cambian juntos | Dominio: son el mismo evento |
 | RN8 | `valor_de_pago_adelantado = valor_amortizado + valor_pendiente_de` | Diccionario oficial |
 | RN9 | Si `el_contrato_puede_ser_prorrogado = "No"`, entonces `dias_adicionados = 0` | Coherencia interna |
 | RN10 | Si `habilita_pago_adelantado = "No"`, entonces `valor_de_pago_adelantado = 0` | Coherencia interna |
@@ -1079,11 +1078,11 @@ mensual de ejecución financiera.
 
 **RN1 quedó cerrada el 28/08/2026: son las seis.** Se midió contra raw, sobre
 las 2.824.446 filas del barrido del 23, con `scripts/medir_rn1.py`. La sexta
-—`recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_`— trae valor
+(`recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_`) trae valor
 distinto de cero en **1.281.254 contratos**, y **1.280.989 filas solo cierran
 incluyéndola**. Con cinco, RN1 fallaría en el 45% del universo vivo.
 
-⚠ **Falta el umbral, no la definición.** El **3,31%** —93.557 filas— no cierra de
+**Falta el umbral, no la definición.** El **3,31%** (93.557 filas) no cierra de
 ninguna forma, y siempre por defecto: la suma queda por debajo de
 `valor_del_contrato`. Puede ser una séptima fuente, puede ser que
 `valor_del_contrato` incluya adiciones que las fuentes no, o puede ser un
@@ -1095,10 +1094,10 @@ no entendemos. Ver la pregunta abierta 13 del inventario.
 contratos de `fct_contratos`. No es un test que espera romperse: confirma H4
 sobre el universo entero en vez de sobre un `GROUP BY` de estados.
 
-⚠ **RN2 NO se escribió, y no por olvido.** Exige una lista de cuáles son los
+**RN2 NO se escribió, y no por olvido.** Exige una lista de cuáles son los
 estados pre-firma; esa lista no existe como constante en ninguna parte y su
 definición es ambigua. H4 documenta cinco estados con fecha de firma nula y uno de
-ellos es `Aprobado`, con **2 filas de 214.615** — o sea que `Aprobado` es
+ellos es `Aprobado`, con **2 filas de 214.615**, o sea que `Aprobado` es
 pre-firma casi nunca. Inventar la lista dentro de un test escondería ahí una
 definición del ciclo de vida del contrato, que es una decisión de modelado y no de
 prueba. Por H4, RN3 la cubre en la práctica salvo por esas 2 filas.
@@ -1109,12 +1108,12 @@ observaciones. Un contrato no puede terminar una liquidación que nunca empezó.
 Es la única de las doce que llega con la medición hecha antes del test, y eso la
 hace útil de una forma que las otras todavía no: **falla, y falla por poco**. Un
 test que falla con dos casos se puede investigar; uno que falla con noventa mil
-—como RN1 hoy— se ignora. La contracara es que, escrita como test bloqueante,
+(como RN1 hoy) se ignora. La contracara es que, escrita como test bloqueante,
 hace roja la construcción desde el primer día, así que hay que decidir si entra
 como error o como advertencia.
 
 Para orientar: 35 contratos tienen inicio de liquidación sin fin, y eso **no**
-incumple nada — son liquidaciones en curso. La regla es en un solo sentido.
+incumple nada: son liquidaciones en curso. La regla es en un solo sentido.
 
 **RN13 atrapa lo que el sistema de tipos deja pasar**, que es la clase de basura
 más peligrosa. Los siete contratos que la incumplen **castean limpio** a
@@ -1131,9 +1130,9 @@ Presupuesto General de la Nación de 2026, aprobado por el Congreso, es de
 contrato individual no puede superarlo. El de 12.858 billones lo supera
 **veintitrés veces**.
 
-⚠ **Esto es el nivel de lo IMPOSIBLE, no el de lo sospechoso.** Con este techo,
+**Esto es el nivel de lo IMPOSIBLE, no el de lo sospechoso.** Con este techo,
 RN13 tiene **siete incumplimientos**, todos contratos distintos. El mayor
-—12.858 billones, 23,5 veces el PGN— es de un instituto municipal de deportes, y
+(12.858 billones, 23,5 veces el PGN) es de un instituto municipal de deportes, y
 otro es de una institución educativa: no son megaproyectos mal digitados.
 
 Y aun así la regla **no toca** a los 32 contratos por encima del billón de pesos.
@@ -1141,12 +1140,12 @@ El mínimo de esos 32 es 1,07 billones, que una obra de infraestructura grande
 puede valer legítimamente.
 
 Falta el segundo nivel, y el umbral no está fijado: por encima de qué fracción
-del **presupuesto de inversión anual** —88,4 billones para 2026— un contrato pasa
+del **presupuesto de inversión anual** (88,4 billones para 2026) un contrato pasa
 de improbable a sospechoso. Ese número es una decisión y no se pone a ojo; ver la
 pregunta abierta 15 del inventario.
 
 **RN9 y RN10 tienen una trampa:** `habilita_pago_adelantado` **no es booleana**.
-Se observó en `"No Definido"` — tres estados, y `"No Definido"` no equivale a
+Se observó en `"No Definido"`: tres estados, y `"No Definido"` no equivale a
 `"No"`.
 
 **RN11 es la mejor de las once** y también la más cara de implementar. Sale del
@@ -1154,7 +1153,7 @@ dominio y no del esquema; solo se puede testear conservando el valor inicial, o
 sea que **justifica la tabla de snapshots desde la normativa**; y su
 incumplimiento es un hallazgo publicable. La trampa: el límite es en **salarios
 mínimos al momento de la firma**, no en pesos corrientes, así que necesita una
-tabla de SMLMV por año que hoy no existe en el modelo — una dimensión chica, o
+tabla de SMLMV por año que hoy no existe en el modelo: una dimensión chica, o
 una columna de `dim_tiempo`.
 
 **RN5 es interesante en los dos resultados posibles:** si `valor_pagado`
@@ -1178,7 +1177,8 @@ Van al README, no se esconden.
    Ver hallazgo 2 de la sección 9.
 3. **El backfill de `fct_contratos` es de cobertura, no de historia.** Y el
    **flujo 3 no admite backfill hacia atrás**: pregunta por el estado actual, y
-   el de una fecha pasada ya se destruyó. → *Ver* El flujo 3 no se puede reejecutar hacia atrás *(R1) en*
+   el de una fecha pasada ya se destruyó. *Ver* El flujo 3 no se puede
+   reejecutar hacia atrás *(R1) en*
    `03_decisiones_capa_raw.md`.
 4. **`orden`, `rama` y `sector` no son confiables** y están documentados como
    tales.
@@ -1196,10 +1196,10 @@ Van al README, no se esconden.
    diaria**. Es la limitación que más hay que cuidar al redactar el README,
    porque es la única que un lector podría entender como una promesa incumplida
    en vez de como una propiedad del origen.
-8. **RN1 está definida pero sin umbral.** Son las seis fuentes —medido—, y el
+8. **RN1 está definida pero sin umbral.** Son las seis fuentes (medido), y el
    3,31% del universo vivo no cierra por motivos que todavía no se separaron.
    Escribirla como test bloqueante haría fallar la construcción el primer día.
-   Ver §10 y la pregunta abierta 13 del inventario.
+   Ver sección 10 y la pregunta abierta 13 del inventario.
 
 ---
 
@@ -1223,7 +1223,7 @@ Heredadas del inventario, más las nuevas:
 6. ¿`origen_de_los_recursos` es redundante con las seis fuentes de financiación?
    En una fila coincidía; una fila genera hipótesis, no conclusión.
 7. ¿Por qué `saldo_cdp` no se consume con la ejecución?
-8. ¿Aporta algo `SECOP II – Ejecución de Contratos`? Es el candidato obvio para
+8. ¿Aporta algo `SECOP II - Ejecución de Contratos`? Es el candidato obvio para
    la serie de pagos que hoy no existe en ninguna fuente.
 9. **¿El mart puede prometer que un evento de Adiciones se refleja en el
    contrato?** Los hermanos van más frescos que la fuente principal (H24): una
@@ -1238,23 +1238,23 @@ Heredadas del inventario, más las nuevas:
     la corrida de un flujo y la de otro. Las dos escrituras son legítimas, pero
     el modelo tiene resolución de día y no puede representar dos estados dentro
     de uno: una de las dos se pierde sí o sí. Falta decidir **cuál**, y de dónde
-    sale el orden entre particiones del mismo día — el manifiesto de D10 lleva
+    sale el orden entre particiones del mismo día: el manifiesto de D10 lleva
     marcas de tiempo y es el candidato natural, pero el modelo que las lee
     todavía no existe. Hoy son cero casos (medido el 29/08/2026 sobre 2.902.163
     observaciones) y `fct_una_observacion_por_contrato_y_fecha` para la
-    construcción si aparece uno. Ver §3.
+    construcción si aparece uno. Ver sección 3.
 
 11. **¿Los 498 cambios de `proveedor_adjudicado` son renombres o cesiones mal
     registradas?** La columna está clasificada como material con el motivo "el
     trío del proveedor cambia con la cesión", y medido el 29/08/2026 el trío no
     se mueve junto: el nombre cambió en 513 contratos, el documento en 61 y
-    `codigo_proveedor` —la llave, o sea una cesión de verdad— en **uno**. 498
+    `codigo_proveedor` (la llave, o sea una cesión de verdad) en **uno**. 498
     cambiaron solo el nombre, con el mismo código y el mismo documento.
 
-    Los ejemplos apuntan a renombre del mismo proveedor: `'LARJ'` →
-    `'LUIS ANTONIO RIVADENEIRA JOJOA'`, `'RCN Radio S.A.S'` →
-    `'RADIO CADENA NACIONAL SAS'`. Bajo la definición de D6 —cosmética es que
-    cambió el registro y no el contrato— esos son cosméticos y hoy generan
+    Los ejemplos apuntan a renombre del mismo proveedor: `'LARJ'` ->
+    `'LUIS ANTONIO RIVADENEIRA JOJOA'`, `'RCN Radio S.A.S'` ->
+    `'RADIO CADENA NACIONAL SAS'`. Bajo la definición de D6 (cosmética es que
+    cambió el registro y no el contrato) esos son cosméticos y hoy generan
     versión.
 
     **Pero no se reclasifica sin mirar los 498.** Un renombre y una cesión donde
@@ -1267,24 +1267,24 @@ Heredadas del inventario, más las nuevas:
 12. **¿`fecha_de_inicio_del_contrato` debe pasar de IMPOSIBLE a MATERIAL?**
     Medido el 29/08/2026: cambió en 685 contratos, y **648 de esos cambios son de
     nulo a fecha**. Eso no es la mutación contra la que existe la categoría
-    IMPOSIBLE — es un hito que se llena, igual que las tres fechas de liquidación
+    IMPOSIBLE: es un hito que se llena, igual que las tres fechas de liquidación
     y prórroga, que sí son materiales. Las 37 mutaciones reales tienen mediana de
     un día y se parecen a correcciones.
 
     A favor de moverla: hoy esos 648 arranques de ejecución **no generan versión
     por sí solos**, porque las imposibles no entran en la huella. Se ven solo
-    cuando coinciden con otro cambio material — que hasta ahora fue siempre, pero
+    cuando coinciden con otro cambio material, que hasta ahora fue siempre, pero
     eso no está garantizado.
 
     En contra: mover una columna de categoría invalida la comparación entre lo ya
-    construido y lo que venga, y hay que reconstruir el snapshot. Y `Aprobado` →
+    construido y lo que venga, y hay que reconstruir el snapshot. Y `Aprobado` ->
     `En ejecución` ya genera versión por `estado_contrato`, así que la pérdida
     real puede ser cero.
 
     Lo que cierra la pregunta es medir cuántos de los 648 **no** coincidieron con
     un cambio material. Hoy son cero, y eso es un dato, no una garantía.
 
-**Hipótesis descartada — vale la pena no volver a intentarla.** Se probó si
+**Hipótesis descartada: vale la pena no volver a intentarla.** Se probó si
 `dias_adicionados > 0` identificaba a los contratos en estado `Modificado`. La
 consulta devolvió miles de contratos `Modificado` con cero días adicionados.
 

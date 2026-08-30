@@ -39,7 +39,7 @@ models:
     intermediate:
       # La capa donde vive la lógica de negocio: derivar columnas y comparar
       # observaciones. Tabla y no vista porque el hecho la consulta por filtros
-      # muy selectivos —"las versiones que cambiaron el plazo"— y una vista
+      # muy selectivos ("las versiones que cambiaron el plazo") y una vista
       # rehace el join contra 2,9 millones de filas cada vez.
       +materialized: table
       +schema: intermediate

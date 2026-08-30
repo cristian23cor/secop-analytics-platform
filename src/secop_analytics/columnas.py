@@ -6,7 +6,7 @@ veces y se desincronizan:
 1. Qué se le pide a la API. `COLUMNAS_EXTRAIDAS` arma el `$select`. Lo que no
    está acá no se descarga.
 2. Cómo se compara cada columna entre dos observaciones consecutivas, según la
-   clasificación de `01_modelo_dimensional.md` §5.
+   clasificación de `01_modelo_dimensional.md` sección 5.
 
 La palabra "cosmética" no quiere decir excluida. Una columna cosmética se
 descarga, se guarda y alimenta las dimensiones. Lo único que no hace es generar
@@ -22,7 +22,7 @@ verifica. Una columna puesta en dos conjuntos no rompe nada visible, el
 `$select` funciona igual, pero cambia con qué criterio se compara, según el
 orden de los `if` en `clasificacion()`.
 
-Referencias: `exploration/01_modelo_dimensional.md` §5 (la clasificación),
+Referencias: `exploration/01_modelo_dimensional.md` sección 5 (la clasificación),
 `00_inventario_fuentes.md` (H6 el esquema, H7 los datos personales) y
 `03_decisiones_capa_raw.md` (D1 y D6, cómo se usa esta clasificación).
 
@@ -50,21 +50,21 @@ anterior no los cubre. Se normalizan en `staging`.
 
 from typing import Final
 
-# MATERIALES — cambió el contrato en el mundo real y una pregunta de negocio
+# MATERIALES: cambió el contrato en el mundo real y una pregunta de negocio
 # lo necesita. Genera versión nueva.
 # Las seis fuentes de financiación del contrato.
 #
 # Existen como constante propia porque son un CONCEPTO, no una coincidencia de
 # clasificación: RN1 exige que sumen `valor_del_contrato`, y RN6 que eso valga en
-# toda versión histórica. Aparecen en MATERIALES —cambian con una adición— y en
-# MONETARIAS —se comparan como número—, y esa doble pertenencia hacía que la lista
+# toda versión histórica. Aparecen en MATERIALES (cambian con una adición) y en
+# MONETARIAS (se comparan como número), y esa doble pertenencia hacía que la lista
 # estuviera escrita dos veces en este archivo, además de en `medir_rn1.py` y de
 # la copia que iba a hacer falta en dbt. Cuatro listas de lo mismo.
 #
 # Es la regla que este módulo ya aplica a las 85 columnas: no duplicar la lista,
 # nombrarla una vez.
 #
-# ⚠ Son SEIS, no cinco. La sexta solo aparece enumerando el esquema completo:
+# Son seis, no cinco. La sexta solo aparece enumerando el esquema completo:
 # ninguna muestra de filas la mostró, porque la API omite las claves nulas.
 # Medido el 28/08/2026 sobre las 2.824.446 filas del barrido, trae valor en
 # 1.281.254 contratos y 1.280.989 filas cierran RN1 SOLO incluyéndola. Con cinco,
@@ -109,7 +109,7 @@ MATERIALES: Final[frozenset[str]] = frozenset({
     "fecha_inicio_liquidacion",
     "fecha_fin_liquidacion",
     "fecha_de_notificaci_n_de_prorrogaci_n",
-    # — `liquidación` NO es un hito que arranca nulo: es BOOLEANA y está poblada
+    #: `liquidación` NO es un hito que arranca nulo: es BOOLEANA y está poblada
     # en el 100% de las filas. Medido el 28/08/2026 sobre 2.902.163
     # observaciones: "No" en 2.611.371 y "Si" en 290.792, sin nulos ni
     # centinelas. Estaba arriba entre los hitos, y el comentario de ellos no le
@@ -140,7 +140,7 @@ MATERIALES: Final[frozenset[str]] = frozenset({
     # queda pendiente de revisión (ver `00_inventario_fuentes.md`).
 }) | FUENTES_DE_FINANCIACION
 
-# IMPOSIBLES — no deberían cambiar nunca. No se comparan para versionar: si
+# IMPOSIBLES: no deberían cambiar nunca. No se comparan para versionar: si
 # cambian, se dispara una alerta.
 #
 # El criterio de separación con MATERIALES es la pregunta: si esto cambia
@@ -155,7 +155,7 @@ IMPOSIBLES: Final[frozenset[str]] = frozenset({
     "codigo_de_categoria_principal",
 })
 
-# COSMÉTICAS — cambió el registro, no el contrato. Se pisa el valor actual
+# COSMÉTICAS: cambió el registro, no el contrato. Se pisa el valor actual
 # sin generar versión. Se descargan igual: acá viven casi todos los atributos
 # de las dimensiones.
 COSMETICAS: Final[frozenset[str]] = frozenset({
@@ -167,9 +167,9 @@ COSMETICAS: Final[frozenset[str]] = frozenset({
     "sector",
     "entidad_centralizada",
     # --- dim_proveedor. `tipodocproveedor` se conserva como evidencia pero no
-    # se usa para derivar `tipo_persona`: falla en las dos direcciones — hay
+    # se usa para derivar `tipo_persona`: falla en las dos direcciones: hay
     # S.A.S. marcadas como "Cédula de Ciudadanía" y personas naturales marcadas
-    # como "NIT". Ver `01_modelo_dimensional.md` §6, `dim_proveedor`.
+    # como "NIT". Ver `01_modelo_dimensional.md` sección 6, `dim_proveedor`.
     "tipodocproveedor",
     "es_pyme",
     "es_grupo",
@@ -227,7 +227,7 @@ COSMETICAS: Final[frozenset[str]] = frozenset({
     "habilita_pago_adelantado",
     # `referencia_del_contrato`: numeración interna de la entidad
     # ("CPS-3548-2022" = tipo, consecutivo, año). No es identificador global
-    # —otra entidad usa el mismo string— y las entidades la editan a mano.
+    # (otra entidad usa el mismo string) y las entidades la editan a mano.
     # Ponerla en IMPOSIBLES llenaría la alerta de ruido, y una alerta ruidosa
     # enseña a ignorarla. Queda cosmética.
     "referencia_del_contrato",
@@ -240,20 +240,20 @@ COSMETICAS: Final[frozenset[str]] = frozenset({
     # `noticeUID` a columna propia y se aplana el objeto.
     #
     # Raw no aplana: guarda el objeto tal como llegó. Fue justamente esta
-    # columna la que descartó Parquet como formato de raw — aplanarla habría
+    # columna la que descartó Parquet como formato de raw: aplanarla habría
     # sido normalizar, y D1 prohíbe normalizar antes de comparar. Por eso raw
     # es JSONL comprimido. Ver `03_decisiones_capa_raw.md`, D2.
     "urlproceso",
 })
 
-# PERSONALES — no se descargan. Eje aparte, no una cuarta categoría de
+# PERSONALES: no se descargan. Eje aparte, no una cuarta categoría de
 # comparación: nunca llegan a compararse porque nunca entran.
 #
 # Legalmente son datos abiertos, pero republicarlos en un tablero es otra cosa
 # (H7). El filtro corre en el `$select`, no después: la exclusión más barata de
 # auditar es la que hace que el dato no viaje.
 PERSONALES: Final[frozenset[str]] = frozenset({
-    # Representante legal — incluye domicilio residencial.
+    # Representante legal: incluye domicilio residencial.
     "nombre_representante_legal",
     "identificaci_n_representante_legal",
     "tipo_de_identificaci_n_representante_legal",
@@ -279,7 +279,7 @@ PERSONALES: Final[frozenset[str]] = frozenset({
 })
 
 
-# TIPOS DE DESTINO — a qué se castea cada columna en `stg_contratos`.
+# TIPOS DE DESTINO: a qué se castea cada columna en `stg_contratos`.
 #
 # Es un eje DISTINTO de la clasificación de comparación de arriba. Aquella
 # decide qué genera una versión nueva en el SCD2; ésta decide qué tipo tiene la
@@ -340,8 +340,8 @@ ENTERAS: Final[frozenset[str]] = frozenset({
     # misma duración con números que difieren 365 veces, y las dos formas
     # conviven en la misma columna.
     #
-    # Partirla en cantidad y unidad ya es viable —las cinco unidades están
-    # enumeradas arriba— y es trabajo de `staging`. Normalizar a días NO: eso
+    # Partirla en cantidad y unidad ya es viable (las cinco unidades están
+    # enumeradas arriba) y es trabajo de `staging`. Normalizar a días NO: eso
     # exige decidir cuánto dura un mes, y esa convención no la pone el
     # pipeline. Para duración real están `fecha_de_inicio_del_contrato` y
     # `fecha_de_fin_del_contrato`, que son fechas de verdad.
@@ -400,7 +400,7 @@ def validar_cobertura(columnas_de_la_fuente: set[str]) -> dict[str, set[str]]:
 def clasificacion(columna: str) -> str:
     """Categoría de comparación de una columna.
 
-    La consumen dbt —vía el generador de D1— y los scripts de diagnóstico.
+    La consumen dbt (vía el generador de D1) y los scripts de diagnóstico.
     Raw no la usa: ahí la comparación es de bytes y no distingue categorías.
     """
     if columna in IMPOSIBLES:

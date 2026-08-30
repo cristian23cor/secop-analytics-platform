@@ -11,7 +11,7 @@ Estructura que produce (D2):
 ## Por qué existe el nivel `particion=`
 
 Corrige un defecto encontrado al escribir el orquestador. Con la ruta original
-—solo `flujo` y `fecha_extraccion`— dos casos reales colisionaban **sin fallar
+(solo `flujo` y `fecha_extraccion`) dos casos reales colisionaban **sin fallar
 ruidosamente**:
 
 - El flujo 3 se paraleliza lanzando varias particiones del universo vivo a la
@@ -36,8 +36,8 @@ abrir el manifiesto.
 
 ## Por qué trozos y no un archivo
 
-El trabajo caro no es escribir —con la deduplicación de D3 son ~2 MB
-comprimidos por noche— sino las ~566 llamadas a la API, veinte minutos.
+El trabajo caro no es escribir (con la deduplicación de D3 son ~2 MB
+comprimidos por noche) sino las ~566 llamadas a la API, veinte minutos.
 
 Los límites de trozo son los puntos donde el stream de compresión se cierra. Un
 `.gz` cortado a la mitad tiene la cola corrupta y el archivo entero se vuelve
@@ -54,13 +54,13 @@ bajar las 550.
 El cursor del manifiesto nunca va por delante del disco. Anotar una página no
 la confirma: el cursor solo pasa al manifiesto cuando el buffer está vacío, o
 sea cuando esas líneas ya están dentro de un `.gz` cerrado. Si no lo fuera, una
-muerte dura —`SIGKILL`, corte de luz, OOM; no una excepción, que el `with` sí
-alcanza a cubrir— dejaría el manifiesto diciendo "ya pasé por acá" con las
+muerte dura (`SIGKILL`, corte de luz, OOM; no una excepción, que el `with` sí
+alcanza a cubrir) dejaría el manifiesto diciendo "ya pasé por acá" con las
 filas evaporadas en memoria, y la reanudación no volvería a pedirlas nunca.
 
 Por eso el trozo se cierra por **dos** cotas, la que ocurra primero: líneas
 acumuladas y páginas desde el último cierre. La segunda hace falta porque en el
-flujo 3 la primera no acota nada — de cada página de 5.000 filas se escriben
+flujo 3 la primera no acota nada: de cada página de 5.000 filas se escriben
 unas 50, así que llenar un trozo lleva ~100 páginas.
 
 Y la condición para confirmar es "el buffer está vacío", no "se acaba de cerrar
@@ -76,7 +76,7 @@ reanudación que pueda pudrirse sin que nadie lo note.
 1. **La línea se escribe antes de que el índice se entere.** Este módulo no
    conoce el índice: el orquestador llama primero acá y después a `registrar()`.
    Al revés, un fallo a mitad dejaría el índice diciendo "ya vi este contrato"
-   con la fila en ninguna parte — y la fuente ya se sobrescribió.
+   con la fila en ninguna parte, y la fuente ya se sobrescribió.
 2. **`_COMPLETO` aparece solo al final.** dbt lee únicamente particiones que lo
    tengan, o un `dbt run` disparado durante la ingesta lee media noche y produce
    números que nadie va a poder explicar.
@@ -104,7 +104,7 @@ Cada archivo se escribe con sufijo `.tmp` y se renombra al terminar. En POSIX el
 renombrado dentro del mismo sistema de archivos es atómico: un lector nunca ve
 un archivo a medio escribir, solo lo ve o no lo ve.
 
-Referencias: `exploration/03_decisiones_capa_raw.md` — D2 (formato y trozos),
+Referencias: `exploration/03_decisiones_capa_raw.md`: D2 (formato y trozos),
 D3 (deduplicación) e I3 (dónde vive el manifiesto).
 """
 
@@ -133,8 +133,8 @@ NIVEL_COMPRESION: Final[int] = 6
 # noche típica, 5.000 da unos seis trozos.
 LINEAS_POR_TROZO: Final[int] = 5_000
 
-# Páginas por trozo. Es la MISMA cota que `LINEAS_POR_TROZO` —cuánto trabajo
-# puede perderse— medida en la otra unidad, y hace falta porque en el flujo 3
+# Páginas por trozo. Es la MISMA cota que `LINEAS_POR_TROZO` (cuánto trabajo
+# puede perderse) medida en la otra unidad, y hace falta porque en el flujo 3
 # contar líneas no acota nada: de cada página de 5.000 filas se escriben unas
 # 50, así que llenar un trozo lleva ~100 páginas y hasta entonces esas líneas
 # viven solo en memoria.
@@ -308,7 +308,7 @@ class ParticionRaw:
 
         # D10: retomar contra OTRO corte mezclaría dos estados de la fuente en
         # un mismo directorio. Los trozos ya cerrados vienen del corte viejo y
-        # los que siguen vendrían del nuevo, y nada en el resultado lo diría —
+        # los que siguen vendrían del nuevo, y nada en el resultado lo diría:
         # el manifiesto se reescribe con el corte actual y el viejo se pierde.
         #
         # Pasa de verdad: una corrida dura ~50 minutos y la regeneración cae en
@@ -429,7 +429,7 @@ class ParticionRaw:
             "cursor": self._cursor,
             # D10. `corte_anterior` y `corte_al_iniciar` son los dos extremos
             # del intervalo que esta partición cubre; sin ellos, cuánto negocio
-            # hay adentro no se puede saber después — y no se recupera, porque
+            # hay adentro no se puede saber después, y no se recupera, porque
             # el corte anterior ya lo destruyó la fuente.
             #
             # `corte_al_terminar` sigue en nulo hasta `completar()`: si difiere
@@ -463,7 +463,7 @@ class ParticionRaw:
         Si difiere de `corte_al_iniciar`, la fuente se regeneró durante la
         corrida y la partición quedó **a caballo**: las primeras páginas vienen
         de un estado y las últimas de otro. Se anota y se advierte; qué hacer
-        con esa partición está sin decidir, y por eso no se toca `_COMPLETO` —
+        con esa partición está sin decidir, y por eso no se toca `_COMPLETO`:
         marcarla ilegible sería tomar esa decisión de costado.
         """
         if corte_al_terminar is not None:
@@ -551,7 +551,7 @@ def _corte_anotado(directorio: Path) -> str | None:
     """El `corte_al_iniciar` del manifiesto, o `None` si no se puede saber.
 
     Un manifiesto ilegible, ausente o sin el campo dan todos lo mismo:
-    desconocido. No se distingue a propósito — las tres respuestas llevan a la
+    desconocido. No se distingue a propósito: las tres respuestas llevan a la
     misma acción, que es advertir sin bloquear, y distinguirlas invitaría a
     tratar alguna como si fuera un dato.
     """
@@ -576,7 +576,7 @@ def ingestas_previas(
     La pregunta que contesta no es "¿ya vi este corte?" sino:
 
         ¿Existe una partición **completa**, del mismo flujo y la misma
-        partición, cuyo manifiesto diga este corte — con cualquier
+        partición, cuyo manifiesto diga este corte: con cualquier
         `fecha_extraccion`?
 
     Las tres condiciones importan y cada una descarta un modo de fallo:
@@ -610,7 +610,7 @@ def ingestas_previas(
         raise ValueError(
             "Hace falta el corte de la fuente. Sin él la pregunta no se puede "
             "contestar, y contestarla que sí con un vacío bloquearía corridas "
-            "legítimas — el error que falta."
+            "legítimas: el error que falta."
         )
 
     raiz = Path(base)
@@ -643,7 +643,7 @@ def iterar_particion(directorio: Path | str) -> Iterator[dict[str, Any]]:
 
     Falla si la partición no está completa: leer una a medias es exactamente lo
     que `_COMPLETO` existe para impedir. Y falla **antes** de devolver la
-    primera fila, no en el medio del recorrido — un generador que explota en la
+    primera fila, no en el medio del recorrido: un generador que explota en la
     fila 900.000 deja al que lo consume sin saber qué hacer con las 899.999 que
     ya procesó.
     """

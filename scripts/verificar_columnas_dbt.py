@@ -16,7 +16,7 @@ Comprueba que el archivo en disco sea **byte a byte** el que el generador
 produciría hoy. Eso cubre los dos sentidos de la deriva:
 
 - Alguien tocó `columnas.py` y no regeneró. dbt estaría leyendo un esquema
-  distinto del que la ingesta le pide a la API — el `$select` traería una columna
+  distinto del que la ingesta le pide a la API: el `$select` traería una columna
   que el `STRUCT` no tiene, y esa columna **se ignora en silencio**.
 - Alguien editó el macro a mano. Existe una segunda fuente de verdad del esquema
   y nadie lo sabe.
@@ -27,7 +27,7 @@ todavía no tiene quién la llame.
 
 ## Por qué byte a byte y no una comparación semántica
 
-Una comparación semántica —los mismos nombres, en cualquier orden y formato—
+Una comparación semántica (los mismos nombres, en cualquier orden y formato)
 sería más tolerante y peor. El archivo es generado: si difiere en un byte,
 alguien lo tocó o el generador cambió, y las dos cosas hay que verlas. Tolerar
 diferencias de formato es cómo un archivo generado se convierte en uno editado a
@@ -67,8 +67,8 @@ def main() -> int:
         print(
             "\n  Por qué importa: `columnas.py` arma el `$select` que se le pide"
             " a la API,\n  y el macro arma el `STRUCT` con el que dbt lee lo que"
-            " llegó. Si divergen,\n  una columna puede viajar y no leerse —"
-            " o leerse y no existir — sin que\n  nada falle.",
+            " llegó. Si divergen, una columna puede viajar y no leerse,"
+            "\n  o leerse y no existir, sin que nada falle.",
             file=sys.stderr,
         )
     return resultado.returncode

@@ -23,7 +23,7 @@ poseer, y su irreversibilidad es la característica buscada.
 
 **Pero hay una población que queda afuera por construcción**, y conviene saberlo
 antes de buscarla en raw y no encontrarla. Las 423.975 filas sin
-`fecha_de_firma` —todas pre-firma, según H4— no entran por ningún flujo:
+`fecha_de_firma` (todas pre-firma, según H4) no entran por ningún flujo:
 
 - Flujo 1 las descarta porque una fila sin fecha de firma no cae en ningún
   rango de fechas de firma.
@@ -32,7 +32,7 @@ antes de buscarla en raw y no encontrarla. Las 423.975 filas sin
   casos, y `Cancelado` en el 99,9%.
 - Flujo 3 tampoco: ninguno de esos estados está en `ESTADOS_VIVOS`.
 
-No es un problema —el negocio las excluye igual (RN2)— pero sí una diferencia
+No es un problema (el negocio las excluye igual (RN2)) pero sí una diferencia
 que hay que nombrar: los personales quedan afuera **por regla**, estas quedan
 afuera **por construcción**. Y una consecuencia práctica: los tests de dbt que
 filtran estados pre-firma no van a tener nada que filtrar.
@@ -55,7 +55,7 @@ from .paginacion import LIMITE_POR_DEFECTO, Fila, paginar
 # Estados en los que un contrato todavía puede cambiar (H5).
 #
 # SUPUESTO SIN VERIFICAR (pregunta abierta 3 del inventario): que los estados
-# terminales —Cerrado, terminado, Cancelado— ya no se mueven. Es razonable pero
+# terminales (Cerrado, terminado, Cancelado) ya no se mueven. Es razonable pero
 # no está probado: un contrato Cerrado podría recibir pagos rezagados. Si el
 # supuesto es falso, el flujo 3 es ciego a esos pagos y nada lo delata.
 ESTADOS_VIVOS: Final[tuple[str, ...]] = (
@@ -137,7 +137,7 @@ def contratos_nuevos(
     disfrazado: es que una fila sin fecha de firma no puede caer en ningún
     rango de fechas de firma.
 
-    Pero esas filas tampoco llegan por los otros dos flujos — ver el aviso del
+    Pero esas filas tampoco llegan por los otros dos flujos: ver el aviso del
     encabezado del módulo. En la práctica no entran a raw.
     """
     yield from paginar(
@@ -160,7 +160,7 @@ def eventos_contractuales(
     evento contractual (modificación, cesión, cierre). Está nula en el 99,5% de
     los contratos "En ejecución" porque a esos no les pasó nada desde la firma.
 
-    El nulo es información, no ausencia — y por eso este flujo no reemplaza al
+    El nulo es información, no ausencia, y por eso este flujo no reemplaza al
     tercero: un contrato que solo recibió pagos no aparece acá.
     """
     yield from paginar(
@@ -184,7 +184,7 @@ def refresco_de_vivos(
     no tienen ninguna columna de fecha que los delate (H9).
 
     Sus parámetros de fecha no son una ventana de cambio como en los otros
-    dos flujos —no existe tal ventana, ese es el punto— sino una partición de
+    dos flujos (no existe tal ventana, ese es el punto) sino una partición de
     paralelismo: un reparto del universo vivo entre varios procesos de la
     misma corrida. Sin ellos, recorre los ~2.825.685 contratos vivos.
 
@@ -195,7 +195,7 @@ def refresco_de_vivos(
     Los parámetros de fecha no son una ventana de backfill. Darle fechas
     viejas no reprocesa el pasado: devuelve el estado de hoy de los contratos
     firmados entonces. El guardarraíl que lo impide vive en el orquestador, no
-    acá — este módulo no sabe con qué fecha se está escribiendo. Ver R1 en
+    acá: este módulo no sabe con qué fecha se está escribiendo. Ver R1 en
     `03_decisiones_capa_raw.md`.
     """
     condiciones = [_en_estados_vivos()]

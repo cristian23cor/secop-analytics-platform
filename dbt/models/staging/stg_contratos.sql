@@ -85,7 +85,7 @@ limpio as (
         {%- if columna == "urlproceso" %}
         {#- Objeto anidado. Se aplana acá porque raw no puede (D2): aplanar es
             normalizar, y raw guarda lo que llegó. El `noticeUID` sale a columna
-            propia porque NO se puede reconstruir desde `proceso_de_compra` —
+            propia porque NO se puede reconstruir desde `proceso_de_compra`:
             son dos identificadores distintos (H6). -#}
         json_extract_string(urlproceso, '$.url') as url_proceso,
         regexp_extract(
@@ -105,8 +105,8 @@ limpio as (
         {%- endif %}
         {%- endfor %}
 
-        {#- El contador. Una columna falló el casting si tenía valor —después de
-            sacarle el centinela— y el `try_cast` dio nulo. Usa los MISMOS
+        {#- El contador. Una columna falló el casting si tenía valor (después de
+            sacarle el centinela) y el `try_cast` dio nulo. Usa los MISMOS
             ayudantes que la proyección de arriba: si se escribieran por
             separado, el contador podría medir algo distinto de lo que la
             columna guarda. -#}

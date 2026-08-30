@@ -26,7 +26,7 @@ De ahí el orden raro de este archivo.
 
  **Y por qué se instalan con asignación y no con `setdefault`.** `setdefault`
 no hace nada si el módulo ya está importado, así que bastaba con que cualquier
-test tocara el módulo real antes para que `cargar_raw` saliera a la red — un
+test tocara el módulo real antes para que `cargar_raw` saliera a la red: un
 fallo que depende del orden de recolección de pytest y por lo tanto aparece y
 desaparece solo.
 
@@ -56,12 +56,12 @@ def _arbol(nombre: str):
 
     Se lee con `ast` y no se importa por dos razones. Los módulos reales usan
     imports relativos (`from .paginacion import ...`) que no resuelven fuera de
-    su paquete — y ese paquete está eclipsado por los dobles de este archivo.
+    su paquete, y ese paquete está eclipsado por los dobles de este archivo.
     Y ejecutar el módulo real tendría efectos: importaría `requests`, leería el
     entorno, y podría reemplazar al doble.
 
-    Leer el árbol da lo que hace falta para comparar —nombres, valores
-    literales, parámetros— sin ninguna de esas complicaciones.
+    Leer el árbol da lo que hace falta para comparar (nombres, valores
+    literales, parámetros) sin ninguna de esas complicaciones.
     """
     import ast
 
@@ -215,9 +215,9 @@ class Flujo(StrEnum):
     """Copia de `Flujo` de `flujos.py`.
 
     Es un `StrEnum` de verdad y no un stub, para que `.value` se comporte igual
-    que en el original — el orquestador lo usa para armar la ruta en disco.
+    que en el original: el orquestador lo usa para armar la ruta en disco.
 
-    ⚠ Si los valores divergen del original, los tests pasan y la ruta real
+    Si los valores divergen del original, los tests pasan y la ruta real
     queda distinta. `test_los_dobles_no_divergieron` lo compara.
     """
 
@@ -229,7 +229,7 @@ class Flujo(StrEnum):
 class _Fuente:
     """Guion de lo que la API devolverá, por flujo.
 
-    ⚠ Es un objeto de módulo compartido por todos los tests, no una instancia
+    Es un objeto de módulo compartido por todos los tests, no una instancia
     por test. El fixture `fuente` lo limpia antes de cada uno. Funciona porque
     pytest corre en un solo proceso; con `pytest-xdist` habría que revisarlo.
     """

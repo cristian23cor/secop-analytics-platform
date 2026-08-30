@@ -2,8 +2,8 @@
   Toda fila del hecho encuentra su modalidad, y exactamente una.
 
   Este test protege la decisión de fabricar la llave con un hash calculado en dos
-  lugares. Si los dos cálculos divergieran —porque alguien toca uno y no el otro, o
-  cambia el orden de los argumentos— las llaves dejarían de coincidir y la unión
+  lugares. Si los dos cálculos divergieran (porque alguien toca uno y no el otro, o
+  cambia el orden de los argumentos) las llaves dejarían de coincidir y la unión
   devolvería cero filas para las versiones afectadas.
 
   Ese fallo no se nota en una consulta normal. Un `join` que no encuentra pareja

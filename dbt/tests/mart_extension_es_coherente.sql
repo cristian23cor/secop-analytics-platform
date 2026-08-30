@@ -1,32 +1,23 @@
 {#-
   Las cuentas del mart no pueden contradecirse entre sí.
 
-  El modelo agrega desde dos lados: el denominador sale de `fct_contratos` y los
-  numeradores de `int_cambios_por_columna`, unidos por `id_contrato`. Ese join es
-  donde se rompe, y **se rompe hacia arriba**: si `int_cambios_por_columna`
-  tuviera dos filas por contrato y columna, el `left join` multiplicaría y los
-  contratos con extensión superarían a los observados.
+  El modelo agrega desde dos lados: el denominador sale del hecho y los numeradores
+  de la capa de cambios, unidos por contrato. Ese join se rompe hacia arriba: si
+  la capa de cambios tuviera filas repetidas, los contratos con extensión
+  superarían a los observados.
 
-  Un mart inflado no explota. Devuelve una tasa mayor que 1, que en un tablero se
-  ve como "142% de los contratos fueron extendidos" — y alguien lo lee como un
-  dato raro de la fuente en vez de como un bug.
+  Un mart inflado no explota. Devuelve una tasa mayor que uno, que en un tablero se
+  ve como "142% de los contratos fueron extendidos", y alguien lo lee como un dato
+  raro de la fuente en vez de como un bug.
 
-  | motivo | qué significa |
-  |---|---|
-  | `mas contratos con extension que observados` | el join multiplicó filas |
-  | `mas contratos con adicion que observados` | ídem |
-  | `menos extensiones que contratos extendidos` | imposible: cada contrato extendido aporta al menos una |
-  | `menos adiciones que contratos con adicion` | ídem |
-  | `grano duplicado` | la celda entidad × familia × historia aparece dos veces |
+  El último motivo, el grano duplicado, cubre el otro join: el de la dimensión de
+  entidad, que toma la versión vigente. Si una entidad tuviera dos vigentes, el
+  mart duplicaría la celda. La dimensión ya lo vigila de su lado; esto lo vigila
+  desde el consumo, que es donde hace daño.
 
-  El último es el que cubre el otro join, el de `dim_entidad`: se une por
-  `codigo_entidad` tomando la versión vigente, y si una entidad tuviera dos
-  vigentes el mart duplicaría la celda. `dim_entidad_una_sola_version_vigente` ya
-  lo vigila desde la dimensión; esto lo vigila desde el consumo, que es donde
-  hace daño.
-
-  Medido el 29/08/2026: cero incumplimientos sobre 118.264 celdas.
+  Medido el 29/08/2026: cero, sobre 118.264 celdas.
 -#}
+
 
 {{ config(severity="error") }}
 

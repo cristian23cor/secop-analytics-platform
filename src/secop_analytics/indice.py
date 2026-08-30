@@ -8,7 +8,7 @@ raw**, no de la última que se vio.
 reconstruye releyendo los archivos de raw y tomando el último hash por contrato
 (`reconstruir_desde_raw()`). Los archivos mandan. Por eso este módulo puede
 permitirse ser rápido y no durable: lo peor que pasa si se pierde una tanda es
-que la próxima corrida guarde de nuevo filas que no cambiaron — duplicados en
+que la próxima corrida guarde de nuevo filas que no cambiaron: duplicados en
 raw, que dbt resuelve tomando la última observación por contrato.
 
 ## Por qué se lee todo al arrancar y se escribe todo al cerrar
@@ -26,7 +26,7 @@ que una foto del índice tomada al inicio alcanza.
 
 Medido con procesos reales, no con hilos del mismo proceso:
 
-- Dos escritores simultáneos: el segundo recibe `IOException` — *"Could not set
+- Dos escritores simultáneos: el segundo recibe `IOException`: *"Could not set
   lock on file"*.
 - **Un lector mientras hay un escritor: también falla.** Esto contradice la
   intuición de "muchos lectores, un escritor": mientras alguien tiene el
@@ -46,7 +46,7 @@ Medición de carga, con 2.825.685 contratos (ver I4):
 | Cargar todo en un dict | 185 MB | 2,1 s |
 | Consultar por lotes de 5.000 | constante | 95,4 s |
 
-La opción "prudente" resultó 47× más lenta para proteger 185 MB. Se carga todo.
+La opción "prudente" resultó 47 veces más lenta para proteger 185 MB. Se carga todo.
 
 Cuatro particiones en paralelo son cuatro copias: ~740 MB. Manejable hoy; si
 el dataset se duplica, hay que reevaluar el costo de memoria.
@@ -94,7 +94,7 @@ class IndiceHashes:
 
     Ese orden es el invariante 1 de D2 y no es negociable. Al revés, un fallo a
     mitad deja el índice diciendo "ya vi este contrato" con la fila en ninguna
-    parte — y la fuente ya se sobrescribió, así que se perdió para siempre.
+    parte, y la fuente ya se sobrescribió, así que se perdió para siempre.
     """
 
     def __init__(self, ruta: Path | str, *, verboso: bool = True) -> None:
@@ -123,7 +123,7 @@ class IndiceHashes:
 
         El reintento no es defensivo, es necesario: con varias particiones en
         paralelo, la que llega mientras otra vuelca encuentra el archivo
-        bloqueado — y para **leer** también, no solo para escribir.
+        bloqueado, y para **leer** también, no solo para escribir.
 
         Espera creciente: 0,5 s, 1 s, 2 s, 4 s... Un volcado típico dura menos
         de un segundo (0,2 s para ~30.000 hashes), así que con dos o tres
@@ -203,7 +203,7 @@ class IndiceHashes:
 
         `cambio()` junta dos cosas distintas bajo un mismo `True`: "nunca vi
         este contrato" y "lo vi y sus bytes cambiaron". Para deduplicar da
-        igual —los dos casos se guardan— pero para **interpretar** una tasa de
+        igual (los dos casos se guardan) pero para **interpretar** una tasa de
         descarte baja no da igual en absoluto:
 
         - Descarte bajo sobre filas **conocidas**: los hashes que teníamos ya no
@@ -232,7 +232,7 @@ class IndiceHashes:
     Se llama **después** de escribir la línea al archivo, no antes. El orden
     es el invariante D2/1: si falla entre escribir el archivo e anotar el
     índice, la próxima corrida ve el archivo en raw pero el índice no lo
-    registra como conocido, y por eso lo vuelve a guardar — duplicado aceptable.
+    registra como conocido, y por eso lo vuelve a guardar: duplicado aceptable.
     Si fuera al revés (índice primero, archivo después), un fallo a mitad dejaría
     el índice diciendo "ya vi este contrato" con la fila en ninguna parte.
     """
@@ -300,7 +300,7 @@ class IndiceHashes:
 
         ## El parámetro `desde_cero` cambia la semántica de la operación
 
-        En `False` —el defecto— funciona como una **fusión**: los contratos
+        En `False` (el defecto) funciona como una **fusión**: los contratos
         presentes en la tabla pero ausentes en las observaciones **se conservan**.
         Es el comportamiento correcto al alimentar el índice partición por
         partición, donde cada llamada aporta solo una ventana del raw total.

@@ -1,7 +1,7 @@
 """Tests de `indice.py`.
 
 Usan un archivo temporal de DuckDB. Si alguno falla, la deduplicación por bytes
-(D3) puede estar perdiendo observaciones — que es el error caro del diseño.
+(D3) puede estar perdiendo observaciones, que es el error caro del diseño.
 """
 
 from __future__ import annotations
@@ -269,7 +269,7 @@ def test_lo_conoce_aunque_la_huella_haya_cambiado(indice):
     `conoce()` es lo que permite saber cuál de los dos es.
 
     Un descarte bajo sobre contratos conocidos significa que los hashes
-    guardados dejaron de servir — la fuente cambió. Sobre contratos nuevos no
+    guardados dejaron de servir: la fuente cambió. Sobre contratos nuevos no
     significa nada: la partición nunca se había barrido. El canario de
     `cargar_raw.py` avisaba en los dos casos hasta que existió este método.
     """
@@ -285,7 +285,7 @@ def test_una_particion_nueva_no_conoce_nada_aunque_el_indice_no_este_vacio(ruta)
     """El falso positivo que se vio en la primera corrida real.
 
     El flujo 3 se paraleliza en particiones disjuntas por `fecha_de_firma`. Al
-    barrer la segunda, el índice ya tiene los contratos de la primera — que son
+    barrer la segunda, el índice ya tiene los contratos de la primera, que son
     otros. Preguntar "¿el índice está vacío?" da que no, y el canario cantaba;
     la pregunta correcta es si conoce **estos** contratos.
     """

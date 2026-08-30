@@ -3,14 +3,14 @@
 ## Por qué existe
 
 `columnas.py` es la fuente de verdad de las 85 columnas y de su clasificación.
-dbt necesita la misma información —para armar el `STRUCT` del modelo frontera y
-para saber qué columnas comparar— y la única forma de que no se desincronicen es
+dbt necesita la misma información (para armar el `STRUCT` del modelo frontera y
+para saber qué columnas comparar) y la única forma de que no se desincronicen es
 que una se genere de la otra.
 
 Es el mismo patrón que el proyecto ya usa con los dobles de `conftest.py`, y por
 la misma razón: dos listas escritas a mano se separan, y cuando se separan los
-tests siguen pasando. El defecto del conteo de tests —139 documentados contra 144
-reales, invisible porque el desglose estaba incompleto— es la versión suave del
+tests siguen pasando. El defecto del conteo de tests (139 documentados contra 144
+reales, invisible porque el desglose estaba incompleto) es la versión suave del
 mismo problema.
 
 ## Por qué un macro y no variables ni un seed
@@ -24,7 +24,7 @@ recién en tiempo de consulta y con un `dbt seed` extra antes de cada corrida.
 ## Por qué también lee `flujos.py`
 
 El nombre del script dice `columnas` y lee dos módulos. La lista de estados vivos
-no es del esquema —no clasifica una columna— sino del universo que el flujo 3
+no es del esquema (no clasifica una columna) sino del universo que el flujo 3
 barre, así que vive con el flujo. Pero dbt la necesita por el mismo motivo que
 necesita la clasificación: `motivo_de_cierre` distingue una versión que sigue en
 observación de una que salió del universo, y "salió" significa exactamente "ya no
@@ -84,7 +84,7 @@ CABECERA = """{#-
   que es la fuente de verdad del esquema, y desde `flujos.py`, que lo es del
   universo vivo. Editar acá crea una segunda lista que
   se va a separar de la primera, y cuando se separe los tests van a seguir
-  pasando — que es exactamente el modo de fallo que este archivo existe para
+  pasando, que es exactamente el modo de fallo que este archivo existe para
   evitar.
 
   Para cambiar algo: tocá `columnas.py` y volvé a correr el generador.
@@ -129,12 +129,12 @@ def cuerpo() -> str:
         "    la forma de una muestra de filas, y la API omite las claves nulas\n"
         "    (H6): una columna que ninguna fila muestreada traiga no entra al\n"
         "    struct, y el modelo que la use falla. Las que arrancan nulas y se\n"
-        "    llenan son justo las materiales — las tres fechas de hito y\n"
+        "    llenan son justo las materiales: las tres fechas de hito y\n"
         "    `ultima_actualizacion`.\n\n"
         "    Es el mismo error que se cometió con la sexta fuente de\n"
         "    financiación de RN1: 'no apareció en la muestra' se leyó como 'casi\n"
         "    nunca tiene valor', y estaba en el 45% de los contratos.\n\n"
-        "    ⚠ Una clave que la fuente agregue y este struct no tenga se ignora\n"
+        "    Una clave que la fuente agregue y este struct no tenga se ignora\n"
         "    EN SILENCIO. No es un agujero nuevo: el `$select` ya pide solo\n"
         "    estas 67, así que raw nunca las trae. Quien detecta columnas nuevas\n"
         "    es `columnas.validar_cobertura()`. -#}\n"
@@ -143,9 +143,9 @@ def cuerpo() -> str:
         "    {{ return(campos | trim) }}\n"
         "{% endmacro %}\n"
         "\n"
-        "{#- Clasificación de D6 / §5 del modelo dimensional. Decide qué genera\n"
+        "{#- Clasificación de D6 / sección 5 del modelo dimensional. Decide qué genera\n"
         "    versión nueva en el SCD2, no qué se descarga.\n\n"
-        "    ⚠ Raw NO usa esto: ahí la comparación es de bytes y no distingue\n"
+        "    Raw NO usa esto: ahí la comparación es de bytes y no distingue\n"
         "    categorías. Son dos filtros de finura distinta. -#}\n"
         + bloque("materiales", MATERIALES)
         + "\n"
@@ -177,9 +177,9 @@ def cuerpo() -> str:
         "    Son un concepto, no una coincidencia de clasificación: RN1 exige\n"
         "    que sumen `valor_del_contrato` y RN6 que eso valga en toda versión\n"
         "    histórica. Están en MATERIALES y en MONETARIAS a la vez, así que\n"
-        "    deducirlas de la intersección de esos dos macros sería frágil —hay\n"
-        "    otras diez columnas en las dos—. Van con nombre propio.\n\n"
-        "    ⚠ Son SEIS. La sexta no aparece en ninguna muestra de filas porque\n"
+        "    deducirlas de la intersección de esos dos macros sería frágil (hay\n"
+        "    otras diez columnas en las dos). Van con nombre propio.\n\n"
+        "    Son seis. La sexta no aparece en ninguna muestra de filas porque\n"
         "    la API omite las claves nulas, y sin embargo 1.280.989 contratos\n"
         "    cierran RN1 solo incluyéndola. -#}\n"
         + bloque("fuentes_de_financiacion", FUENTES_DE_FINANCIACION)
@@ -191,13 +191,13 @@ def cuerpo() -> str:
         "    barriendo. Copiarla al modelo daría dos definiciones del universo\n"
         "    vivo, y el día que se separen la tabla diría 'abierta' sobre\n"
         "    contratos que ya nadie mira.\n\n"
-        "    ⚠ Los valores van con la capitalización de la API. `staging` no\n"
-        "    normaliza `estado_contrato` —comprobado el 29/08/2026: `terminado`\n"
-        "    y `cedido` siguen en minúscula en el hecho—, así que la\n"
+        "    Los valores van con la capitalización de la API. `staging` no\n"
+        "    normaliza `estado_contrato` (comprobado el 29/08/2026: `terminado`\n"
+        "    y `cedido` siguen en minúscula en el hecho), así que la\n"
         "    comparación es directa. Si algún día staging normaliza, esta lista\n"
         "    deja de calzar y `motivo_de_cierre` se vuelve todo\n"
         "    'fuera_de_observacion' sin que nada falle.\n\n"
-        "    ⚠ Y arrastra el supuesto sin verificar de la pregunta abierta 3 del\n"
+        "    Y arrastra el supuesto sin verificar de la pregunta abierta 3 del\n"
         "    inventario: que los estados terminales ya no se mueven. -#}\n"
         + "{% macro estados_vivos() %}\n"
         + "    {{ return([\n"
@@ -231,12 +231,12 @@ def main() -> int:
 
     if args.comprobar:
         if not args.destino.is_file():
-            print(f"❌ Falta {args.destino}. Corré el generador.", file=sys.stderr)
+            print(f"ERROR Falta {args.destino}. Corré el generador.", file=sys.stderr)
             return 1
         actual = args.destino.read_text(encoding="utf-8")
         if actual != esperado:
             print(
-                f"❌ {args.destino} no coincide con `columnas.py`.\n"
+                f"ERROR {args.destino} no coincide con `columnas.py`.\n"
                 "   Alguien tocó uno de los dos sin regenerar el otro. dbt "
                 "estaría usando\n   un esquema distinto del que la ingesta pide "
                 "a la API.\n\n"
@@ -244,16 +244,16 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        print(f"✅ {args.destino} está sincronizado con columnas.py")
+        print(f"OK {args.destino} está sincronizado con columnas.py")
         return 0
 
     args.destino.parent.mkdir(parents=True, exist_ok=True)
     args.destino.write_text(esperado, encoding="utf-8")
     print(
-        f"✅ {args.destino}\n"
-        f"   {len(COLUMNAS_EXTRAIDAS)} columnas · "
-        f"{len(MATERIALES & set(COLUMNAS_EXTRAIDAS))} materiales · "
-        f"{len(IMPOSIBLES & set(COLUMNAS_EXTRAIDAS))} imposibles · "
+        f"OK {args.destino}\n"
+        f"   {len(COLUMNAS_EXTRAIDAS)} columnas / "
+        f"{len(MATERIALES & set(COLUMNAS_EXTRAIDAS))} materiales / "
+        f"{len(IMPOSIBLES & set(COLUMNAS_EXTRAIDAS))} imposibles / "
         f"{len(COSMETICAS & set(COLUMNAS_EXTRAIDAS))} cosméticas"
     )
     return 0

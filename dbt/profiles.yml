@@ -3,7 +3,7 @@
 # No es previsión de más: es lo que obliga a que ninguna decisión específíca
 # de un motor se cuele en `dbt_project.yml` o en los modelos. Un proyecto
 # escrito contra un solo objetivo y portado después no descubre esos
-# acoplamientos hasta el día del porte — el peor momento para sorpresas.
+# acoplamientos hasta el día del porte: el peor momento para sorpresas.
 #
 # Snowflake no lee el disco local. El día del porte habrá que subir raw a un
 # stage y cambiar `ruta_raw`; el resto de los modelos no cambia. Esa es toda

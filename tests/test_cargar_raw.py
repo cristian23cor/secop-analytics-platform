@@ -39,7 +39,7 @@ def test_los_dobles_no_divergieron():
 def test_los_flujos_reales_aceptan_el_cursor_de_reanudacion():
     """Los dobles usan `*args, **kwargs`, así que tragan cualquier cosa.
 
-    Un parámetro nuevo —o uno mal escrito— pasa sin que nada falle. Cuando se
+    Un parámetro nuevo (o uno mal escrito) pasa sin que nada falle. Cuando se
     agregó `desde_cursor`, el doble lo aceptó sin chistar; un `desde_curso` con
     typo también lo habría hecho. Este test lee lo que el módulo real declara.
     """
@@ -72,8 +72,8 @@ def test_el_doble_exporta_todo_lo_que_el_orquestador_importa(modulo):
     Ya ocurrió: se agregó `from secop_analytics.paginacion import
     ErrorDeConfiguracion` a `cargar_raw.py`, el doble no lo exportaba, y 19
     tests reventaron con `ImportError` antes de correr una sola aserción. Esa
-    vez salió barato porque el fallo fue ruidoso; el modo peligroso —el doble
-    exporta el nombre con otro valor— lo cubre el test de abajo.
+    vez salió barato porque el fallo fue ruidoso; el modo peligroso (el doble
+    exporta el nombre con otro valor) lo cubre el test de abajo.
     """
     import importlib
 
@@ -94,7 +94,7 @@ def test_las_constantes_del_doble_valen_lo_mismo_que_las_reales(modulo):
     """`valores_de_enum` cubre enums y `parametros_de` cubre firmas. Las
     constantes de módulo no las cubría nadie, y ahí vive `ESTADOS_VIVOS`.
 
-    Define los cuatro estados que barre el flujo 3 — los 2.825.685 contratos
+    Define los cuatro estados que barre el flujo 3: los 2.825.685 contratos
     que todavía pueden cambiar. Si el original gana un quinto estado y el doble
     no, todos los tests pasan y el barrido real cubre otro universo.
     """
@@ -123,7 +123,7 @@ def test_el_indice_no_se_adelanta_al_archivo(orquestador, fuente, rutas, hoy):
     """El invariante de orden de D2, probado sobre el fallo real.
 
     La API muere en la página 2. Todo lo que quedó en el índice tiene que estar
-    también en disco. Al revés —índice adelantado— la fila se pierde para
+    también en disco. Al revés (índice adelantado) la fila se pierde para
     siempre, porque la fuente se sobrescribe esta noche.
     """
     fuente.programar("vivos", [filas(10), filas(10, desde=10), filas(10, desde=20)])
@@ -365,7 +365,7 @@ def test_al_retomar_se_le_pasa_el_cursor_al_flujo(orquestador, fuente, rutas, ho
 
     Sin esto, reanudar significaba volver a bajar la ventana entera. La
     deduplicación evitaba escribir de más, pero las llamadas a la API se
-    repetían todas — que es justamente el costo que los trozos existían para
+    repetían todas, que es justamente el costo que los trozos existían para
     evitar.
     """
     fuente.programar("vivos", [filas(10), filas(10, desde=10), filas(10, desde=20)])

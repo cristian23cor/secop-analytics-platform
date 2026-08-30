@@ -5,7 +5,7 @@
   que es la fuente de verdad del esquema, y desde `flujos.py`, que lo es del
   universo vivo. Editar acá crea una segunda lista que
   se va a separar de la primera, y cuando se separe los tests van a seguir
-  pasando — que es exactamente el modo de fallo que este archivo existe para
+  pasando, que es exactamente el modo de fallo que este archivo existe para
   evitar.
 
   Para cambiar algo: tocá `columnas.py` y volvé a correr el generador.
@@ -95,14 +95,14 @@
     la forma de una muestra de filas, y la API omite las claves nulas
     (H6): una columna que ninguna fila muestreada traiga no entra al
     struct, y el modelo que la use falla. Las que arrancan nulas y se
-    llenan son justo las materiales — las tres fechas de hito y
+    llenan son justo las materiales: las tres fechas de hito y
     `ultima_actualizacion`.
 
     Es el mismo error que se cometió con la sexta fuente de
     financiación de RN1: 'no apareció en la muestra' se leyó como 'casi
     nunca tiene valor', y estaba en el 45% de los contratos.
 
-    ⚠ Una clave que la fuente agregue y este struct no tenga se ignora
+    Una clave que la fuente agregue y este struct no tenga se ignora
     EN SILENCIO. No es un agujero nuevo: el `$select` ya pide solo
     estas 67, así que raw nunca las trae. Quien detecta columnas nuevas
     es `columnas.validar_cobertura()`. -#}
@@ -179,10 +179,10 @@
     {{ return(campos | trim) }}
 {% endmacro %}
 
-{#- Clasificación de D6 / §5 del modelo dimensional. Decide qué genera
+{#- Clasificación de D6 / sección 5 del modelo dimensional. Decide qué genera
     versión nueva en el SCD2, no qué se descarga.
 
-    ⚠ Raw NO usa esto: ahí la comparación es de bytes y no distingue
+    Raw NO usa esto: ahí la comparación es de bytes y no distingue
     categorías. Son dos filtros de finura distinta. -#}
 {% macro columnas_materiales() %}
     {{ return([
@@ -329,10 +329,10 @@
     Son un concepto, no una coincidencia de clasificación: RN1 exige
     que sumen `valor_del_contrato` y RN6 que eso valga en toda versión
     histórica. Están en MATERIALES y en MONETARIAS a la vez, así que
-    deducirlas de la intersección de esos dos macros sería frágil —hay
-    otras diez columnas en las dos—. Van con nombre propio.
+    deducirlas de la intersección de esos dos macros sería frágil (hay
+    otras diez columnas en las dos). Van con nombre propio.
 
-    ⚠ Son SEIS. La sexta no aparece en ninguna muestra de filas porque
+    Son seis. La sexta no aparece en ninguna muestra de filas porque
     la API omite las claves nulas, y sin embargo 1.280.989 contratos
     cierran RN1 solo incluyéndola. -#}
 {% macro columnas_fuentes_de_financiacion() %}
@@ -355,14 +355,14 @@
     vivo, y el día que se separen la tabla diría 'abierta' sobre
     contratos que ya nadie mira.
 
-    ⚠ Los valores van con la capitalización de la API. `staging` no
-    normaliza `estado_contrato` —comprobado el 29/08/2026: `terminado`
-    y `cedido` siguen en minúscula en el hecho—, así que la
+    Los valores van con la capitalización de la API. `staging` no
+    normaliza `estado_contrato` (comprobado el 29/08/2026: `terminado`
+    y `cedido` siguen en minúscula en el hecho), así que la
     comparación es directa. Si algún día staging normaliza, esta lista
     deja de calzar y `motivo_de_cierre` se vuelve todo
     'fuera_de_observacion' sin que nada falle.
 
-    ⚠ Y arrastra el supuesto sin verificar de la pregunta abierta 3 del
+    Y arrastra el supuesto sin verificar de la pregunta abierta 3 del
     inventario: que los estados terminales ya no se mueven. -#}
 {% macro estados_vivos() %}
     {{ return([

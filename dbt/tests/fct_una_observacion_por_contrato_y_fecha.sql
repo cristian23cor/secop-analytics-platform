@@ -1,44 +1,31 @@
 {#-
-  Un contrato aparece a lo sumo una vez por `fecha_extraccion`.
+  Un contrato aparece a lo sumo una vez por fecha de extracción.
 
-  Es un supuesto que `fct_contratos_snapshot` tiene y que nadie había escrito. La
-  ventana ordena por `observado_en`, que es la `fecha_extraccion` sacada de la ruta, y
-  con dos filas del mismo contrato y la misma fecha pasan dos cosas, las dos malas:
+  Es un supuesto que el snapshot tiene y que nadie había escrito. La ventana ordena
+  por fecha de extracción, y con dos filas del mismo contrato y la misma fecha
+  pasan dos cosas: la primera versión queda con un intervalo de ancho cero, y el
+  orden entre las dos empatadas no está definido, así que cuál sobrevive como
+  estado más reciente puede cambiar entre corridas o entre motores. Lo segundo
+  rompe la propiedad de que el hecho sea función de raw.
 
-  1. **`lead()` produce un intervalo de ancho cero.** La primera versión queda con
-     `observado_desde == observado_hasta` y bajo la semántica semiabierta de D8 no
-     corresponde a ningún instante. Lo detecta `fct_intervalos_encajan` desde el otro
-     lado.
-  2. **El orden entre las dos empatadas no está definido.** `order by observado_en` con
-     un empate no fija cuál es la versión 1, así que cuál sobrevive como estado más
-     reciente puede cambiar entre corridas o entre motores. Eso toca D5 directamente:
-     la propiedad de que el hecho sea **función de raw** —se borra, se corre
-     `dbt build --full-refresh` y sale idéntico— deja de estar garantizada.
+  No es suciedad de la fuente ni un error de la ingesta. El índice de hashes es
+  global por contrato, así que uno que el flujo 1 trajo por la mañana no se
+  reescribe esa noche salvo que haya cambiado en el medio, que es exactamente
+  cuando queremos guardarlo. Las dos escrituras son correctas; lo que falla es que
+  el modelo tiene resolución de día y dos estados dentro de un día no se pueden
+  representar.
 
-  ## No es suciedad de la fuente ni un error de la ingesta
+  El mecanismo está vivo: el 22 de agosto ya hubo tres particiones bajo la misma
+  fecha de extracción, una por flujo.
 
-  Las dos escrituras son correctas. El índice de hashes es global por `id_contrato`
-  (D3), así que un contrato que el flujo 1 trae por la mañana no se reescribe esa
-  noche... salvo que haya cambiado en el medio, que es precisamente cuando queremos
-  guardarlo. Raw hace lo correcto; lo que falla es que el modelo tiene como resolución
-  temporal el día, y dos estados dentro de un día no se pueden representar.
+  Es error aunque el estado sea legítimo, porque el daño ocurre aguas abajo y en
+  silencio. Cuando salte, la decisión de cuál observación sobrevive se toma con el
+  caso real delante; el manifiesto lleva marcas de tiempo por partición y es el
+  candidato natural para dar ese orden.
 
-  El mecanismo está vivo hoy: el 2026-08-22 ya hubo tres particiones bajo la misma
-  `fecha_extraccion`, una por flujo.
-
-  ## Por qué es `error` aunque el estado sea legítimo
-
-  Porque el daño ocurre aguas abajo y en silencio: una versión que ninguna consulta
-  puntual puede ver, dentro de la tabla que alimenta los marts. Entre parar la
-  construcción y dejar pasar un número que nadie puede auditar, se para.
-
-  Cuando salte, la decisión —cuál de las dos observaciones sobrevive, y de dónde sale
-  el orden entre particiones del mismo día— se toma con el caso real delante. El
-  manifiesto de D10 lleva marcas de tiempo por partición y es el candidato natural
-  para dar ese orden, pero el modelo que lo lee todavía no existe.
-
-  Medido el 29/08/2026: cero incumplimientos sobre 2.902.163 observaciones.
+  Medido el 29/08/2026: cero, sobre 2.902.163 observaciones.
 -#}
+
 
 {{ config(severity="error") }}
 

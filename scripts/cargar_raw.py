@@ -8,7 +8,7 @@ módulo de `src/` lo hace.
 **El orden.** Primero se escribe la línea al archivo, después se registra en el
 índice. Está en `_procesar_paginas()`, en dos líneas consecutivas, y es visible
 de un vistazo. Al revés, un fallo a mitad dejaría el índice diciendo "ya vi este
-contrato" con la fila en ninguna parte — y la fuente ya se sobrescribió esta
+contrato" con la fila en ninguna parte, y la fuente ya se sobrescribió esta
 noche, así que se perdió para siempre.
 
 Fue la razón de separar `indice.py` de `escritura.py` (I4): que el orden viva
@@ -27,7 +27,7 @@ paralelizar, no para viajar en el tiempo.
 Una interfaz común `orquestar(flujo, desde, hasta)` borraría esa distinción, y
 `refresco_de_vivos` con fechas viejas **parecería** un backfill legítimo. Es la
 clase de error que no falla: produce archivos. Por eso hay tres ramas
-explícitas, y el guardarraíl vive acá — `flujos.py` no puede tenerlo porque ahí
+explícitas, y el guardarraíl vive acá: `flujos.py` no puede tenerlo porque ahí
 no se sabe qué día se está escribiendo.
 
 Uso:
@@ -37,7 +37,7 @@ Uso:
     uv run python scripts/cargar_raw.py --flujo vivos
     uv run python scripts/cargar_raw.py --flujo vivos --firmados-desde 2020-01-01 --firmados-hasta 2020-02-01
 
-Referencias: `exploration/03_decisiones_capa_raw.md` — D1 a D8 para la
+Referencias: `exploration/03_decisiones_capa_raw.md`: D1 a D8 para la
 arquitectura, I1 a I4 para la implementación, R1 y R2 para las restricciones.
 """
 
@@ -74,9 +74,9 @@ MINIMO_PARA_EL_CANARIO = 1_000
 
 # `fecha_extraccion` es el día COLOMBIANO, no el del reloj del sistema.
 #
-# Colombia es UTC−5, así que entre las 19:00 y la medianoche hora local, UTC ya
-# está en el día siguiente. Con `date.today()` —que devuelve la fecha del
-# sistema, y en un contenedor o en Airflow eso suele ser UTC— una corrida a las
+# Colombia es UTC-5, así que entre las 19:00 y la medianoche hora local, UTC ya
+# está en el día siguiente. Con `date.today()` (que devuelve la fecha del
+# sistema, y en un contenedor o en Airflow eso suele ser UTC) una corrida a las
 # 20:00 del 21 en Colombia escribiría en `fecha_extraccion` del 22, partiendo el
 # mismo día de negocio en dos particiones sin avisar.
 #
@@ -88,7 +88,7 @@ MINIMO_PARA_EL_CANARIO = 1_000
 # que el día colombiano es además el que coincide con lo que un analista
 # llamaría "el corte del 21".
 #
-# ⚠ Pero `fecha_extraccion` es cuándo bajamos los datos, NO qué estado vimos.
+# Pero `fecha_extraccion` es cuándo bajamos los datos, NO qué estado vimos.
 # La fuente no se regenera todos los días (H34), así que dos particiones con
 # fechas distintas pueden contener el mismo estado. Qué se vio lo dice el corte,
 # que va al manifiesto (D10) y decide si se corre (D11).
@@ -132,17 +132,17 @@ class Resultado:
     def tasa_descarte(self) -> float:
         """Proporción de filas que no cambiaron. **Es un canario.**
 
-        ⚠ En una corrida que retomó una partición a medias, `recibidas` cuenta
+        En una corrida que retomó una partición a medias, `recibidas` cuenta
         solo lo bajado en este intento, no lo de antes. La tasa sigue siendo
         útil como señal, pero no es comparable contra una corrida completa.
 
         En el flujo 3 debería rondar el 99%. Una caída brusca no significa que
-        medio país firmó contratos: significa que algo cambió en la fuente —una
-        columna nueva, un formato de número, un reordenamiento— y eso invalida
+        medio país firmó contratos: significa que algo cambió en la fuente (una
+        columna nueva, un formato de número, un reordenamiento) y eso invalida
         todos los hashes anteriores y llena raw de duplicados que parecen
         cambios.
 
-        ⚠ **El razonamiento de arriba vale solo para el flujo 3.** En los flujos
+        **El razonamiento de arriba vale solo para el flujo 3.** En los flujos
         1 y 2 el descarte bajo es lo correcto: el flujo 1 trae contratos recién
         firmados, que el índice nunca vio, y el flujo 2 trae contratos a los que
         les pasó algo, o sea que alguna columna se movió. Los dos escriben casi
@@ -159,7 +159,7 @@ class Resultado:
         return 1 - (self.escritas / self.recibidas)
 
     def imprimir(self) -> None:
-        print(f"\n  {'─' * 58}")
+        print(f"\n  {'-' * 58}")
         print(f"  flujo:      {self.flujo}")
         print(f"  partición:  {self.particion}")
         print(f"  recibidas:  {self.recibidas:,} en {self.paginas} páginas")
@@ -181,7 +181,7 @@ class Resultado:
         else:
             print(f"  descarte:   {self.tasa_descarte:.1%}  (ninguna conocida)")
         print(f"  tiempo:     {self.segundos:.1f}s")
-        print(f"  {'─' * 58}")
+        print(f"  {'-' * 58}")
 
 
 def _advertencia_de_descarte(resultado: Resultado) -> str | None:
@@ -199,7 +199,7 @@ def _advertencia_de_descarte(resultado: Resultado) -> str | None:
     2. **Ninguna fila conocida.** No hay nada contra qué comparar: estos
        contratos nunca se habían visto, así que escribirlos todos es correcto.
        Cubre la primera corrida y, sobre todo, **cada partición nueva del flujo
-       3** — que la primera noche son tres de cuatro. Preguntar en cambio si el
+       3**, que la primera noche son tres de cuatro. Preguntar en cambio si el
        índice está vacío no alcanza: al barrer la segunda partición el índice ya
        tiene los contratos de la primera, que son otros.
     3. **Muestras chicas.** Bajo ese piso la tasa es ruido.
@@ -214,7 +214,7 @@ def _advertencia_de_descarte(resultado: Resultado) -> str | None:
         return None
 
     return (
-        f"\n⚠ Descarte del {resultado.tasa_descarte:.1%} en el flujo 3, cuando "
+        f"\nDescarte del {resultado.tasa_descarte:.1%} en el flujo 3, cuando "
         f"debería rondar el 99%.\n"
         f"  {resultado.conocidas:,} de las {resultado.recibidas:,} filas "
         "recibidas YA estaban en el índice, así que no es una partición "
@@ -251,13 +251,13 @@ def _procesar_paginas(
     inicio = time.perf_counter()
 
     # D10: el corte se anota en los TRES flujos, aunque solo el 3 lo lea para
-    # decidir si corre. Escribir es gratis —la consulta ya se hizo— y el día que
+    # decidir si corre. Escribir es gratis (la consulta ya se hizo) y el día que
     # haga falta saber de qué estado venía una partición del flujo 1, el dato va
     # a estar. La asimetría es deliberada: se escribe en todas partes, se lee en
     # una sola.
     #
     # En `None` no se anota nada. Es el caso de quien llama a estas funciones
-    # sin haber consultado la fuente —los tests, un script suelto— y vale la
+    # sin haber consultado la fuente (los tests, un script suelto) y vale la
     # misma regla de migración que para las particiones viejas: desconocido no
     # bloquea y no inventa.
     with IndiceHashes(ruta_indice) as indice, ParticionRaw(
@@ -299,7 +299,7 @@ def _procesar_paginas(
                     resultado.conocidas += 1
 
                 if indice.cambio(id_contrato, huella):
-                    # ── EL ORDEN. No invertir. ──────────────────────────
+                    # -- EL ORDEN. No invertir. --------------------------
                     destino.escribir(linea)                        # 1. archivo
                     indice.registrar(                              # 2. índice
                         id_contrato,
@@ -307,13 +307,13 @@ def _procesar_paginas(
                         fecha_extraccion=fecha_extraccion,
                         flujo=flujo.value,
                     )
-                    # ────────────────────────────────────────────────────
+                    # ----------------------------------------------------
                     resultado.escritas += 1
 
             destino.punto_de_control(cursor=ultimo_id)
             print(
                 f"    página {resultado.paginas:>4}: "
-                f"{resultado.recibidas:>8,} recibidas · "
+                f"{resultado.recibidas:>8,} recibidas / "
                 f"{resultado.escritas:>7,} escritas",
                 flush=True,
             )
@@ -330,7 +330,7 @@ def _corte_final(corte_de_la_fuente: Corte | None) -> str | None:
     Si difiere del inicial, la partición quedó a caballo de dos regeneraciones.
     De eso avisa `ParticionRaw.completar()`.
 
-    ⚠ **Acá el fallo de red NO aborta, y al principio sí.** Son momentos
+    **Acá el fallo de red NO aborta, y al principio sí.** Son momentos
     distintos y la asimetría cambia de lado: al arrancar, un 429 cuesta volver a
     escribir el comando; acá cuesta cincuenta minutos de barrido que se quedan
     sin `_COMPLETO` y por lo tanto ilegibles para dbt. Perder la marca es el
@@ -340,9 +340,9 @@ def _corte_final(corte_de_la_fuente: Corte | None) -> str | None:
         return None
     try:
         return corte().mas_nuevo
-    except Exception as error:  # noqa: BLE001 — cualquier fallo de red vale igual
+    except Exception as error:  # noqa: BLE001: cualquier fallo de red vale igual
         print(
-            f"\n  ⚠ no se pudo releer el corte al terminar: "
+            f"\n  no se pudo releer el corte al terminar: "
             f"{type(error).__name__}: {error}\n"
             f"     La partición se completa igual. Lo que se pierde es saber si "
             f"la fuente se regeneró durante la corrida.",
@@ -442,7 +442,7 @@ def cargar_vivos(
                 f"  partición: {particion}\n\n"
                 "La fuente no se regenera todos los días (H34), así que correr "
                 "de nuevo\n  bajaría 2,8 millones de filas para descartarlas "
-                "todas y escribir una\n  partición vacía — cincuenta minutos "
+                "todas y escribir una\n  partición vacía: cincuenta minutos "
                 "sin ganar una observación.\n\n"
                 "Si de verdad querés rehacerla: --forzar-corte-repetido"
             )
@@ -484,7 +484,7 @@ def _avisar_de_ingestas_previas(
     if previas.ultima is not None:
         print(
             f"  última ingesta de esta partición: "
-            f"{previas.ultima.fecha_extraccion} · corte "
+            f"{previas.ultima.fecha_extraccion} / corte "
             f"{previas.ultima.corte or 'sin anotar'}",
             flush=True,
         )
@@ -493,13 +493,13 @@ def _avisar_de_ingestas_previas(
         # coincidentes frenaría corridas legítimas sobre todo lo que ya está en
         # disco, que es el error que falta.
         print(
-            f"  ⚠ {len(previas.sin_corte_anotado)} partición(es) completas sin "
+            f"  {len(previas.sin_corte_anotado)} partición(es) completas sin "
             f"corte anotado: son anteriores a D10 y no se pueden comparar.",
             flush=True,
         )
     if forzar and previas.ya_ingerido is not None:
         print(
-            f"  ⚠ FORZADO: este corte ya estaba en "
+            f"  FORZADO: este corte ya estaba en "
             f"{previas.ya_ingerido.directorio}. Se corre igual.",
             flush=True,
         )
@@ -512,8 +512,8 @@ def _avisar_de_ingestas_previas(
         # páginas y termina en segundos con salida normal.
         #
         # Decirlo es lo único que hace falta. Que la bandera no rehaga el mismo
-        # directorio no es un defecto —ese caso lo cubre `_solo_lectura`, y
-        # bien— pero terminar en cuatro segundos diciendo que corrió, cuando no
+        # directorio no es un defecto (ese caso lo cubre `_solo_lectura`, y
+        # bien) pero terminar en cuatro segundos diciendo que corrió, cuando no
         # corrió, es el modo de fallo que este proyecto persigue en todas
         # partes: silencioso y con apariencia de éxito.
         #
@@ -522,14 +522,14 @@ def _avisar_de_ingestas_previas(
         # ya no puede devolver, y eso no puede colgar de una bandera de línea
         # de comandos sin confirmación.
         print(
-            "\n  ⚠ LA BANDERA NO ALCANZA, Y LA CORRIDA NO VA A REHACER NADA.\n"
+            "\n  LA BANDERA NO ALCANZA, Y LA CORRIDA NO VA A REHACER NADA.\n"
             "     El corte se forzó, pero la partición de esta "
             "`fecha_extraccion` ya está\n     completa, y de eso se ocupa otro "
             "guardarraíl que la bandera no toca.\n"
             "     La corrida va a terminar en segundos sin bajar una página.\n\n"
             "     La bandera sirve para correr el MISMO corte en OTRO día, que "
             "es cuando\n     D11 muerde. Para rehacer esta partición hay que "
-            "borrar su directorio\n     a mano — y eso destruye observaciones "
+            "borrar su directorio\n     a mano, y eso destruye observaciones "
             "que la fuente ya no devuelve.",
             flush=True,
         )
@@ -572,12 +572,12 @@ def main() -> int:
 
     fecha_extraccion = hoy().isoformat()  # día colombiano, ver `hoy()`
 
-    print(f"\ncarga raw · flujo={args.flujo} · extracción={fecha_extraccion}\n")
+    print(f"\ncarga raw / flujo={args.flujo} / extracción={fecha_extraccion}\n")
 
     # D10 y D11. Va antes de abrir el índice y la partición: si la fuente no se
     # puede consultar, no se sabe contra qué estado se estaría corriendo, y
     # arrancar cincuenta minutos sin saberlo es justo lo que D10 vino a
-    # eliminar. Acá el fallo SÍ aborta — reintentar cuesta volver a escribir el
+    # eliminar. Acá el fallo SÍ aborta: reintentar cuesta volver a escribir el
     # comando. Al terminar la asimetría se da vuelta: ver `_corte_final()`.
     try:
         corte_de_la_fuente = corte()
@@ -585,7 +585,7 @@ def main() -> int:
         raise
     except Exception as error:  # noqa: BLE001
         print(
-            f"\n❌ No se pudo consultar el corte de la fuente: "
+            f"\nERROR No se pudo consultar el corte de la fuente: "
             f"{type(error).__name__}: {error}",
             file=sys.stderr,
         )
@@ -598,11 +598,11 @@ def main() -> int:
         # observación se anota marcada, y descartarla sería perder algo que la
         # fuente ya no va a volver a ofrecer.
         print(
-            f"  ⚠ EL CORTE NO ES CONFIABLE: los dos extremos difieren.\n"
+            f"  EL CORTE NO ES CONFIABLE: los dos extremos difieren.\n"
             f"     más viejo: {corte_de_la_fuente.mas_viejo}\n"
             f"     más nuevo: {corte_de_la_fuente.mas_nuevo}\n"
             f"     O la fuente se está regenerando ahora mismo, o H2 dejó de "
-            f"valer — lo\n     segundo tumbaría los tres flujos. Se corre "
+            f"valer: lo\n     segundo tumbaría los tres flujos. Se corre "
             f"igual y queda marcado en el\n     manifiesto.",
             file=sys.stderr,
         )
@@ -635,16 +635,16 @@ def main() -> int:
     except CorteYaIngerido as error:
         # Código propio: no es un error del usuario ni del pipeline. Un DAG
         # tiene que poder distinguir "no había nada nuevo" de "algo se rompió".
-        print(f"\n⏸  {error}", file=sys.stderr)
+        print(f"\n{error}", file=sys.stderr)
         return 4
     except ErrorDeConfiguracion as error:
         # Hereda de RuntimeError, así que el `except ValueError` de abajo no lo
-        # veía y el fallo más probable de una primera corrida —falta el token en
-        # el `.env`— salía como traza de Python en vez de como mensaje.
-        print(f"\n❌ {error}", file=sys.stderr)
+        # veía y el fallo más probable de una primera corrida (falta el token en
+        # el `.env`) salía como traza de Python en vez de como mensaje.
+        print(f"\nERROR {error}", file=sys.stderr)
         return 2
     except ValueError as error:
-        print(f"\n❌ {error}", file=sys.stderr)
+        print(f"\nERROR {error}", file=sys.stderr)
         return 1
 
     resultado.imprimir()

@@ -3,8 +3,8 @@
 ## Qué se está preguntando, exactamente
 
 `columnas.py` clasifica **seis** columnas de financiación como materiales, y
-anota una duda: la sexta —`recursos_propios_alcald_as_gobernaciones_y_
-resguardos_ind_genas_`— solo aparece enumerando el esquema completo, y ninguna
+anota una duda: la sexta (`recursos_propios_alcald_as_gobernaciones_y_
+resguardos_ind_genas_`) solo aparece enumerando el esquema completo, y ninguna
 muestra de filas la mostró. Entra como material por el mismo criterio que las
 otras cinco, pero **la definición de RN1 quedó pendiente**: ¿la suma son cinco
 columnas o seis?
@@ -29,10 +29,10 @@ pedirle nada a la fuente, y hay tres razones para no hacerlo:
 Es además la primera vez que raw se usa para lo que existe: contestar sin volver
 a pedir.
 
-## ⚠ La muestra, que es parte de la respuesta
+## La muestra, que es parte de la respuesta
 
-El barrido completo es el **universo vivo** —los cuatro estados de
-`ESTADOS_VIVOS`— y no el histórico. RN1 sobre contratos vivos puede comportarse
+El barrido completo es el **universo vivo** (los cuatro estados de
+`ESTADOS_VIVOS`) y no el histórico. RN1 sobre contratos vivos puede comportarse
 distinto que sobre cerrados o liquidados. Lo que este script mida hay que
 enunciarlo con esa muestra al lado.
 
@@ -78,7 +78,7 @@ CENTINELAS = {"no definido", "no aplica", ""}
 
 
 def a_decimal(crudo: object) -> Decimal | None:
-    """Texto → `Decimal`, o `None` si no se puede saber cuánto vale.
+    """Texto -> `Decimal`, o `None` si no se puede saber cuánto vale.
 
     Devuelve `None` en tres casos que hay que mantener separados de un cero:
     la clave ausente, el nulo explícito y el centinela de texto. Confundir
@@ -123,7 +123,7 @@ def main() -> int:
     args = parser.parse_args()
 
     directorio = args.particion or ubicar_particion(args.raiz)
-    print(f"\nRN1 contra raw · {directorio}\n")
+    print(f"\nRN1 contra raw / {directorio}\n")
 
     total = 0
     presencia = Counter()          # cuántas filas traen cada columna con valor
@@ -184,7 +184,7 @@ def main() -> int:
 
     print("PRESENCIA DE CADA COLUMNA (con valor numérico)")
     for columna in (*CINCO, SEXTA):
-        marca = "  ← la que está en discusión" if columna == SEXTA else ""
+        marca = "  <- la que está en discusión" if columna == SEXTA else ""
         print(f"  {presencia[columna]:>10,}  {columna}{marca}")
     if centinelas:
         print("\n  centinelas de texto encontrados:")
@@ -215,15 +215,15 @@ def main() -> int:
         print("  Mirar el reparto de arriba antes de concluir: los casos no se")
         print("  reparten como se esperaba.")
 
-    print("\n  ⚠ La muestra es el UNIVERSO VIVO (los cuatro estados de")
+    print("\n  La muestra es el UNIVERSO VIVO (los cuatro estados de")
     print("    ESTADOS_VIVOS), no el histórico. RN1 sobre contratos cerrados o")
     print("    liquidados puede comportarse distinto, y esto no lo mide.")
 
     if veredicto["no calza con ninguna"]:
         cuantas = veredicto["no calza con ninguna"]
-        print(f"\n  ⚠ {cuantas:,} filas no cierran de ninguna forma. RN1 es un")
+        print(f"\n  {cuantas:,} filas no cierran de ninguna forma. RN1 es un")
         print("    test de calidad, así que incumplirla puede ser el hallazgo y")
-        print("    no el error — pero antes hay que descartar que sea nuestro.")
+        print("    no el error, pero antes hay que descartar que sea nuestro.")
 
     return 0
 

@@ -18,7 +18,7 @@
   | Enfoque | Tiempo | Tabla | Memoria |
   |---|---|---|---|
   | `datos` como JSON, sin abrir | 46,6 s | 2.090 MB | pasa |
-  | 67 × `json_extract_string` | n/a | n/a | se queda sin memoria |
+  | 67 llamadas a `json_extract_string` | n/a | n/a | se queda sin memoria |
   | STRUCT explícito desde `columnas.py` | 42,3 s | 224 MB | pasa |
 
   Guardar `datos` sin abrir escribe las 67 claves enteras en cada una de las 2,9 millones

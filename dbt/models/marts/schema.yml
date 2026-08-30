@@ -33,7 +33,7 @@ models:
             # particionada y que `version` ya no numeró lo que en realidad sucedió.
             #
             # El separador es un carácter que no aparece en los `id_contrato`
-            # observados —son alfanuméricos con puntos— para que (`a#1`, 2) y
+            # observados (son alfanuméricos con puntos) para que (`a#1`, 2) y
             # (`a`, `1#2`) no colisionen. Concatenar sin separador es el error
             # clásico de este tipo de test.
 
@@ -83,7 +83,7 @@ models:
           ya no lo barre, así que su última versión queda abierta para siempre sin que eso
           signifique que sigue activo.
 
-          Medido el 29/08/2026 sobre 2.881.640 versiones: 32.431 · 2.842.560 · 6.649,
+          Medido el 29/08/2026 sobre 2.881.640 versiones: 32.431 / 2.842.560 / 6.649,
           y la suma cierra exacta.
 
           La lista de estados vivos sale del macro generado desde `flujos.py`, que es la
@@ -99,8 +99,8 @@ models:
                 severity: error
                 # Hoy no puede fallar: los tres valores salen de un `case` de tres ramas
                 # en el mismo `select`. Se escribe porque deja de ser tautológico en
-                # cuanto alguien agregue una cuarta rama —una partición a caballo de dos
-                # cortes es la candidata— y se olvide de que hay marts leyendo estos
+                # cuanto alguien agregue una cuarta rama (una partición a caballo de dos
+                # cortes es la candidata) y se olvide de que hay marts leyendo estos
                 # tres.
 
   - name: fct_contratos
@@ -109,7 +109,7 @@ models:
       `es_version_vigente` sobre el snapshot, así que las dos tablas son consistentes
       por construcción y no por coincidencia. Son 2.849.209 contratos.
 
-      Lleva solo las medidas ADITIVAS (§7): `valor_del_contrato`, las seis fuentes de
+      Lleva solo las medidas ADITIVAS (sección 7): `valor_del_contrato`, las seis fuentes de
       financiación y `conteo_contratos`. Las semiaditivas viven en el snapshot, que es
       donde está el eje temporal que las hace semiaditivas.
 
@@ -132,21 +132,20 @@ models:
 
       - name: fecha_de_firma
         description: >
-          RN3 — ningún registro de la tabla de hechos tiene fecha de firma nula.
+          RN3: ningún registro de la tabla de hechos tiene fecha de firma nula.
 
           Medido el 29/08/2026: cero nulos sobre 2.849.209 contratos. Confirma H4 sobre
           el universo entero en vez de sobre un `GROUP BY` de estados: los nulos de
           fecha de firma son todos de estados pre-firma, y ninguno de esos estados está
           en este universo.
 
-          ⚠ RN2 —"ningún registro tiene estado pre-firma"— NO está escrita como test, y
-          no por olvido: exige una lista de cuáles son los estados pre-firma, esa lista
-          no existe como constante en ninguna parte, y su definición es ambigua. H4
-          documenta cinco estados con fecha de firma nula y uno de ellos es `Aprobado`,
-          con 2 filas de 214.615 — o sea que `Aprobado` es pre-firma casi nunca.
-          Inventar la lista acá crearía una definición del ciclo de vida del contrato
-          escondida en un test. Por H4, RN3 la cubre en la práctica salvo por esas 2
-          filas.
+          RN2, que ningún registro tenga estado pre-firma, no está escrita como test y
+          no es un olvido. Exige una lista de cuáles son los estados pre-firma, esa
+          lista no existe como constante en ninguna parte, y su definición es ambigua:
+          H4 documenta cinco estados con fecha de firma nula y uno es `Aprobado`, con 2
+          filas de 214.615. Inventar la lista acá escondería una definición del ciclo
+          de vida del contrato dentro de un test. Por H4, RN3 la cubre en la práctica
+          salvo por esas dos filas.
         data_tests:
           - not_null:
               config:
@@ -168,22 +167,22 @@ models:
           que vimos el contrato desde que nació, y solo esos tienen historia completa
           para un análisis de deltas.
 
-          ⚠ Medido el 29/08/2026: el mínimo es 1, la mediana 657 y el máximo 3.876.
-          Con margen de 7 días son 11.066 contratos, el 0,39%; con 30, el 2,7%. El
-          margen no se fija acá porque es decisión del mart, pero **no puede ser cero**:
-          la fuente publica con un día de rezago (H8), así que ningún contrato se
-          observa el mismo día en que se firma.
+          Medido el 29/08/2026: el mínimo es 1, la mediana 657 y el máximo 3.876. Con
+          margen de 7 días son 11.066 contratos, el 0,39%; con 30, el 2,7%. El margen no
+          se fija acá porque es decisión del mart, pero no puede ser cero: la fuente
+          publica con un día de rezago, así que ningún contrato se observa el mismo día
+          en que se firma.
 
       - name: versiones_observadas
         description: >
           Cuántas versiones tiene este contrato en el snapshot. La suma sobre toda la
-          tabla da 2.881.640, que es el total de filas del snapshot — es el control de
+          tabla da 2.881.640, que es el total de filas del snapshot: es el control de
           que el join no perdió ni duplicó nada.
 
       - name: conteo_contratos
         description: >
           Siempre 1. Existe para contar sin `COUNT(DISTINCT)`, que sobre una tabla de
-          una fila por contrato es trabajo de más (§7).
+          una fila por contrato es trabajo de más (sección 7).
 
   - name: dim_entidad
     description: >
@@ -208,8 +207,8 @@ models:
       - name: nombre_entidad
         description: >
           Hay 5.140 nombres para 5.162 códigos: 22 nombres se repiten entre entidades
-          distintas. Puede ser homonimia real —dos hospitales San José en departamentos
-          distintos— o suciedad. Eso importa si se quiere agrupar por nombre en un tablero.
+          distintas. Puede ser homonimia real (dos hospitales San José en departamentos
+          distintos) o suciedad. Eso importa si se quiere agrupar por nombre en un tablero.
       - name: observado_hasta
         description: Nulo en la versión vigente. Intervalo semiabierto, igual que el hecho.
 
@@ -297,8 +296,8 @@ models:
       Qué se compra. 11.231 códigos UNSPSC, 402 familias y 57 segmentos, sin historia:
       `codigo_de_categoria_principal` cambió cero veces entre versiones, medido.
 
-      La jerarquía se deriva del propio código; el catálogo UNSPSC —dato externo
-      pendiente— solo agrega los nombres. Sin él la pregunta 1 no se puede leer, pero
+      La jerarquía se deriva del propio código; el catálogo UNSPSC (dato externo
+      pendiente) solo agrega los nombres. Sin él la pregunta 1 no se puede leer, pero
       sí agrupar.
     columns:
       - name: codigo_de_categoria_principal
@@ -311,7 +310,7 @@ models:
                 severity: error
       - name: es_sin_especificar
         description: >
-          25.597 contratos —el 0,9%— traen el literal `UNSPECIFIED`. Es un tercer
+          25.597 contratos (el 0,9%) traen el literal `UNSPECIFIED`. Es un tercer
           centinela, en inglés, que la limpieza de `staging` no toca porque
           `CENTINELAS` solo tiene los dos en español. La columna reporta cero nulos y
           aun así ese 0,9% no tiene categoría. Los cuatro niveles quedan nulos en esas
@@ -327,7 +326,7 @@ models:
       plazo, cuántos días, y cuánto cuesta en pesos. Son las dos que no se pueden
       responder con datos públicos y las que justifican la plataforma.
 
-      Grano: entidad × familia UNSPSC × `historia_completa`. Restringido a contratos
+      Grano: entidad, familia UNSPSC y `historia_completa`. Restringido a contratos
       firmados desde 2020 (H3); el hecho no lleva ese filtro y cada mart declara el
       suyo.
 
@@ -336,15 +335,15 @@ models:
     columns:
       - name: historia_completa
         description: >
-          Si el contrato se observó desde cerca de su firma —margen de 30 días— y por
+          Si el contrato se observó desde cerca de su firma (margen de 30 días) y por
           lo tanto tiene historia completa para un análisis de deltas.
 
-          ⚠ Está en el GRANO y no en un filtro a propósito. Con la restricción de §9,
-          la pregunta 7 queda con 39 contratos en 29 entidades: 1,3 cada una, que no
-          sostienen la palabra "sistemáticamente". Sin la restricción hay 1.925, pero
-          es cota inferior — de un contrato de 2021 solo vimos las adiciones de esta
-          semana. Ninguna de las dos responde bien hoy, y separarlas por grano es lo
-          que impide que una consulta las mezcle sin querer.
+          Está en el grano y no en un filtro a propósito. Con la restricción de sección 9 la
+          pregunta 7 queda con 39 contratos en 29 entidades, 1,3 cada una, que no
+          sostienen la palabra "sistemáticamente". Sin la restricción hay 1.925, pero es
+          cota inferior: de un contrato de 2021 solo vimos las adiciones de esta semana.
+          Ninguna de las dos responde bien hoy, y separarlas por grano es lo que impide
+          que una consulta las mezcle sin querer.
 
           La población medible crece sola con cada regeneración ingerida.
         data_tests:
@@ -366,12 +365,11 @@ models:
           Solo los cambios POSITIVOS. Las reducciones van aparte, en `pesos_reducidos`,
           y el neto en `pesos_netos`.
 
-          ⚠ Agregarlos en neto bajo un nombre que afirma el signo fue un defecto real
-          de la primera versión de este modelo, y lo destapó su primer resultado: una
-          celda mostraba "12 extensiones, −12 días". Medido, de los 2.227 cambios de
-          plazo 2.131 alargaron y 96 acortaron; del valor, 1.824 adicionaron y 101
-          redujeron. Es H27 —que documenta `REDUCCION EN EL VALOR`— y su equivalente
-          en el plazo, que no estaba anotado en ninguna parte.
+          Agregarlos en neto bajo un nombre que afirma el signo fue un defecto real de
+          la primera versión de este modelo, y lo destapó su primer resultado: una celda
+          mostraba "12 extensiones, -12 días". Medido, de los 2.227 cambios de plazo
+          2.131 alargaron y 96 acortaron; del valor, 1.824 adicionaron y 101 redujeron.
+          Para el valor eso ya estaba documentado en H27; para el plazo, no.
 
       - name: dias_extendidos
         description: >
@@ -385,12 +383,12 @@ models:
           lo abarata.
       - name: sobrecosto
         description: >
-          `pesos_adicionados / (valor_actual − pesos_adicionados)`, o sea cuánto se
-          encareció respecto de lo contratado. Se calcula DESPUÉS de agregar (§7): al
+          `pesos_adicionados / (valor_actual - pesos_adicionados)`, o sea cuánto se
+          encareció respecto de lo contratado. Se calcula DESPUÉS de agregar (sección 7): al
           revés, un contrato de $5.000 pesaría igual que uno de $50.000 millones.
 # ---------------------------------------------------------------------------
 # Tests singulares del hecho. Van en `tests/` porque expresan relaciones entre
-# filas —entre versiones consecutivas de un contrato— que los tests genéricos de
+# filas (entre versiones consecutivas de un contrato) que los tests genéricos de
 # dbt no cubren. Los tres son `error`: verifican que el SCD2 esté bien
 # construido, no la calidad del dato en bruto.
 #
@@ -404,14 +402,14 @@ models:
 #
 #   tests/fct_una_observacion_por_contrato_y_fecha.sql
 #       Vigila el supuesto del que dependen los otros dos: que un contrato
-#       aparezca a lo sumo una vez por `fecha_extraccion`. Ver §3 de
+#       aparezca a lo sumo una vez por `fecha_extraccion`. Ver sección 3 de
 #       `01_modelo_dimensional.md`.
 #
 #   tests/fct_los_estados_vivos_siguen_calzando.sql
 #       Canario sobre `motivo_de_cierre`: si `staging` normalizara la
 #       capitalización de `estado_contrato`, o la fuente renombrara un estado,
 #       TODAS las versiones abiertas pasarían a `fuera_de_observacion` sin que
-#       nada falle. El umbral es un piso —hoy 0,23%, roto sería 100%—, no un
+#       nada falle. El umbral es un piso (hoy 0,23%, roto sería 100%), no un
 #       valor calibrado.
 #
 #   tests/int_toda_version_tiene_su_motivo.sql
@@ -439,7 +437,7 @@ models:
 #       cubrir el hecho.
 #
 # Los tres se verificaron contra un hecho corrompido a propósito antes de darlos
-# por buenos — siete defectos sembrados, siete detectados, y los dos controles
+# por buenos: siete defectos sembrados, siete detectados, y los dos controles
 # sanos ausentes de todos los resultados. Un test que solo se ve dar cero no
 # demuestra que sepa dar otra cosa; es la lección de I5, donde un test pasaba y
 # afirmaba el defecto.

@@ -1,5 +1,5 @@
 {#-
-  RN12 — Un contrato no puede terminar una liquidación que nunca empezó.
+  RN12: Un contrato no puede terminar una liquidación que nunca empezó.
 
   El test devuelve las filas que incumplen, como es la convención en dbt.
 
@@ -17,8 +17,8 @@
   ## La regla es en un solo sentido, y eso es deliberado
 
   35 contratos tienen inicio de liquidación sin fin, que es el estado normal de
-  una liquidación en curso. Si la regla fuera simétrica —"si hay una, hay la
-  otra"— el test fallaría 37 veces y confundiría lo normal con lo imposible.
+  una liquidación en curso. Si la regla fuera simétrica ("si hay una, hay la
+  otra") el test fallaría 37 veces y confundiría lo normal con lo imposible.
 -#}
 
 {{ config(severity="warn") }}

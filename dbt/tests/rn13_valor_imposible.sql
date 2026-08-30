@@ -1,5 +1,5 @@
 {#-
-  RN13 — Un contrato no puede valer más que el presupuesto del Estado entero.
+  RN13: Un contrato no puede valer más que el presupuesto del Estado entero.
 
   ## El techo sale de una cifra pública y verificable
 
@@ -13,7 +13,7 @@
   ## Es el nivel de lo IMPOSIBLE, no el de lo sospechoso
 
   Medido el 28/08/2026 sobre 2.902.163 observaciones: siete contratos distintos
-  —no siete observaciones del mismo—, todos con `castings_fallidos = 0` porque
+  (no siete observaciones del mismo), todos con `castings_fallidos = 0` porque
   castean limpio a `decimal(20,2)`.
 
       12.858 billones  x23,5 PGN  En ejecución  Instituto municipal de deportes
@@ -40,8 +40,8 @@
 
   Y la regla deja pasar 32 contratos por encima del billón de pesos. No todos
   son basura: el mínimo es 1,07 billones y una obra de infraestructura grande
-  puede valer eso. Separar los legítimos pediría un segundo umbral —contra el
-  presupuesto de inversión anual, 88,4 billones para 2026— que todavía no está
+  puede valer eso. Separar los legítimos pediría un segundo umbral (contra el
+  presupuesto de inversión anual, 88,4 billones para 2026) que todavía no está
   fijado. Ver pregunta abierta 15 del inventario.
 
   Es `warn` y no `error`: el incumplimiento ya está en disco, y una suite roja

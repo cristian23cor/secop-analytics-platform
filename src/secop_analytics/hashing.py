@@ -24,7 +24,7 @@ carga útil sí. Quien quiera deduplicar líneas enteras, o releerlas y comparar
 byte a byte tras un `sort_keys=True`, va a obtener algo distinto de lo que hay
 en disco.
 
-Referencias: `exploration/03_decisiones_capa_raw.md` — D1 (raw no normaliza),
+Referencias: `exploration/03_decisiones_capa_raw.md`: D1 (raw no normaliza),
 D3 (deduplicación por bytes), I1 (la forma canónica) e I2 (el algoritmo).
 """
 
@@ -49,13 +49,13 @@ _TAMANO_DIGEST: Final[int] = 16
 # Estos tres argumentos de `json.dumps` son el contrato del índice. Cambiar
 # cualquiera invalida TODOS los hashes ya guardados.
 #
-#   sort_keys     — el orden de las claves no es información: {"a":1,"b":2} y
+#   sort_keys: el orden de las claves no es información: {"a":1,"b":2} y
 #                   {"b":2,"a":1} son el mismo objeto JSON. Ordenar no es
 #                   normalizar, así que no rompe D1. Aplica también dentro de
 #                   `urlproceso`, el único objeto anidado (H6).
-#   ensure_ascii  — en False la eñe se escribe como eñe. Archivo más chico y
+#   ensure_ascii  (en False la eñe se escribe como eñe. Archivo más chico y
 #                   legible. Consistencia importa más que cuál se elija.
-#   separators    — sin esto json.dumps mete un espacio tras cada coma y cada
+#   separators) sin esto json.dumps mete un espacio tras cada coma y cada
 #                   dos puntos. Sobre 2,8M de filas es volumen que no dice nada.
 _OPCIONES_JSON: Final[dict[str, Any]] = {
     "sort_keys": True,
@@ -75,7 +75,7 @@ def canonicalizar(fila: dict[str, Any]) -> bytes:
     La consecuencia hay que conocerla antes de cambiar esto: si una noche la API
     omite `ultima_actualizacion` y a la siguiente la manda como `null` sin que
     nada haya cambiado, el hash cambia y se guarda una fila de más. Es el error
-    que sobra, o sea el aceptable — el diseño entero está construido sobre
+    que sobra, o sea el aceptable: el diseño entero está construido sobre
     preferir el error que sobra al que falta. Rellenar acá lo convertiría en un
     error que falta, y además rompería D1.
     """
@@ -94,7 +94,7 @@ def hashear(linea_canonica: bytes) -> str:
     """Hash hexadecimal de 32 caracteres sobre los bytes canónicos.
 
     En hexadecimal y no en bytes crudos: 90 MB contra 45 MB para 2,8M de
-    contratos —irrelevante— a cambio de poder leerlo en una consulta de DuckDB
+    contratos (irrelevante) a cambio de poder leerlo en una consulta de DuckDB
     mientras se depura.
 
     No comprueba que la entrada sea canónica: espera la salida de
@@ -115,7 +115,7 @@ def envolver(
 
     Resultado:
 
-        {"fecha_extraccion":"…","flujo":"…","hash":"…","datos":{…}}
+        {"fecha_extraccion":"...","flujo":"...","hash":"...","datos":{...}}
 
     Los metadatos van FUERA del hash y por eso se agregan acá y no antes:
     `fecha_extraccion` y `flujo` cambian todas las noches por definición, así

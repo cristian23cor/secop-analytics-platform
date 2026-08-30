@@ -71,7 +71,7 @@ models:
           El valor antes del cambio, como texto. Es el único lugar del proyecto donde algo
           que `staging` ya casteó vuelve a texto, y es el precio del grano largo: una
           tabla con una fila por columna tiene una sola columna para valores de ocho tipos
-          distintos. Sirve para leer el cambio, no para operarlo — para eso están los dos
+          distintos. Sirve para leer el cambio, no para operarlo: para eso están los dos
           deltas, que vienen calculados.
 
       - name: valor_nuevo

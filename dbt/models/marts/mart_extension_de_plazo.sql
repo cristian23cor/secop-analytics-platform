@@ -1,95 +1,67 @@
 {#
-  Las preguntas 6 y 7, que son las que justifican que esta plataforma exista.
+  Las preguntas 6 y 7, que son las que justifican que esta plataforma exista:
+  qué entidades y categorías extienden sistemáticamente el plazo, cuántos días, y
+  cuánto cuesta eso en pesos.
 
-      6. ¿Qué entidades y categorías extienden sistemáticamente el plazo, y cuántos días?
-      7. ¿Y cuánto cuesta esa extensión en pesos?
+  Ninguna de las dos se puede responder con datos públicos. La fuente sobrescribe
+  el valor y el plazo en cada regeneración, y el dataset oficial de modificaciones
+  no tiene columna de valor. La respuesta sale de comparar fotos nuestras.
 
-  Ninguna se puede responder con datos públicos: la fuente sobrescribe el valor y el
-  plazo del contrato en cada regeneración, y el dataset oficial de modificaciones no
-  tiene columna de valor (H17) y trae la fecha truncada (H33). La respuesta sale de
-  comparar observaciones nuestras, que es lo que hace `int_cambios_por_columna`.
+  Los deltas vienen calculados desde la capa intermedia, así que acá no hay ningún
+  lag(). Es lo que se compró al comparar columna por columna en vez de guardar un
+  hash.
 
-  ## El grano: entidad × familia UNSPSC × si vimos la historia entera
+  Grano: entidad, familia UNSPSC y si vimos la historia entera del contrato.
 
-  Los dos primeros ejes son los que la pregunta 6 nombra. El tercero es una
-  advertencia convertida en columna, y es lo más importante de este modelo.
+  ## Por qué la historia está en el grano y no en un where
 
-  ## Por qué `historia_completa` está en el GRANO y no en un `where`
+  Los análisis de delta solo valen para contratos observados desde su firma: de los
+  demás vimos un pedazo, y sus adiciones anteriores ya venían incorporadas en la
+  primera foto. Mezclarlos subestima el sobrecosto y no falla nada.
 
-  §9 del modelo dimensional dice que los análisis de delta se restringen a contratos
-  observados desde su nacimiento, porque de los demás solo vimos un pedazo de su
-  historia: **un contrato firmado en 2021 tiene sus adiciones anteriores ya
-  incorporadas en la primera foto, y son invisibles**. Mezclarlos subestima el
-  sobrecosto sin que nada falle.
+  El problema es que esa restricción hoy deja casi nada. Sobre contratos firmados
+  desde 2020, la pregunta 7 pasa de 1.925 contratos a 39, repartidos en 29
+  entidades. Con 1,3 contratos por entidad la palabra "sistemáticamente" no se
+  sostiene; y usar los 1.925 sin decir nada es justamente el error que se quería
+  evitar.
 
-  El problema es que hoy esa restricción deja casi nada. Medido el 29/08/2026, sobre
-  contratos firmados desde 2020:
+  Ninguna de las dos poblaciones responde bien hoy, y esa es la respuesta honesta.
+  Por eso van separadas por grano: cada celda declara a cuál pertenece, ninguna
+  consulta las mezcla por descuido, y las dos traen su tamaño al lado. La población
+  medible crece sola con cada corte ingerido, sin que este modelo cambie.
 
-  | | Contratos | Entidades |
-  |---|---|---|
-  | Extendieron el plazo, sin restricción | 2.227 | 421 |
-  | Extendieron el plazo, con historia completa | **193** | **88** |
-  | Adicionaron valor, sin restricción | 1.925 | 358 |
-  | Adicionaron valor, con historia completa | **39** | **29** |
+  El margen es de treinta días. No puede ser cero: la fuente publica con un día de
+  rezago, así que ningún contrato se observa el mismo día en que se firma.
 
-  Con 39 contratos en 29 entidades —1,3 cada una— la palabra "sistemáticamente" no se
-  sostiene. Y usar los 1.925 sin decir nada es exactamente lo que §9 advierte.
+  ## Los cuatro conteos, y por qué no son dos
 
-  Por eso las dos poblaciones están **separadas por grano**: cada celda declara a cuál
-  pertenece, ninguna consulta las mezcla por descuido, y las dos traen su tamaño al
-  lado. El tablero puede mostrar la cota inferior y la población medible juntas, que
-  es la única lectura honesta que existe hoy.
+  El plazo también se acorta y el valor también baja. De los 2.227 cambios de fecha
+  de fin, 2.131 alargaron y 96 acortaron; de los 1.925 de valor, 1.824 adicionaron
+  y 101 redujeron. Sumarlos en neto bajo un nombre que afirma el signo produce
+  celdas que dicen "12 extensiones, -12 días", que no es una extensión de nada.
+  Fue un defecto real de la primera versión de este modelo y lo destapó su primer
+  resultado.
 
-  Y envejece bien: la población con historia completa **crece sola** con cada
-  regeneración ingerida, sin que este modelo cambie. Es la limitación 1 de §11 —"la
-  tabla madura con el tiempo"— hecha columna en vez de nota al pie.
+  El neto queda aparte y es el que alimenta el sobrecosto, porque la pregunta 7 es
+  cuánto se encareció el contrato y una reducción posterior sí lo abarata.
 
-  ## El margen es de 30 días, y no puede ser cero
+  ## Lo demás
 
-  `historia_completa` es `dias_hasta_el_primer_snapshot <= 30`. El número es una
-  decisión del mart, que es donde §9 dice que vive.
+  El denominador (contratos observados) es lo que hace falta para decir
+  "sistemáticamente": sin él, tres extensiones sobre cuatro contratos y tres sobre
+  cuatro mil se ven iguales.
 
-  ⚠ **Cero no es una opción.** El mínimo observado es de un día: ningún contrato se ve
-  el mismo día en que se firma, porque la fuente publica con ~1 día de rezago (H8).
-  Con margen cero el universo queda vacío por una propiedad de la fuente y no por
-  falta de datos. Con 7 días serían 748 contratos con algún cambio; con 30, 1.616.
+  Las razones se calculan después de agregar. Al revés, un contrato de cinco mil
+  pesos pesaría igual que uno de cincuenta mil millones.
 
-  ## El filtro de 2020 vive acá, y esto es lo que H3 quiso decir
+  El filtro de 2020 vive acá porque los años anteriores miden la adopción de la
+  plataforma y no el gasto. Hoy casi no muerde: de los 2.227 contratos que
+  extendieron el plazo, 1.940 se firmaron en 2026. La tabla madura y el histórico
+  entra.
 
-  Antes de 2020 la curva de volumen mide la adopción de SECOP II y no el gasto
-  público, así que cualquier comparación que cruce ese año es inválida (H3). El hecho
-  no lleva el filtro —es el inventario completo— y cada mart declara el suyo.
-
-  Hoy casi no muerde: de los 2.227 contratos que extendieron el plazo, **1.940 se
-  firmaron en 2026 y 240 en 2025**. Uno solo es de 2020 y ninguno anterior. Tiene
-  sentido — los contratos que se están modificando ahora son los recientes— pero
-  conviene no leer eso como que el filtro sobra: la tabla madura y el histórico entra.
-
-  ## Sobre las medidas
-
-  `contratos_observados` es el denominador que hace falta para la palabra
-  "sistemáticamente": sin él, una entidad con 3 extensiones sobre 4 contratos y otra
-  con 3 sobre 4.000 se ven iguales.
-
-  `sobrecosto` se calcula **después de agregar**, contra el valor estimado antes de
-  las adiciones. Es la regla de §7: razones, porcentajes y promedios se calculan al
-  final, o un contrato de $5.000 pesa igual que uno de $50.000 millones.
-
-  ⚠ `pesos_adicionados` **puede ser negativo**: existe el tipo `REDUCCION EN EL VALOR`
-  (H27), y medido son 101 de las 1.925. El `sobrecosto` de una celda dominada por
-  reducciones es negativo y eso es correcto, no un error a filtrar.
-
-  ## Lo que este modelo NO puede decir todavía
-
-  - **Nombres de categoría.** La familia es el código de cuatro dígitos; traducirlo
-    necesita el catálogo UNSPSC, que es dato externo pendiente. Agrupar sí se puede.
-  - **Días de extensión desde `dias_adicionados`.** Se usa el corrimiento de
-    `fecha_de_fin_del_contrato`, que es el mismo evento visto desde el otro lado y es
-    una fecha de verdad. `dias_adicionados` entra como control, no como medida
-    principal.
-  - **Nada sobre contratos sin categoría.** Los 25.597 con `UNSPECIFIED` caen en una
-    celda con `familia_unspsc` nula, visible en vez de repartida.
+  Falta traducir la familia a un nombre legible, que espera el catálogo UNSPSC.
 #}
+
 
 {{ config(materialized="table") }}
 
@@ -126,9 +98,9 @@ cambios as (
         {# Positivos y negativos POR SEPARADO, y no una suma neta.
 
            Medido el 29/08/2026: de los 2.227 cambios de `fecha_de_fin_del_contrato`,
-           2.131 alargaron el plazo (+134.296 días) y 96 lo ACORTARON (−2.351). La
+           2.131 alargaron el plazo (+134.296 días) y 96 lo ACORTARON (-2.351). La
            suma neta esconde las dos poblaciones, y una celda puede mostrar "12
-           extensiones, −12 días" — que no es una extensión de nada.
+           extensiones, -12 días", que no es una extensión de nada.
 
            Es H27 en el otro eje: el dataset oficial de modificaciones tiene un tipo
            `REDUCCION EN EL VALOR`, y para el valor eso ya estaba anotado. Que el
@@ -231,7 +203,7 @@ select
     p.pesos_reducidos,
     p.pesos_netos,
 
-    {#- Razones, DESPUÉS de agregar (§7). -#}
+    {#- Razones, DESPUÉS de agregar (sección 7). -#}
     p.contratos_con_extension * 1.0
         / nullif(p.contratos_observados, 0)            as tasa_de_extension,
     p.contratos_con_adicion * 1.0

@@ -1,6 +1,6 @@
 """D11 en el orquestador: correr o no según el corte de la fuente.
 
-`test_procedencia.py` prueba las piezas —leer los manifiestos y escribirlos—
+`test_procedencia.py` prueba las piezas (leer los manifiestos y escribirlos)
 contra los módulos reales. Acá se prueba lo que el orquestador **decide** con
 ellas, que es la mitad que necesita los dobles.
 
@@ -313,7 +313,7 @@ def test_avisa_cuando_forzar_no_alcanza(orquestador, fuente, rutas, hoy, capsys)
     el directorio y sigue en pie. Forzar sobre la partición de HOY no rehace
     nada: baja cero páginas y termina en segundos con salida normal.
 
-    Eso es peor que negarse — dice que hizo algo cuando no hizo nada — y es el
+    Eso es peor que negarse (dice que hizo algo cuando no hizo nada) y es el
     modo de fallo que este proyecto persigue en todas partes. La corrida sigue
     sin rehacer nada, a propósito; lo que se agrega es que lo diga.
     """
@@ -331,7 +331,7 @@ def test_avisa_cuando_forzar_no_alcanza(orquestador, fuente, rutas, hoy, capsys)
 def test_forzar_en_otro_dia_si_rehace(orquestador, fuente, rutas, hoy):
     """El caso para el que la bandera existe: mismo corte, otro día.
 
-    Sin este test, avisar siempre también pasaría — y la bandera quedaría
+    Sin este test, avisar siempre también pasaría, y la bandera quedaría
     documentada como inútil cuando no lo es.
     """
     ingesta_previa_en_disco(rutas, fecha_extraccion="2026-08-25", corte=CORTE_DEL_25)
