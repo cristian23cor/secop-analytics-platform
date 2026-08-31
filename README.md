@@ -1,4 +1,4 @@
-# SECOP: reconstruir la historia que el Estado colombiano borra cada noche
+# SECOP: reconstruir lo que el Estado colombiano borra
 
 Colombia publica todos sus contratos públicos como datos abiertos. El conjunto
 tiene casi seis millones de filas, se puede descargar sin registrarse y está
