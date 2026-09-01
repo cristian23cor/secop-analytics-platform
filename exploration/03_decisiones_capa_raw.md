@@ -989,6 +989,38 @@ Tres cosas, y las tres son consecuencia de que el calendario no manda:
   ejecución por un intervalo de calendario; acá la identidad es el corte de la
   fuente, que no tiene relación con el calendario.
 
+**El DAG se escribió el 31/08/2026**, en `dags/secop_ingesta.py`, y las tres cosas
+de arriba quedaron como estaban escritas.
+
+Tiene **una sola tarea**, y eso salió de aplicar el primer punto al pie de la
+letra. La tentación era partirlo en "preguntar por el corte" y "cargar si cambió",
+pero eso duplica la pregunta y abre una ventana entre las dos en la que la fuente
+puede regenerar. El DAG llama al cargador y lee su código de salida: el 4 se
+traduce a *saltar* y no a *fallar*, porque con cadencia irregular esa es la
+respuesta correcta la mayoría de los días, y una alerta que suena todos los días
+deja de mirarse en dos semanas.
+
+Corre cada tres horas. No es un horario: es cada cuánto se hace una pregunta que
+cuesta dos segundos.
+
+**El límite de tiempo se puso contra el peor caso y no contra el promedio.** Hay
+tres barridos medidos entre 4,20 y 5,22 segundos por página, y una página suelta
+que tardó 28 sin explicación (pregunta abierta 2). Sobre 570 páginas eso es la
+diferencia entre cincuenta minutos y cuatro horas, y el límite está en cuatro. Con
+el promedio, una corrida sana moriría el día que la API vaya lenta, y con la fuente
+regenerando dos veces por semana, perder una corrida cuesta una observación que no
+vuelve.
+
+**Cinco tests lo cuidan**, y cuatro de ellos no comprueban que funcione sino que
+las decisiones sigan tomadas: `catchup`, una sola corrida a la vez, el código 4
+mapeado y el límite de tiempo. El quinto simplemente lo importa, que es el fallo
+más común de un DAG y el más invisible. Se rompieron las seis a propósito y las
+seis fueron detectadas.
+
+Airflow vive en su propio grupo de dependencias: son 127 paquetes, y quien clone
+el repositorio para leer el código no tiene por qué bajarlos. Los tests del DAG se
+saltan solos si no está.
+
 #### Cómo quedó implementada: 28/08/2026
 
 Vive en `cargar_vivos`, junto al guardarraíl de R1, y **corta antes de bajar una
@@ -1452,10 +1484,11 @@ La alternativa era que el cursor apuntara al último trozo cerrado y nada más:
 igual de segura, más simple, sin parámetro nuevo. Deja el peor caso en ~100
 páginas rebajadas.
 
-Se eligió acotarlo **porque hoy la interrupción no es el caso raro**:
-`paginacion.py` todavía no tiene reintentos ante 429 y 5xx, y H32 ya demostró
-que esta fuente se cae bajo carga. Un solo error en la página 300 aborta el
-barrido.
+Se eligió acotarlo **porque en ese momento la interrupción no era el caso raro**:
+`paginacion.py` no tenía reintentos ante 429 y 5xx, y H32 ya había demostrado que
+esta fuente se cae bajo carga, así que un solo error en la página 300 abortaba el
+barrido. Los reintentos se escribieron el 31/08/2026; la revisión que eso
+habilitaba está resuelta más abajo.
 
  **Esta decisión se revisa cuando existan los reintentos.** Ahí la
 interrupción vuelve a ser rara y la versión sin cota es preferible por simple.

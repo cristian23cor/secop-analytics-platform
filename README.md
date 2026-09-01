@@ -98,7 +98,8 @@ datos/raw/*.jsonl.gz
 ```
 
 La construcción completa son once modelos y tarda siete minutos y medio en un
-portátil, con 46 tests de dbt y 177 de pytest.
+portátil, con 46 tests de dbt y 203 de pytest. Los mismos modelos corren en
+Snowflake en 79 segundos.
 
 ---
 
@@ -411,6 +412,9 @@ scripts/
   verificar_carga_raw.py           Contra la API real, cuatro fases
   medir_particiones.py             Distribución del universo vivo
   medir_rn1.py                     Las fuentes de financiación contra raw
+  subir_raw_a_snowflake.py         Sube la capa cruda a un stage, conservando la ruta
+  generar_raw_sintetico.py         Datos chicos y sembrados, para que CI pueda correr dbt
+  generar_tablero.py               Escribe docs/index.html desde el modelo
 
 dbt/
   models/staging/        El modelo frontera y la limpieza
@@ -419,7 +423,16 @@ dbt/
   macros/                El generado desde columnas.py, y los de unión y limpieza
   tests/                 Reglas de negocio e invariantes del modelo
 
-tests/                   177 tests de la capa de ingesta
+dags/
+  secop_ingesta.py       El DAG. Se dispara por el corte de la fuente, no por reloj
+
+docs/
+  index.html             El tablero. Lo publica GitHub Pages; lo escribe el generador
+
+.github/workflows/
+  ci.yml                 Cinco comprobaciones, ninguna toca la red
+
+tests/                   203 tests. Los 5 del DAG se saltan si Airflow no está
 ```
 
 ---
@@ -441,6 +454,28 @@ del modelo dimensional se verifican contra tablas corrompidas a propósito:
 `verificar_tests_del_snapshot.py` siembra veintidós defectos, comprueba que los
 veintidós salgan con el motivo correcto, y que los casos sanos no salgan de
 ninguno.
+
+La misma costumbre se aplicó a los reintentos de la ingesta y al DAG: se rompió la
+política a propósito seis veces cada uno, y las doce mutaciones fueron detectadas.
+
+**Y todo eso corre solo, en cada push.** Son cinco comprobaciones y ninguna toca la
+red, que no es casualidad: lo que necesita la API real se dejó fuera a propósito,
+porque un test que falla porque el portal del Estado está caído enseña a ignorar
+los tests.
+
+| | |
+|---|---|
+| Los 198 tests de la capa de ingesta | con dobles de la API |
+| `columnas.py` contra el macro de dbt | byte a byte, para que el esquema no se duplique |
+| Que los tests del modelo detecten sus defectos | 22 sembrados, 22 detectados |
+| Los once modelos y sus 46 tests | contra una capa cruda sintética generada al vuelo |
+| Que el DAG importe y conserve sus decisiones | `catchup`, una corrida a la vez, el código 4 |
+
+La capa cruda de CI se genera y no se commitea: son 898 MB los reales, y el
+repositorio guarda código. `generar_raw_sintetico.py` escribe 620 observaciones con
+los casos sembrados a propósito, incluidos cuarenta contratos cuyo único cambio es
+cosmético, para que el filtro que decide qué merece una versión se ejercite de
+verdad.
 
 ---
 
