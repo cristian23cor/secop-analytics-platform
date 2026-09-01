@@ -1318,6 +1318,77 @@ raw (cuya cifra quedó retirada por depender de un intervalo de ancho supuesto,
 ver D3) pero el número correcto es 171.
 
 
+###  Los reintentos ante 429 y 5xx, escritos el 31/08/2026
+
+El TODO más viejo del módulo. Cada barrido son unas 570 peticiones y cincuenta
+minutos contra una API que H32 mostró que se cae bajo carga, y hasta acá una sola
+respuesta 429 abortaba la corrida entera.
+
+#### Qué se reintenta, y qué no
+
+Se reintentan 429, 500, 502, 503, 504, los timeouts y los fallos de conexión: todos
+se arreglan solos. **No** se reintenta ningún otro 4xx, y eso es la mitad de la
+política. Un 400 por un `$where` mal armado o un 403 por token inválido no se van a
+ir esperando; reintentarlos cinco veces es tardar medio minuto en dar el mismo
+mensaje y encima gastar cupo de la API en peticiones que ya se sabían perdidas.
+
+#### El presupuesto
+
+Cinco intentos con espera creciente de 2, 4, 8 y 16 segundos: **30 segundos de
+espera acumulada por petición**. Es el punto medio entre dos filos.
+
+Más corto, unos siete segundos, no aguanta un pico de rate limit, que suele durar
+del orden de diez. Más largo, dos minutos, sería lo correcto si el barrido corriera
+desatendido de madrugada, pero con la consola delante dos minutos por página se
+sienten como un cuelgue, y hoy el pipeline corre a mano.
+
+El peor caso teórico, con las 570 páginas agotando el presupuesto, son unas cinco
+horas. No preocupa: eso ya no es un pico sino una caída, y abortar es lo correcto.
+
+#### `Retry-After` se respeta, con tope
+
+Si el servidor manda la cabecera, se espera lo que pide. La espera creciente queda
+como **piso** (volver antes de lo que el servidor pidió es gastar un intento en una
+petición que va a ser rechazada otra vez) y el presupuesto restante como **techo**.
+
+El techo importa: una cabecera de una hora dejaría la corrida en silencio y no
+habría forma de distinguir eso de un cuelgue. Si el servidor pide más de lo que
+queda, se espera lo que queda y se abandona.
+
+El presupuesto es de espera **acumulada** y no por intento, justamente para que
+respetar la cabecera no pueda estirar el total sin que nadie lo note.
+
+#### Cuando se agotan, se relanza el error original
+
+No uno propio. Los dos lugares que hoy manejan estos fallos —el guardarraíl del
+corte y la relectura al terminar— capturan `Exception` y muestran el tipo.
+Envolverlo en un `RuntimeError` los dejaría diciendo "RuntimeError" donde antes
+decían "HTTPError 503", que es peor mensaje para quien lo lee a las tres de la
+mañana.
+
+Eso además deja intacto el contrato de D10: el fallo al arrancar sigue abortando y
+el fallo al terminar sigue completando la partición con la marca en nulo. Lo único
+que cambia es cuánto se aguanta antes de rendirse.
+
+#### Y el módulo tiene sus primeros tests
+
+`paginacion.py` no tenía ninguno. Estaba anotado como decisión y no como olvido,
+con la nota de que se pagaría cuando llegaran los reintentos. Son 21, y hubo que
+resolver un obstáculo: `conftest.py` instala un doble de este módulo en
+`sys.modules` por asignación, así que eclipsa al real toda la sesión. Los tests
+cargan el archivo real por ruta, bajo un nombre que declara el paquete pero que no
+pisa la entrada del doble, así que los otros 177 siguen viendo su doble sin
+enterarse.
+
+Se comprobó que midan algo rompiendo la política a propósito, seis veces: sin
+reintentar el 429, reintentando también los 4xx, sin tope para `Retry-After`,
+ignorando la cabecera, con espera constante en vez de creciente, y envolviendo el
+error. **Las seis mutaciones fueron detectadas.**
+
+Ninguno de los 21 duerme: `time.sleep` se reemplaza por una función que anota
+cuánto le pidieron, lo que además vuelve la espera observable y permite afirmar
+que crece en vez de suponerlo.
+
 ###  I5 DECIDIDA: el trozo se cierra por líneas o por páginas; el cursor solo avanza si el buffer está vacío
 
 **Encontrado leyendo el código, no corriéndolo.** Es un defecto de la
@@ -1388,6 +1459,19 @@ barrido.
 
  **Esta decisión se revisa cuando existan los reintentos.** Ahí la
 interrupción vuelve a ser rara y la versión sin cota es preferible por simple.
+
+**Revisada el 31/08/2026, y se deja como está.** La premisa de esta revisión
+resultó falsa a medias: los reintentos cubren las interrupciones de red (429, 5xx,
+timeouts), y la cota de páginas protege contra la **muerte dura**, que es un
+SIGKILL, un OOM o un corte de luz. Contra eso los reintentos no hacen nada.
+
+O sea que las interrupciones que la cota protege son exactamente las que no se
+volvieron raras. Sacarla subiría el costo de una muerte dura de 20 a 48 páginas
+—medido: un trozo de 5.000 líneas se llena en 48 páginas a 103,6 líneas por
+página— sin ningún beneficio a cambio salvo un parámetro menos. Y sería en un
+camino que nadie probó nunca de verdad: matar un proceso a mitad de barrido sigue
+en la lista de lo no ejercitado.
+
 
 #### El número de páginas era una estimación. Ya está medido
 

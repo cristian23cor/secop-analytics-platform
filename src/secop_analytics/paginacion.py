@@ -49,8 +49,11 @@ sin que nadie lo note.
 
 from __future__ import annotations
 
+import email.utils
 import os
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
+from datetime import UTC
 from typing import Any, NamedTuple
 
 import requests
@@ -94,6 +97,112 @@ def _token() -> str:
     return token
 
 
+# Reintentos. Un barrido son ~570 peticiones y ~50 minutos contra una API que
+# H32 mostró que se cae bajo carga, así que un fallo pasajero no puede tumbar la
+# corrida entera.
+#
+# Cinco intentos con espera creciente de 2, 4, 8 y 16 segundos: 30 segundos de
+# espera acumulada como máximo por petición. Es el punto medio entre absorber un
+# pico de rate limit, que suele durar unos diez segundos, y enterarse rápido de
+# que la API está caída de verdad. Con la consola delante, dos minutos por página
+# se sienten como un cuelgue.
+#
+# El presupuesto es de espera ACUMULADA y no por intento. Así `Retry-After` se
+# puede respetar sin que una cabecera grande deje la corrida en silencio: si el
+# servidor pide más de lo que queda, se espera lo que queda y se aborta.
+_INTENTOS = 5
+_ESPERA_INICIAL = 2.0
+_PRESUPUESTO_DE_ESPERA = 30.0
+
+# Qué se reintenta. 429 es cupo agotado y 5xx es la API con problemas: los dos se
+# arreglan solos. Un 400 por un `$where` mal armado o un 403 por token inválido
+# NO están acá a propósito: reintentar cinco veces un error que no se va a ir es
+# esperar medio minuto para dar el mismo mensaje.
+_CODIGOS_QUE_SE_REINTENTAN = frozenset({429, 500, 502, 503, 504})
+
+# Fallos de red antes de que haya respuesta. Se tratan igual que un 5xx.
+_FALLOS_DE_RED = (requests.Timeout, requests.ConnectionError)
+
+
+def _segundos_de_espera_pedidos(respuesta: requests.Response) -> float | None:
+    """Lee `Retry-After`, que puede venir en segundos o como fecha HTTP.
+
+    Devuelve `None` si no vino o si no se entiende. Un valor que no se entiende
+    no es un error: se cae a la espera creciente, que es lo que se haría igual
+    si la cabecera no estuviera.
+    """
+    cabecera = respuesta.headers.get("Retry-After")
+    if not cabecera:
+        return None
+    try:
+        return max(0.0, float(cabecera))
+    except ValueError:
+        pass
+    try:
+        fecha = email.utils.parsedate_to_datetime(cabecera)
+    except (TypeError, ValueError):
+        return None
+    from datetime import datetime
+    ahora = datetime.now(UTC if fecha.tzinfo else None)
+    return max(0.0, (fecha - ahora).total_seconds())
+
+
+def _pedir(
+    hacer: Callable[[], requests.Response],
+    *,
+    que: str,
+    verboso: bool = False,
+) -> requests.Response:
+    """Hace la petición, reintentando lo que se arregla solo.
+
+    Cuando se agotan los intentos **se relanza el error original**, no uno
+    propio. Los dos lugares que hoy manejan estos fallos capturan `Exception` y
+    distinguen por tipo; envolverlo en un `RuntimeError` los dejaría mostrando
+    "RuntimeError" donde antes decían "HTTPError 503", que es peor mensaje.
+
+    Args:
+        hacer: la petición ya armada, para poder repetirla tal cual.
+        que: qué se estaba pidiendo, para el mensaje. Por ejemplo "página 37".
+        verboso: si imprime una línea por reintento.
+    """
+    resta = _PRESUPUESTO_DE_ESPERA
+    for intento in range(_INTENTOS):
+        pedida: float | None = None
+        try:
+            respuesta = hacer()
+        except _FALLOS_DE_RED as error:
+            motivo, fallo = type(error).__name__, error
+        else:
+            if respuesta.status_code not in _CODIGOS_QUE_SE_REINTENTAN:
+                # Todo lo demás sale por acá: los 2xx devuelven, y los 4xx que
+                # no son 429 levantan sin gastar un solo reintento.
+                respuesta.raise_for_status()
+                return respuesta
+            motivo, fallo = f"HTTP {respuesta.status_code}", None
+            pedida = _segundos_de_espera_pedidos(respuesta)
+
+        ultimo = intento == _INTENTOS - 1
+        if ultimo or resta <= 0:
+            if fallo is not None:
+                raise fallo
+            respuesta.raise_for_status()
+
+        # La espera creciente es el piso; `Retry-After` la sube si el servidor
+        # pide más. El presupuesto restante es el techo de las dos.
+        espera = min(max(_ESPERA_INICIAL * 2**intento, pedida or 0.0), resta)
+        if verboso:
+            pide = f", el servidor pidió {pedida:.0f}s" if pedida else ""
+            print(
+                f"  {que}: {motivo}{pide}; reintento {intento + 2} de "
+                f"{_INTENTOS} en {espera:.0f}s",
+                flush=True,
+            )
+        time.sleep(espera)
+        resta -= espera
+
+    raise AssertionError("inalcanzable: el bucle sale por return o por raise")
+
+
 def _combinar_where(filtro: str | None, cursor: str | None) -> str | None:
     """Une el filtro de negocio con la condición del cursor."""
     condiciones = [c for c in (filtro, _condicion_cursor(cursor)) if c]
@@ -119,6 +228,7 @@ def paginar(
     sesion: requests.Session | None = None,
     tiempo_limite: int = 60,
     desde_cursor: str | None = None,
+    verboso: bool = True,
 ) -> Iterator[list[Fila]]:
     """Recorre el dataset en páginas, aplicando un filtro SoQL opcional.
 
@@ -154,8 +264,10 @@ def paginar(
     http = sesion or requests.Session()
     cabeceras = {"X-App-Token": _token()}
     cursor: str | None = desde_cursor
+    numero = 0
 
     while True:
+        numero += 1
         parametros: dict[str, str | int] = {
             "$select": clausula_select(),
             "$order": COLUMNA_CURSOR,
@@ -165,10 +277,17 @@ def paginar(
         if where:
             parametros["$where"] = where
 
-        respuesta = http.get(
-            URL_BASE, params=parametros, headers=cabeceras, timeout=tiempo_limite
+        respuesta = _pedir(
+            # Los parámetros se atan como argumento por defecto en vez de
+            # capturarse del bucle. Hoy da igual porque `_pedir` llama enseguida,
+            # pero una captura del bucle pide que nadie difiera nunca esa llamada,
+            # y eso es un supuesto que no se puede vigilar desde acá.
+            lambda p=parametros: http.get(
+                URL_BASE, params=p, headers=cabeceras, timeout=tiempo_limite,
+            ),
+            que=f"página {numero}",
+            verboso=verboso,
         )
-        respuesta.raise_for_status()
         pagina: list[Fila] = respuesta.json()
 
         if not pagina:
@@ -201,6 +320,7 @@ def contar(
     *,
     sesion: requests.Session | None = None,
     tiempo_limite: int = 60,
+    verboso: bool = True,
 ) -> int:
     """Cuenta filas del lado del servidor, con el mismo filtro que `paginar`.
 
@@ -213,13 +333,16 @@ def contar(
     if filtro:
         parametros["$where"] = filtro
 
-    respuesta = http.get(
-        URL_BASE,
-        params=parametros,
-        headers={"X-App-Token": _token()},
-        timeout=tiempo_limite,
+    respuesta = _pedir(
+        lambda: http.get(
+            URL_BASE,
+            params=parametros,
+            headers={"X-App-Token": _token()},
+            timeout=tiempo_limite,
+        ),
+        que="el conteo",
+        verboso=verboso,
     )
-    respuesta.raise_for_status()
     return int(respuesta.json()[0]["n"])
 
 
@@ -263,6 +386,7 @@ def corte(
     *,
     sesion: requests.Session | None = None,
     tiempo_limite: int = 60,
+    verboso: bool = True,
 ) -> Corte:
     """Qué estado de la fuente está publicado ahora mismo.
 
@@ -291,8 +415,9 @@ def corte(
     como llave única de ese estado. Son dos cosas que se contradicen solo si
     uno olvida que las usa en contextos opuestos.
 
-    Si la petición falla (429, 5xx, timeout) la excepción sube y la corrida se
-    aborta. Es deliberado: reintentar es volver a escribir el comando y no se
+    Un 429, un 5xx o un timeout se reintentan hasta cinco veces con espera
+    creciente. Si se agotan, la excepción sube y la corrida se aborta, que es lo
+    deliberado: reintentar a mano cuesta volver a escribir el comando y no se
     pierde nada, mientras que arrancar cincuenta minutos sin saber contra qué
     corte se está corriendo es exactamente lo que D10 vino a eliminar.
 
@@ -305,18 +430,21 @@ def corte(
         Un `Corte` con los dos extremos. Ver `Corte.confiable`.
     """
     http = sesion or requests.Session()
-    respuesta = http.get(
-        URL_BASE,
-        params={
-            "$select": (
-                f"min({COLUMNA_DEL_CORTE}) as mas_viejo,"
-                f"max({COLUMNA_DEL_CORTE}) as mas_nuevo"
-            )
-        },
-        headers={"X-App-Token": _token()},
-        timeout=tiempo_limite,
+    respuesta = _pedir(
+        lambda: http.get(
+            URL_BASE,
+            params={
+                "$select": (
+                    f"min({COLUMNA_DEL_CORTE}) as mas_viejo,"
+                    f"max({COLUMNA_DEL_CORTE}) as mas_nuevo"
+                )
+            },
+            headers={"X-App-Token": _token()},
+            timeout=tiempo_limite,
+        ),
+        que="el corte de la fuente",
+        verboso=verboso,
     )
-    respuesta.raise_for_status()
 
     cuerpo = respuesta.json()
     # Un dataset vacío devuelve la fila con los agregados en nulo, y un cambio
