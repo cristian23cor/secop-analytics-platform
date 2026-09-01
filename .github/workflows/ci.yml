@@ -1,0 +1,81 @@
+# Integración continua.
+#
+# Las cuatro comprobaciones corren en segundos, no tocan la red y no necesitan
+# datos. Eso no es casualidad: los verificadores se escribieron para poder correr
+# acá, y lo que sí necesita la API real (`verificar_extraccion.py`,
+# `verificar_carga_raw.py`) se deja afuera a propósito. Un test que falla porque
+# el portal del Estado está caído enseña a ignorar los tests.
+#
+# Ninguna de las cuatro puede fallar hoy. Es requisito, no coincidencia: una suite
+# roja permanente se vuelve invisible, y ahí se pierde la capacidad de detectar el
+# fallo que sí importa.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verificar:
+    name: Pruebas y coherencia
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Instalar dependencias
+        # `--frozen` respeta uv.lock en vez de resolver de nuevo: si alguien
+        # cambió pyproject.toml sin actualizar el candado, acá falla.
+        run: uv sync --frozen
+
+      - name: Tests de la capa de ingesta
+        # 177 tests con dobles de la API. No sale ninguna petición.
+        run: uv run pytest -q
+
+      - name: Deriva entre columnas.py y el macro de dbt
+        # `columnas.py` es la fuente de verdad del esquema y el macro de dbt se
+        # genera desde ahí. Esto falla si alguien tocó uno de los dos y no
+        # regeneró el otro. Sin este paso, dbt leería un esquema distinto del que
+        # la ingesta le pide a la API, y una columna podría viajar sin leerse.
+        run: uv run python scripts/verificar_columnas_dbt.py
+
+      - name: Los tests del modelo detectan sus defectos
+        # Siembra 22 defectos en tablas sintéticas y comprueba que los 22 salgan
+        # con su motivo, que los casos sanos no salgan, y que los tests no sean
+        # redundantes entre sí. Un test que solo se vio dar cero no está probado.
+        run: uv run python scripts/verificar_tests_del_snapshot.py
+
+      - name: Generar una capa cruda sintética
+        # CI no puede usar la capa cruda real: son 898 MB que no van al
+        # repositorio. Sin datos, el paso de dbt se quedaría en `compile`, que
+        # renderiza la plantilla y no ejecuta el SQL: los dos errores que
+        # aparecieron escribiendo estos modelos eran jinja válido y SQL roto.
+        #
+        # Los datos se generan, no se commitean, y se siembran a propósito los
+        # casos que importan: contratos con dos observaciones, cambios de los
+        # cuatro signos, cambios solo cosméticos, los tres centinelas y claves
+        # ausentes. Son 620 observaciones en 185 KB.
+        run: uv run python scripts/generar_raw_sintetico.py --destino /tmp/raw_ci
+
+      - name: Construir y probar los once modelos
+        # Los 46 tests de dbt corren contra esos datos. No es una prueba de
+        # humo: 40 de los 200 contratos con dos observaciones NO generan versión
+        # porque su único cambio es cosmético, así que el filtro de D6 se
+        # ejercita de verdad.
+        #
+        # `SECOP_DUCKDB` apunta a un archivo descartable A PROPÓSITO. El valor
+        # por defecto del perfil es la base real, y construir encima de ella la
+        # reescribiría entera.
+        env:
+          SECOP_DUCKDB: /tmp/ci_descartable.duckdb
+        run: |
+          cd dbt
+          uv run dbt build --profiles-dir . --vars '{"ruta_raw": "/tmp/raw_ci"}'

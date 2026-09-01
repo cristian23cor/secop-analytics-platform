@@ -24,7 +24,11 @@
 with cuentas as (
 
     select
-        (select sum(contratos_observados)
+        {# `coalesce` porque `sum()` sobre cero filas da nulo, y nulo comparado
+           con cero dice "distinto": con las dos tablas vacias el test fallaria
+           afirmando una diferencia que no existe. No debilita nada: si el mart
+           esta vacio y el hecho no, sigue dando 0 contra N. #}
+        (select coalesce(sum(contratos_observados), 0)
          from {{ ref("mart_extension_de_plazo") }})            as en_el_mart,
         (select count(*)
          from {{ ref("fct_contratos") }}

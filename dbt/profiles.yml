@@ -15,7 +15,11 @@ secop:
 
     dev:
       type: duckdb
-      path: ../datos/secop.duckdb
+      # La ruta sale de una variable para que CI pueda apuntar a un archivo
+      # descartable. `dbt build --empty` reconstruye las tablas vacias, asi que
+      # correrlo contra esta base borraria los 6 GB ya construidos; el valor por
+      # defecto es la base real justamente para que el uso normal no cambie.
+      path: "{{ env_var('SECOP_DUCKDB', '../datos/secop.duckdb') }}"
 
       # Hilos = 1, medido y defensible.
       #
