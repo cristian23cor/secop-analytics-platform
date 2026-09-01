@@ -1,0 +1,32 @@
+# Registro de cadencia de la fuente jbjy-vk9h. Una linea por dia.
+#
+# Es el unico insumo del proyecto que NO se recupera hacia atras: un dia que
+# nadie miro es un dia perdido para siempre, porque la fuente sobrescribe.
+#
+# regenero:  si / no / vacio (no se sabe)
+# fuente:    de donde sale el dato de ese dia
+#              manifiesto  el corte quedo fechado en una particion ingerida
+#              sondeo      una consulta de dos segundos, a mano o automatica
+#              deducido    ver abajo
+#              -           nadie miro y no se puede deducir
+#
+# La deduccion: el corte solo avanza. Si dos observaciones que rodean un dia
+# muestran EL MISMO corte, ese dia no regenero, porque una regeneracion lo
+# habria movido y no puede volver atras. Si los cortes difieren, los dias del
+# medio son genuinamente desconocidos: pudieron regenerar y quedar pisados.
+fecha,hora_cot,corte_vivo,testigo,regenero,fuente
+2026-08-18,,2026-08-18T09:22:15.735Z,,si,manifiesto
+2026-08-19,,,,,-
+2026-08-20,,2026-08-20T09:41:20.358Z,,si,manifiesto
+2026-08-21,09:37,2026-08-20T09:41:20.358Z,,no,sondeo
+2026-08-22,,,,,-
+2026-08-23,,,,,-
+2026-08-24,,,,,-
+2026-08-25,,2026-08-25T09:05:54.277Z,,si,manifiesto
+2026-08-26,20:30,2026-08-25T09:05:54.277Z,,no,sondeo
+2026-08-27,,,,no,deducido
+2026-08-28,16:58,2026-08-25T09:05:54.277Z,2026-08-28T09:51:29Z,no,sondeo
+2026-08-29,23:37,2026-08-25T09:05:54.277Z,2026-08-29T12:49:39Z,no,sondeo
+2026-08-30,,,,no,deducido
+2026-08-31,20:14,2026-08-25T09:05:54.277Z,,no,sondeo
+2026-09-01,12:10,2026-08-25T09:05:54.277Z,2026-09-01T10:21:53.458Z,no,sondeo

@@ -14,6 +14,16 @@ exploration/output/
 *.duckdb
 *.duckdb.wal
 
+# La excepcion: el registro de cadencia SI se versiona. No es un dato extraido
+# sino una medicion, pesa unos bytes por dia, y es lo unico del proyecto que no
+# se recupera hacia atras: un dia que nadie miro es un dia perdido, porque la
+# fuente sobrescribe.
+#
+# La regla general `*.csv` se lo tragaba en silencio. `git add -A` lo saltaba,
+# los commits salian bien, y el sondeo programado se rompio en CI con un
+# FileNotFoundError porque el archivo nunca habia llegado al repositorio.
+!exploration/cadencia.csv
+
 # dbt
 target/
 dbt_packages/

@@ -105,6 +105,27 @@ def consultar_testigo() -> str:
 
 
 def main() -> int:
+    # Lo primero, ANTES de gastar una peticion de red: que el registro este.
+    #
+    # Paso de verdad y de la peor forma. El archivo existia en la maquina de quien
+    # lo escribio, pero `.gitignore` tenia un `*.csv` general que se lo tragaba:
+    # `git add -A` lo salteaba en silencio, los commits salian bien, y el sondeo
+    # programado murio en CI con un FileNotFoundError crudo.
+    #
+    # Va primero por el mismo criterio que `_token()` en `paginacion.py`: un fallo
+    # de configuracion se detecta antes de tocar la red, no despues, porque si no
+    # el mensaje que se ve es el de la red y no el del problema real.
+    if not REGISTRO.exists():
+        print(
+            f"ERROR falta {REGISTRO.relative_to(RAIZ)}.\n"
+            "  Es el registro de cadencia y tiene que estar versionado.\n"
+            "  Si existe en tu maquina pero no en el repositorio, comproba que\n"
+            "  `.gitignore` no lo este ignorando:\n"
+            f"      git check-ignore -v {REGISTRO.relative_to(RAIZ)}",
+            file=sys.stderr,
+        )
+        return 2
+
     ahora = datetime.now(ZONA)
     fecha, hora = ahora.date().isoformat(), ahora.strftime("%H:%M")
 
