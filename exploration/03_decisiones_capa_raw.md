@@ -1769,6 +1769,67 @@ dirección que importa es el defecto 4.1 mostrándose entero**: con cadencia
 irregular, el 100,00% dejó de ser el caso perfecto y pasó a ser también la señal
 de haber corrido contra un corte ya visto.
 
+### El canario, arreglado el 31/08/2026
+
+Tenía dos cosas mal y solo una estaba anotada.
+
+**El denominador.** Decidía sobre descartadas / recibidas, que se diluye cuando
+casi todas las filas son nuevas. Medido contra las tres corridas reales, con las
+dos tasas al lado:
+
+| corrida | sobre recibidas | sobre las conocidas | el canario viejo |
+|---|---|---|---|
+| barrido completo 23/08 | 0,4% | 100,00% | **cantaba** |
+| incremental 25/08 | 97,9% | 98,13% | callaba |
+| intervalo nulo 28/08 | 100,0% | 100,00% | callaba |
+
+Las tres son sanas y en la primera cantaba. El barrido descartó el 0,4% de lo
+recibido porque casi todo era nuevo y había que escribirlo; de las 11.449 filas
+que el índice ya conocía descartó las 11.449. **La misma corrida se leía como
+catástrofe o como éxito según el denominador.**
+
+El arreglo no necesitó ningún contador nuevo: toda fila descartada es
+necesariamente conocida, porque `cambio()` solo devuelve falso si el contrato
+está en `_conocidos` o en `_pendientes`. La tasa vive ahora en una propiedad,
+`tasa_sobre_conocidas`, que devuelve `None` y no cero cuando no hay ninguna
+conocida. Cero significaría "todo lo conocido cambió"; `None` es "no hay nada
+contra qué comparar", y confundirlas es el mismo error por otro lado.
+
+**El umbral, que no estaba en la ficha.** Con 0,5 el canario solo atrapa la
+rotura total: con la mitad de los hashes invalidados el descarte cae al 50% y se
+queda callado. Y una rotura parcial es realista, porque la API omite las claves
+nulas, así que una columna nueva poblada en parte del universo invalida solo
+esos hashes.
+
+Se subió a **0,90**, que deja ocho puntos de margen contra el ancla más baja
+(98,13%). Medido, atrapa toda rotura de más del 10% de los hashes:
+
+| rotura | tasa resultante | el canario |
+|---|---|---|
+| total | 0,00% | canta |
+| 50% de los hashes | 50,11% | canta |
+| 15% | 85,18% | canta |
+| 5% | 95,20% | **no la ve** |
+
+Esa última fila es el límite del umbral elegido y está escrita en un test para
+que no se descubra el día que haga falta. Apretarlo más atraparía roturas más
+chicas, y a cambio cantaría el día que el intervalo entre cortes se alargue,
+porque entonces cambian más contratos de verdad y la tasa baja sin que nada esté
+roto. **Al 31/08 la fuente lleva seis días congelada, así que la próxima corrida
+sana va a tener el intervalo más largo observado y la tasa más baja.** Si canta
+ahí, el umbral se baja con esa cuarta ancla en la mano y no antes.
+
+**Lo que sigue sin resolver es el techo.** Un descarte del 100,00% dejó de ser el
+caso perfecto y pasó a ser también la señal de haber corrido contra un corte ya
+visto. No se agregó porque D11 ya lo cubre antes y más barato: el guardarraíl se
+planta antes de bajar una sola página. Mirarlo también acá sería una segunda
+respuesta a la misma pregunta.
+
+Doce tests nuevos, y las seis mutaciones que se le probaron encima fueron
+detectadas: con el denominador viejo, con la tasa devolviendo cero en vez de
+`None`, con el umbral de vuelta en 0,5, sin excluir los flujos 1 y 2, sin el
+piso de muestra chica, y con el mensaje mostrando la tasa que no decidió.
+
 ---
 
 ## La cadencia de la fuente no es diaria: comprobado el 28 de agosto de 2026

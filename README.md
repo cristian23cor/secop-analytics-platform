@@ -98,7 +98,7 @@ datos/raw/*.jsonl.gz
 ```
 
 La construcción completa son once modelos y tarda siete minutos y medio en un
-portátil, con 46 tests de dbt y 203 de pytest. Los mismos modelos corren en
+portátil, con 46 tests de dbt y 215 de pytest. Los mismos modelos corren en
 Snowflake en 79 segundos.
 
 ---
@@ -432,7 +432,7 @@ docs/
 .github/workflows/
   ci.yml                 Cinco comprobaciones, ninguna toca la red
 
-tests/                   203 tests. Los 5 del DAG se saltan si Airflow no está
+tests/                   215 tests. Los 5 del DAG se saltan si Airflow no está
 ```
 
 ---

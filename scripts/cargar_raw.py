@@ -69,7 +69,28 @@ RAIZ_RAW = Path("datos/raw")
 RUTA_INDICE = Path("datos/indice_hashes.duckdb")
 
 # Umbrales del canario. Ver `_advertencia_de_descarte()`.
-UMBRAL_DE_DESCARTE = 0.5
+# El canario canta si el descarte SOBRE LAS CONOCIDAS baja de esto. Sobre las
+# conocidas y no sobre las recibidas: ver `Resultado.tasa_sobre_conocidas`.
+#
+# El 0,90 sale de las dos anclas medidas y no de una intuición:
+#
+#   corrida                  recibidas    escritas   sobre conocidas
+#   barrido completo 23/08   2.835.895   2.824.446           100,00%
+#   incremental      25/08   2.840.337      58.971            98,13%
+#   intervalo nulo   28/08   2.840.337           0           100,00%
+#
+# Ocho puntos de margen contra el ancla más baja. Un umbral más flojo (el 0,5
+# que había) solo atrapa la rotura total: con la mitad de los hashes
+# invalidados el descarte cae al 50% y el canario se queda callado, y una
+# rotura parcial es realista porque la API omite las claves nulas, así que una
+# columna nueva poblada en parte del universo invalida solo esos hashes.
+#
+# El riesgo del 0,90 está anotado: el descarte sobre las conocidas baja cuando
+# el intervalo entre cortes se alarga, porque cambian más contratos. Las tres
+# anclas son de intervalos de 2 a 5 días. Si una corrida sana sobre un
+# intervalo largo canta, el umbral se baja **con esa cuarta ancla en la mano**,
+# no antes.
+UMBRAL_DE_DESCARTE = 0.90
 MINIMO_PARA_EL_CANARIO = 1_000
 
 # `fecha_extraccion` es el día COLOMBIANO, no el del reloj del sistema.
@@ -158,6 +179,34 @@ class Resultado:
             return 0.0
         return 1 - (self.escritas / self.recibidas)
 
+    @property
+    def tasa_sobre_conocidas(self) -> float | None:
+        """Qué proporción de lo que YA se conocía resultó no haber cambiado.
+
+        **Es esta la que decide si el canario canta**, no `tasa_descarte`. La
+        diferencia es el denominador, y no es un detalle: la tasa global se
+        diluye cuando casi todas las filas son nuevas.
+
+        El barrido completo del 23/08 descartó el 0,4% de lo recibido, que leído
+        solo suena a catástrofe. Pero de las 11.449 filas que el índice ya
+        conocía descartó las 11.449, o sea el 100%: la deduplicación funcionaba
+        perfecto. La misma corrida se lee como desastre o como éxito según qué
+        denominador se mire, y por eso la que decide tiene que ser ésta.
+
+        No hace falta ningún contador nuevo. Toda fila descartada es
+        necesariamente conocida, porque `cambio()` solo devuelve falso si el
+        contrato está en `_conocidos` o en `_pendientes`. Así que
+        `recibidas - escritas` son exactamente las conocidas que no cambiaron.
+
+        Devuelve `None` y no cero cuando no había ninguna conocida, porque las
+        dos cosas son distintas: cero sería "todo lo conocido cambió" y `None`
+        es "no hay nada contra qué comparar". Confundirlas es justamente el
+        error que esta propiedad vino a arreglar.
+        """
+        if not self.conocidas:
+            return None
+        return (self.recibidas - self.escritas) / self.conocidas
+
     def imprimir(self) -> None:
         print(f"\n  {'-' * 58}")
         print(f"  flujo:      {self.flujo}")
@@ -165,21 +214,16 @@ class Resultado:
         print(f"  recibidas:  {self.recibidas:,} en {self.paginas} páginas")
         print(f"  conocidas:  {self.conocidas:,}")
         print(f"  escritas:   {self.escritas:,}")
-        # Toda fila descartada es necesariamente conocida: `cambio()` solo da
-        # falso si el contrato está en `_conocidos` o en `_pendientes`. Así que
-        # `recibidas - escritas` son exactamente las conocidas que no cambiaron,
-        # y esta segunda tasa no necesita ningún contador nuevo.
-        #
-        # Es la que dice algo cuando casi todas las filas son nuevas: la tasa
-        # global se diluye, ésta no.
-        if self.conocidas:
-            sobre_conocidas = (self.recibidas - self.escritas) / self.conocidas
+        # Se imprimen las dos tasas porque dicen cosas distintas, y la segunda
+        # es la que decide. Ver `tasa_sobre_conocidas`.
+        sobre = self.tasa_sobre_conocidas
+        if sobre is None:
+            print(f"  descarte:   {self.tasa_descarte:.1%}  (ninguna conocida)")
+        else:
             print(
                 f"  descarte:   {self.tasa_descarte:.1%}  "
-                f"({sobre_conocidas:.2%} sobre las conocidas)"
+                f"({sobre:.2%} sobre las conocidas)"
             )
-        else:
-            print(f"  descarte:   {self.tasa_descarte:.1%}  (ninguna conocida)")
         print(f"  tiempo:     {self.segundos:.1f}s")
         print(f"  {'-' * 58}")
 
@@ -198,6 +242,7 @@ def _advertencia_de_descarte(resultado: Resultado) -> str | None:
        estuviera mal.
     2. **Ninguna fila conocida.** No hay nada contra qué comparar: estos
        contratos nunca se habían visto, así que escribirlos todos es correcto.
+       Es también lo que hace que la tasa sobre las conocidas exista.
        Cubre la primera corrida y, sobre todo, **cada partición nueva del flujo
        3**, que la primera noche son tres de cuatro. Preguntar en cambio si el
        índice está vacío no alcanza: al barrer la segunda partición el índice ya
@@ -210,19 +255,30 @@ def _advertencia_de_descarte(resultado: Resultado) -> str | None:
         return None
     if resultado.recibidas <= MINIMO_PARA_EL_CANARIO:
         return None
-    if resultado.tasa_descarte >= UMBRAL_DE_DESCARTE:
+
+    sobre_conocidas = resultado.tasa_sobre_conocidas
+    # La exclusión 2 ya garantiza que hay conocidas, así que esto no puede ser
+    # None. Se comprueba igual: la alternativa es un TypeError a mitad de una
+    # corrida de cincuenta minutos si alguien reordena las exclusiones.
+    if sobre_conocidas is None or sobre_conocidas >= UMBRAL_DE_DESCARTE:
         return None
 
     return (
-        f"\nDescarte del {resultado.tasa_descarte:.1%} en el flujo 3, cuando "
-        f"debería rondar el 99%.\n"
+        f"\nDescarte del {sobre_conocidas:.1%} sobre las filas ya conocidas, "
+        f"cuando debería rondar el 98%.\n"
         f"  {resultado.conocidas:,} de las {resultado.recibidas:,} filas "
         "recibidas YA estaban en el índice, así que no es una partición "
         "nueva.\n"
+        f"  Se escribieron {resultado.escritas:,}, o sea que "
+        f"{resultado.conocidas - (resultado.recibidas - resultado.escritas):,} "
+        "de las conocidas cambiaron.\n"
         "  Si no coincide con un día de actividad excepcional, revisá si cambió "
         "el esquema\n  de la fuente: una columna nueva o un formato distinto "
-        "invalidan todos los hashes\n  anteriores y llenan raw de duplicados "
-        "que parecen cambios."
+        "invalidan los hashes\n  anteriores y llenan raw de duplicados que "
+        "parecen cambios.\n"
+        "  Ojo también con el intervalo: cuantos más días entre cortes, más "
+        "contratos\n  cambian de verdad y más baja esta tasa sin que nada esté "
+        "roto."
     )
 
 
@@ -340,7 +396,7 @@ def _corte_final(corte_de_la_fuente: Corte | None) -> str | None:
         return None
     try:
         return corte().mas_nuevo
-    except Exception as error:  # noqa: BLE001: cualquier fallo de red vale igual
+    except Exception as error:  # noqa: BLE001  cualquier fallo de red vale igual
         print(
             f"\n  no se pudo releer el corte al terminar: "
             f"{type(error).__name__}: {error}\n"

@@ -14,11 +14,10 @@ import json
 from datetime import date, timedelta
 
 import pytest
-
 from conftest import filas
+
 from secop_analytics.escritura import NOMBRE_COMPLETO, NOMBRE_MANIFIESTO, leer_particion
 from secop_analytics.indice import IndiceHashes
-
 
 # --------------------------------------------------------------------------
 # Coherencia de los propios dobles
@@ -394,3 +393,147 @@ def test_sin_manifiesto_previo_el_cursor_va_en_none(orquestador, fuente, rutas, 
         date(2026, 8, 20), date(2026, 8, 21), fecha_extraccion=hoy, **rutas
     )
     assert fuente.llamadas[-1][2].get("desde_cursor") is None
+
+# --------------------------------------------------------------------------
+# El canario del descarte
+#
+# Vigila que la deduplicacion siga funcionando, y su modo de fallo es el que
+# no produce ningun error: si la canonicalizacion se rompe, ningun hash calza,
+# el cargador escribe los 2,8 millones de filas y la corrida termina "bien".
+#
+# Estos tests construyen el `Resultado` a mano en vez de correr el pipeline,
+# porque lo que se prueba es la decision y las cifras que la disparan son las
+# de corridas reales de cincuenta minutos que no se pueden reproducir aca.
+# --------------------------------------------------------------------------
+
+# Las tres corridas reales del flujo 3, con sus cifras medidas. Las tres son
+# SANAS: en ninguna debe cantar el canario.
+CORRIDAS_SANAS = [
+    pytest.param(2_835_895, 2_824_446, 11_449, id="barrido-completo-23-08"),
+    pytest.param(2_840_337, 58_971, 2_834_320, id="incremental-25-08"),
+    pytest.param(2_840_337, 0, 2_840_337, id="intervalo-nulo-28-08"),
+]
+
+
+def resultado_del_flujo_3(recibidas, escritas, conocidas):
+    from cargar_raw import Resultado
+
+    return Resultado(
+        flujo="refresco_de_vivos",
+        particion="completo",
+        recibidas=recibidas,
+        escritas=escritas,
+        conocidas=conocidas,
+    )
+
+
+def canta(recibidas, escritas, conocidas) -> bool:
+    from cargar_raw import _advertencia_de_descarte
+
+    r = resultado_del_flujo_3(recibidas, escritas, conocidas)
+    return _advertencia_de_descarte(r) is not None
+
+
+@pytest.mark.parametrize(("recibidas", "escritas", "conocidas"), CORRIDAS_SANAS)
+def test_ninguna_corrida_real_hace_cantar_al_canario(recibidas, escritas, conocidas):
+    """Las tres corridas del flujo 3 que existen son sanas.
+
+    **El barrido completo del 23/08 es el que importa**, y es el que falla
+    contra el codigo viejo: descarto el 0,4% de lo RECIBIDO, porque casi todo
+    era nuevo y habia que escribirlo, y con el denominador global el canario
+    cantaba "descarte del 0,4%, deberia rondar el 99%".
+
+    Estaba perfecto: de las 11.449 filas que el indice ya conocia descarto las
+    11.449. La misma corrida se leia como catastrofe o como exito segun que
+    denominador se mirara.
+
+    Una alerta que canta cuando todo esta bien ensena a ignorarla, que es peor
+    que no tenerla.
+    """
+    assert not canta(recibidas, escritas, conocidas)
+
+
+def test_la_tasa_sobre_conocidas_no_es_la_global():
+    """El barrido completo, con los dos denominadores al lado.
+
+    Si estos dos numeros fueran parecidos, todo lo anterior seria una discusion
+    sin consecuencias. Se separan por 99,6 puntos.
+    """
+    r = resultado_del_flujo_3(2_835_895, 2_824_446, 11_449)
+    assert r.tasa_descarte == pytest.approx(0.004, abs=0.001)
+    assert r.tasa_sobre_conocidas == pytest.approx(1.0)
+
+
+def test_sin_conocidas_la_tasa_es_None_y_no_cero():
+    """Cero seria "todo lo conocido cambio"; None es "no hay con que comparar".
+
+    Confundir esas dos cosas es exactamente el error que el arreglo corrige, y
+    devolver 0.0 lo reintroduciria por otro lado: un cero comparado contra el
+    umbral hace cantar al canario en cada particion nueva.
+    """
+    r = resultado_del_flujo_3(5_000, 5_000, 0)
+    assert r.tasa_sobre_conocidas is None
+
+
+# La rotura que el canario existe para detectar: la canonicalizacion cambia
+# (una clave que se ordena distinto, un separador, una columna nueva) y los
+# hashes viejos dejan de calzar, asi que se escribe lo que no cambio.
+@pytest.mark.parametrize("escritas", [2_840_337, 1_420_168, 426_050],
+                         ids=["rotura-total", "rotura-50", "rotura-15"])
+def test_una_rotura_de_la_canonicalizacion_hace_cantar_al_canario(escritas):
+    """Con el umbral en 0,90 se atrapa toda rotura de mas del 10% de los hashes."""
+    assert canta(2_840_337, escritas, 2_834_320)
+
+
+def test_una_rotura_chica_se_le_escapa_al_canario():
+    """Y esto es deliberado, no un defecto. Es el limite del umbral elegido.
+
+    Una rotura que invalide el 5% de los hashes deja la tasa en 95,2%, por
+    encima del 0,90. El canario no la ve.
+
+    El umbral se eligio con las tres anclas medidas (98,13% y 100,00% dos
+    veces) y deja ocho puntos de margen. Apretarlo mas atraparia roturas mas
+    chicas y a cambio cantaria el dia que el intervalo entre cortes se alargue,
+    porque entonces cambian mas contratos de verdad y la tasa baja sin que nada
+    este roto. Al 31/08/2026 la fuente lleva seis dias congelada, asi que la
+    proxima corrida sana va a tener el intervalo mas largo observado.
+
+    Este test existe para que ese limite este escrito y no se descubra el dia
+    que haga falta. Si algun dia se decide apretar el umbral, este test falla y
+    obliga a actualizar la cifra a conciencia.
+    """
+    assert not canta(2_840_337, 142_016, 2_834_320)
+
+
+def test_el_canario_no_mira_los_flujos_1_y_2():
+    """En ellos el descarte bajo es lo correcto: el flujo 1 trae contratos que
+    el indice nunca vio y el flujo 2 trae contratos a los que les paso algo.
+
+    Sin esta exclusion la advertencia saldria en las dos corridas diarias,
+    todas las noches, sin que nada estuviera mal.
+    """
+    from cargar_raw import Resultado, _advertencia_de_descarte
+
+    for flujo in ("contratos_nuevos", "eventos_contractuales"):
+        r = Resultado(flujo=flujo, particion="x", recibidas=5_000,
+                      escritas=5_000, conocidas=4_000)
+        assert _advertencia_de_descarte(r) is None, flujo
+
+
+def test_una_muestra_chica_no_hace_cantar_al_canario():
+    """Bajo mil filas la tasa es ruido."""
+    assert not canta(500, 500, 400)
+
+
+def test_el_mensaje_nombra_la_tasa_que_decidio():
+    """Quien lea la alerta a las tres de la manana tiene que ver el numero que
+    la disparo, no otro. El mensaje viejo mostraba la tasa global, que era
+    justamente la que no habia decidido nada."""
+    from cargar_raw import _advertencia_de_descarte
+
+    aviso = _advertencia_de_descarte(
+        resultado_del_flujo_3(2_840_337, 2_840_337, 2_834_320)
+    )
+    assert aviso is not None
+    assert "sobre las filas ya conocidas" in aviso
+    assert "0.0%" in aviso or "0,0%" in aviso
