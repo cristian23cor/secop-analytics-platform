@@ -687,9 +687,18 @@ V1.80111701 -> segmento 80 -> familia 8011 -> clase 801117 -> producto 80111701
 La jerarquía es lo que hace utilizable el mart. Un vendedor de servicios de TI
 no busca el código exacto, busca su familia.
 
-**Construida el 29/08/2026, sin nombres.** 11.231 códigos, **402 familias** y
-**57 segmentos**, sin historia: medido: `codigo_de_categoria_principal` cambió
+**Construida el 29/08/2026, sin nombres.** 11.231 códigos, **401 familias** y
+**56 segmentos**, sin historia: medido: `codigo_de_categoria_principal` cambió
 cero veces.
+
+> **Corregido el 01/09/2026: eran 401 y 56, no 402 y 57.** La cifra vieja contaba
+> el nulo de `UNSPECIFIED` como una familia y como un segmento. No lo es: es el
+> centinela que no tiene jerarquia, y el modelo lo deja nulo a proposito. Lo
+> destapo la prueba de paridad entre motores, que usa `count(distinct ...)` y por
+> eso excluye el nulo, contra una cifra documentada que lo incluia.
+>
+> Es la regla de siempre en otra forma: **un conteo depende de como se cuente, y
+> eso hay que escribirlo al lado del numero.**
 
 **La jerarquía se deriva del código; lo único que falta comprar son los
 nombres.** El inventario lista el catálogo UNSPSC como dato externo pendiente, y

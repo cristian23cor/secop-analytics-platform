@@ -377,6 +377,19 @@ avisos de reglas de negocio con sus mismos números, hasta el último peso de lo
 segundos contra 344 en el portátil, y esa diferencia dice más del techo de memoria
 de la máquina local que del diseño.
 
+**Los dos motores dan lo mismo, y está medido.** `exploration/paridad_de_motores.md`
+compara los once modelos en DuckDB y en Snowflake con 38 comprobaciones que no son
+solo conteos de filas: las huellas de la ingesta, los castings, las ventanas del
+SCD2, la jerarquía UNSPSC derivada y los cuatro contadores de signo del mart. Las
+38 coinciden.
+
+La cuenta de Snowflake es de prueba y vence el 12 de septiembre de 2026. Después
+de esa fecha el objetivo `snowflake` no se puede ejecutar, y este repositorio no
+depende de eso: la integración continua nunca lo toca, `dbt build` apunta a DuckDB
+por defecto, y lo que queda como evidencia es el informe fechado. Los tres macros
+con despacho por adaptador siguen ahí, que es lo que hace portable al proyecto
+aunque nadie pueda correrlo contra Snowflake.
+
 El orquestador está escrito y probado: un DAG de Airflow que no se dispara por
 reloj sino por el estado de la fuente, porque ningún horario acierta contra un
 evento que a veces no ocurre. Cinco tests cuidan que sus decisiones sigan tomadas.
@@ -399,6 +412,7 @@ exploration/                    Cuatro documentos con el razonamiento completo
   01_modelo_dimensional.md        El modelo, las reglas de negocio, las preguntas abiertas
   02_ecosistema_secop.md          Los datasets hermanos y por qué no entran
   cadencia.csv              Un dia por linea. El unico dato no recuperable
+  paridad_de_motores.md     38 comprobaciones, DuckDB contra Snowflake
   03_decisiones_capa_raw.md       Cada decisión con su alternativa descartada
 
 src/secop_analytics/
@@ -421,6 +435,7 @@ scripts/
   verificar_incremental.py         Lo incremental da lo mismo que reconstruir
   sondear.py                       Que corte esta publicado. Lo corre Actions
   airflow.sh                       Envoltorio: fija AIRFLOW_HOME y el dags/
+  verificar_paridad_de_motores.py  Compara los once modelos en los dos motores
   subir_raw_a_snowflake.py         Sube la capa cruda a un stage, conservando la ruta
   generar_raw_sintetico.py         Datos chicos y sembrados, para que CI pueda correr dbt
   generar_tablero.py               Escribe docs/index.html desde el modelo
