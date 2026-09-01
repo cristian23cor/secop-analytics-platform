@@ -23,6 +23,12 @@ requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
+# Airflow va en su propio grupo y NO se instala con `uv sync` a secas: son 127
+# paquetes, y quien clone el repositorio para leer el codigo o correr los tests
+# no tiene por que bajarlos. El DAG se prueba con `uv sync --group airflow`, y
+# eso es lo que hace CI en un paso propio.
+airflow = ["apache-airflow>=3.3,<4"]
+
 dev = [
     "dbt-duckdb>=1.11.0",
     "dbt-snowflake>=1.12.0",

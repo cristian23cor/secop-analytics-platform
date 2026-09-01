@@ -371,8 +371,12 @@ avisos de reglas de negocio con sus mismos números, hasta el último peso de lo
 segundos contra 344 en el portátil, y esa diferencia dice más del techo de memoria
 de la máquina local que del diseño.
 
-Falta: el orquestador. Ningún modelo es incremental todavía: la construcción
-completa se rehace entera cada vez.
+El orquestador está escrito y probado: un DAG de Airflow que no se dispara por
+reloj sino por el estado de la fuente, porque ningún horario acierta contra un
+evento que a veces no ocurre. Cinco tests cuidan que sus decisiones sigan tomadas.
+
+Falta levantarlo en algún lado. Ningún modelo es incremental todavía: la
+construcción completa se rehace entera cada vez.
 
 Las preguntas abiertas están numeradas en `exploration/`, con lo que haría falta
 para cerrar cada una. Algunas necesitan datos externos que todavía no conseguí: el

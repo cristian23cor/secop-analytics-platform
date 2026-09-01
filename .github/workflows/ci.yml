@@ -79,3 +79,19 @@ jobs:
         run: |
           cd dbt
           uv run dbt build --profiles-dir . --vars '{"ruta_raw": "/tmp/raw_ci"}'
+
+      - name: Instalar Airflow
+        # En su propio grupo y en su propio paso. Son 127 paquetes que los pasos
+        # de arriba no necesitan, y ponerlos en el `uv sync` general obligaría a
+        # bajarlos a cualquiera que solo quiera correr los tests.
+        run: uv sync --frozen --group airflow
+
+      - name: El DAG importa y conserva sus decisiones
+        # El fallo más común de un DAG no es lógico sino de importación, y es
+        # invisible hasta que alguien levanta un Airflow de verdad. Los otros
+        # cuatro tests cuidan decisiones escritas que un refactor distraído puede
+        # invertir: catchup, una corrida a la vez, el código 4 y el límite de
+        # tiempo contra el peor caso.
+        env:
+          AIRFLOW_HOME: /tmp/airflow_home
+        run: uv run pytest tests/test_dag.py -q

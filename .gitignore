@@ -38,3 +38,8 @@ datos/secop.duckdb
 
 .secretos/
 dbt/.user.yml
+
+# Airflow, si alguien lo levanta apuntando al proyecto
+airflow.db
+airflow.cfg
+webserver_config.py
