@@ -174,9 +174,8 @@ def consultar(con: duckdb.DuckDBPyConnection) -> dict:
 # ---------------------------------------------------------------------------
 # Presentación
 # ---------------------------------------------------------------------------
-
 def n(x: float, dec: int = 0) -> str:
-    """Número con punto de miles y coma decimal, como se escribe en Colombia."""
+    """Numero con punto de miles y coma decimal, como se escribe en Colombia."""
     s = f"{x:,.{dec}f}"
     return s.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
 
@@ -186,39 +185,39 @@ def e(t: object) -> str:
 
 
 def tarjeta(valor: str, etiqueta: str, nota: str = "") -> str:
-    pie = f'<p class="nota">{e(nota)}</p>' if nota else ""
-    return (f'<div class="tarjeta"><p class="cifra">{e(valor)}</p>'
-            f'<p class="etiqueta">{e(etiqueta)}</p>{pie}</div>')
+    """Una cifra con su etiqueta. Va en una tabla, no en una tarjeta."""
+    pie = f'<br><span class="nota">{e(nota)}</span>' if nota else ""
+    return (f'<tr><td class="num"><b>{e(valor)}</b></td>'
+            f"<td>{e(etiqueta)}{pie}</td></tr>")
+
+
+def cifras(filas: list[str]) -> str:
+    return f'<table class="datos"><tbody>{"".join(filas)}</tbody></table>'
 
 
 def barras(datos: list[dict], clave: str, valor: str, *, destacar: int = 0,
            sufijo: str = "", detalle=None) -> str:
-    """Barras horizontales con etiqueta directa en cada una.
+    """Barras horizontales: una tabla con un div de ancho variable en el medio.
 
-    `destacar` cuántas de las primeras llevan el color de serie; el resto va en
-    gris de contexto. La identidad nunca depende del color solo: cada barra
-    lleva su nombre a la izquierda y su valor a la derecha.
+    Cada barra lleva su nombre a la izquierda y su valor a la derecha, asi que
+    el color nunca es lo unico que distingue una de otra.
     """
     if not datos:
         return '<p class="nota">Sin datos.</p>'
     tope = max(d[valor] for d in datos) or 1
-    filas = []
-    for i, d in enumerate(datos):
-        ancho = max(d[valor] / tope * 100, 0.6)
-        clase = "serie" if i < destacar else "contexto"
-        det = e(detalle(d)) if detalle else ""
-        filas.append(
-            f'<div class="fila" data-detalle="{det}">'
-            f'<span class="nombre">{e(d[clave])}</span>'
-            f'<span class="pista"><span class="barra {clase}" style="width:{ancho:.1f}%"></span></span>'
-            f'<span class="valor">{e(n(d[valor]))}{e(sufijo)}</span>'
-            f"</div>"
-        )
-    tabla = "".join(
-        f"<tr><td>{e(d[clave])}</td><td>{e(n(d[valor]))}{e(sufijo)}</td></tr>" for d in datos
+    filas = "".join(
+        f'<tr><td class="etiqueta">{e(d[clave])}</td>'
+        f'<td><div class="barra{"" if i < destacar else " gris"}" '
+        f'style="width:{max(d[valor] / tope * 100, 1):.0f}%"></div></td>'
+        f'<td class="cifra">{e(n(d[valor]))}{e(sufijo)}</td></tr>'
+        for i, d in enumerate(datos)
     )
-    return (f'<div class="barras">{"".join(filas)}</div>'
-            f'<details class="tabla"><summary>Ver como tabla</summary>'
+    tabla = "".join(
+        f'<tr><td>{e(d[clave])}</td><td class="num">{e(n(d[valor]))}{e(sufijo)}</td></tr>'
+        for d in datos
+    )
+    return (f'<table class="barras"><tbody>{filas}</tbody></table>'
+            f"<details><summary>Ver como tabla</summary>"
             f"<table><tbody>{tabla}</tbody></table></details>")
 
 
@@ -230,186 +229,70 @@ ESTADOS = {
 
 
 def tira_de_cadencia(dias: list[tuple[str, str]]) -> str:
-    celdas = []
-    for fecha, estado in dias:
-        clase, texto = ESTADOS[estado]
-        dia = fecha[-2:]
-        celdas.append(
-            f'<div class="dia {clase}" data-detalle="{e(fecha)}: {e(texto)}">'
-            f'<span class="num">{e(dia)}</span></div>'
-        )
-    leyenda = "".join(
-        f'<span class="clave"><span class="punto {c}"></span>{e(t)}</span>'
-        for c, t in (("bien", "se regeneró"), ("mal", "no se regeneró"),
-                     ("neutro", "sin observación"))
+    celdas = "".join(
+        f'<span class="dia {ESTADOS[estado][0]}" title="{e(fecha)}: '
+        f'{e(ESTADOS[estado][1])}">{e(fecha[-2:])}</span>'
+        for fecha, estado in dias
     )
-    return f'<div class="tira">{"".join(celdas)}</div><div class="leyenda">{leyenda}</div>'
+    return (f"<div>{celdas}</div>"
+            '<p class="leyenda">verde: se regeneró &nbsp; rojo: no se regeneró'
+            " &nbsp; gris: nadie miró</p>")
 
 
 ESTILO = """
-/* Tipografía. Newsreader para titulares: es una serif de texto pensada para
-   lectura larga, con más carácter que una grotesca y sin el aire de folleto de
-   una display. IBM Plex Sans para el cuerpo y la interfaz. IBM Plex Mono para
-   cifras, fechas y etiquetas, porque el vocabulario de este tema es la marca de
-   tiempo y el identificador de contrato. */
-:root {
-  color-scheme: light;
-  --plano:      #f9f9f7;
-  --superficie: #fcfcfb;
-  --tinta:      #0b0b0b;
-  --tinta-2:    #52514e;
-  --tinta-3:    #898781;
-  --linea:      #e1e0d9;
-  --borde:      rgba(11,11,11,.10);
-  --serie-1:    #2a78d6;
-  --serie-2:    #eb6834;
-  --contexto:   #c9c8bf;
-  --bien:       #0ca30c;
-  --mal:        #d03b3b;
-  --neutro:     #d5d4cc;
-  --chip:       rgba(208,59,59,.10);
-
-  --titular: "Newsreader", Georgia, "Times New Roman", serif;
-  --texto:   "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --dato:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --plano: #0d0d0d; --superficie: #1a1a19; --tinta: #ffffff; --tinta-2: #c3c2b7;
-    --tinta-3: #898781; --linea: #2c2c2a; --borde: rgba(255,255,255,.10);
-    --serie-1: #3987e5; --serie-2: #d95926; --contexto: #46453f; --neutro: #33322e;
-    --chip: rgba(208,59,59,.18);
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --plano: #0d0d0d; --superficie: #1a1a19; --tinta: #ffffff; --tinta-2: #c3c2b7;
-  --tinta-3: #898781; --linea: #2c2c2a; --borde: rgba(255,255,255,.10);
-  --serie-1: #3987e5; --serie-2: #d95926; --contexto: #46453f; --neutro: #33322e;
-  --chip: rgba(208,59,59,.18);
-}
-
-* { box-sizing: border-box; }
 body {
-  margin: 0; background: var(--plano); color: var(--tinta);
-  font: 400 15.5px/1.65 var(--texto);
-  -webkit-font-smoothing: antialiased;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #222;
+  background: #fff;
+  margin: 0;
+  padding: 20px;
 }
-.hoja { max-width: 860px; margin: 0 auto; padding: 0 24px 96px; }
+.hoja { max-width: 900px; margin: 0 auto; }
 
-/* La banda de estado. Va arriba de todo porque en un tablero lo primero es en
-   qué estado está la fuente, no cuántas filas hay. */
-.banda {
-  display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: baseline;
-  border-bottom: 1px solid var(--linea); padding: 14px 0 13px; margin-bottom: 40px;
-  font-family: var(--dato); font-size: 12px; letter-spacing: .01em;
-  color: var(--tinta-3);
-}
-.banda b { color: var(--tinta); font-weight: 500; }
-.chip {
-  background: var(--chip); color: var(--mal); border-radius: 4px;
-  padding: 2px 7px; font-weight: 600; letter-spacing: .02em;
-}
+h1 { font-size: 26px; margin: 0 0 10px; }
+h2 { font-size: 19px; margin: 30px 0 8px; border-bottom: 1px solid #ddd;
+     padding-bottom: 4px; }
+h3 { font-size: 15px; margin: 20px 0 6px; }
+p  { margin: 0 0 12px; }
+.intro { color: #444; }
+.nota  { color: #666; font-size: 13px; }
+.aviso { background: #fff8e6; border: 1px solid #e6d9b0; padding: 10px 12px; }
+code   { background: #f2f2f2; padding: 1px 4px; font-size: 13px; }
+a      { color: #1a5fb4; }
 
-h1 { font: 400 clamp(30px, 5.2vw, 44px)/1.12 var(--titular); margin: 0 0 16px;
-     letter-spacing: -.015em; text-wrap: balance; max-width: 18ch; }
-h2 { font: 400 24px/1.2 var(--titular); margin: 0 0 8px; letter-spacing: -.01em;
-     text-wrap: balance; }
-h3 { font-family: var(--texto); font-size: 12px; font-weight: 600; margin: 28px 0 10px;
-     color: var(--tinta-3); text-transform: uppercase; letter-spacing: .07em; }
-p { margin: 0 0 14px; }
-.entrada { color: var(--tinta-2); font-size: 17px; line-height: 1.6; max-width: 62ch; }
-.nota { color: var(--tinta-3); font-size: 13px; line-height: 1.55; margin: 10px 0 0;
-        max-width: 68ch; }
-.pie { color: var(--tinta-3); font-size: 12.5px; border-top: 1px solid var(--linea);
-       margin-top: 56px; padding-top: 22px; max-width: 68ch; }
-code { font-family: var(--dato); font-size: .92em; }
+table { border-collapse: collapse; margin: 10px 0; }
+th, td { border: 1px solid #ddd; padding: 5px 9px; text-align: left;
+         vertical-align: top; }
+th { background: #f2f2f2; font-size: 13px; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+table.datos { width: 100%; }
 
-section { background: var(--superficie); border: 1px solid var(--borde);
-          border-radius: 3px; padding: 28px; margin: 20px 0; }
-section > p:last-child, section > div:last-child { margin-bottom: 0; }
-.encabezado { border: 0; background: none; padding: 0; margin: 0 0 36px; }
+/* Las barras son una tabla con un div de ancho variable en la celda del medio.
+   No es elegante, pero se entiende y no necesita ninguna libreria. */
+table.barras { width: 100%; }
+table.barras td { border: none; padding: 2px 6px 2px 0; }
+table.barras td.etiqueta { width: 250px; font-size: 13px; color: #444; }
+table.barras td.cifra { width: 80px; text-align: right; font-size: 13px; }
+.barra { background: #1a5fb4; height: 14px; }
+.barra.gris { background: #bbb; }
 
-.rejilla { display: grid; gap: 1px; background: var(--borde);
-           border: 1px solid var(--borde); border-radius: 3px;
-           grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); }
-.tarjeta { background: var(--superficie); padding: 16px 18px; }
-.cifra { font-family: var(--dato); font-size: 25px; font-weight: 500; margin: 0;
-         letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.etiqueta { font-size: 12.5px; color: var(--tinta-2); margin: 3px 0 0; line-height: 1.4; }
-.tarjeta .nota { font-size: 12px; margin-top: 8px; }
+.dia { display: inline-block; width: 42px; height: 34px; line-height: 34px;
+       text-align: center; font-size: 12px; margin: 0 2px 2px 0; color: #fff; }
+.dia.bien   { background: #2e7d32; }
+.dia.mal    { background: #c62828; }
+.dia.neutro { background: #ddd; color: #666; }
+.leyenda { font-size: 13px; color: #444; margin-top: 6px; }
 
-.barras { margin: 6px 0 0; }
-.fila { display: grid; grid-template-columns: minmax(120px, 16em) 1fr 5.5em;
-        gap: 14px; align-items: center; padding: 3px 0; position: relative; }
-.nombre { font-size: 12.5px; color: var(--tinta-2); overflow: hidden;
-          text-overflow: ellipsis; white-space: nowrap; }
-.pista { height: 14px; display: block; }
-.barra { display: block; height: 14px; border-radius: 0 4px 4px 0; }
-.barra.serie { background: var(--serie-1); }
-.barra.contexto { background: var(--contexto); }
-.valor { font-family: var(--dato); font-size: 12.5px; color: var(--tinta);
-         text-align: right; font-variant-numeric: tabular-nums; }
-
-.fila[data-detalle]:hover::after, .dia[data-detalle]:hover::after {
-  content: attr(data-detalle); position: absolute; left: 0; top: 100%;
-  transform: translateY(3px); z-index: 5;
-  background: var(--tinta); color: var(--superficie);
-  font-family: var(--texto); font-size: 12px; line-height: 1.45;
-  padding: 7px 10px; border-radius: 4px;
-  white-space: normal; max-width: 34em; pointer-events: none;
-  box-shadow: 0 3px 14px rgba(0,0,0,.20);
-}
-
-.tira { display: flex; gap: 3px; flex-wrap: wrap; margin: 12px 0 0; }
-.dia { position: relative; width: 46px; height: 46px; border-radius: 3px;
-       display: flex; align-items: center; justify-content: center; }
-.dia .num { font-family: var(--dato); font-size: 12px; font-weight: 500;
-            font-variant-numeric: tabular-nums; }
-.dia.bien   { background: var(--bien);   color: #fff; }
-.dia.mal    { background: var(--mal);    color: #fff; }
-.dia.neutro { background: var(--neutro); color: var(--tinta-3); }
-.leyenda { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px;
-           font-size: 12px; color: var(--tinta-2); }
-.clave { display: flex; align-items: center; gap: 7px; }
-.punto { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-.punto.bien { background: var(--bien); } .punto.mal { background: var(--mal); }
-.punto.neutro { background: var(--neutro); }
-
-.dos { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(272px, 1fr)); }
-.caja { border: 1px solid var(--borde); border-radius: 3px; padding: 18px; }
+.caja { border: 1px solid #ddd; padding: 12px 14px; margin-bottom: 12px; }
 .caja h3 { margin-top: 0; }
-.caja.medible { border-color: var(--serie-1); border-width: 1px 1px 1px 3px; }
-.par { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0;
-       border-bottom: 1px solid var(--linea); font-size: 13.5px; }
-.par:last-of-type { border-bottom: 0; }
-.par b { font-family: var(--dato); font-variant-numeric: tabular-nums; font-weight: 500; }
 
-.tabla { margin-top: 14px; }
-.tabla summary { font-size: 12px; color: var(--tinta-3); cursor: pointer; }
-.tabla summary:focus-visible { outline: 2px solid var(--serie-1); outline-offset: 2px; }
-.tabla > table { border-collapse: collapse; margin-top: 10px; font-size: 13px; width: 100%; }
-.tabla td { border-bottom: 1px solid var(--linea); padding: 5px 8px; }
-.tabla td:last-child { text-align: right; font-family: var(--dato);
-                       font-variant-numeric: tabular-nums; }
+details { margin: 8px 0; }
+summary { font-size: 13px; color: #666; cursor: pointer; }
 
-.aviso { border-left: 2px solid var(--serie-2); padding-left: 16px; color: var(--tinta-2);
-         font-size: 14.5px; }
-.envoltura { overflow-x: auto; }
-table.ranking { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 10px; }
-table.ranking th { text-align: left; font-weight: 600; color: var(--tinta-3);
-                   font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
-                   padding: 5px 8px; border-bottom: 1px solid var(--linea); white-space: nowrap; }
-table.ranking td { padding: 6px 8px; border-bottom: 1px solid var(--linea); }
-table.ranking td.num { text-align: right; font-family: var(--dato);
-                       font-variant-numeric: tabular-nums; white-space: nowrap; }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-@media (max-width: 620px) {
-  .fila { grid-template-columns: minmax(88px, 9em) 1fr 4.5em; gap: 10px; }
-  .hoja { padding: 0 16px 64px; }
-  section { padding: 20px; }
-}
+.pie { border-top: 1px solid #ddd; margin-top: 30px; padding-top: 12px;
+       color: #666; font-size: 13px; }
 """
 
 
@@ -433,170 +316,167 @@ def pagina(d: dict) -> str:
         for r in d["ranking"]
     )
     margenes = "".join(
-        f'<div class="par"><span>Dentro de {e(n(x["dias"]))} días de la firma</span>'
-        f'<b>{e(n(x["contratos"]))} &nbsp;({e(n(x["contratos"] / d["contratos"] * 100, 2))}%)</b></div>'
+        f'<tr><td>Dentro de {e(n(x["dias"]))} días de la firma</td>'
+        f'<td class="num">{e(n(x["contratos"]))}</td>'
+        f'<td class="num">{e(n(x["contratos"] / d["contratos"] * 100, 2))}%</td></tr>'
         for x in d["margenes"]
     )
+
+    def par(etiqueta: str, valor: int) -> str:
+        return f'<tr><td>{e(etiqueta)}</td><td class="num">{e(n(valor))}</td></tr>'
 
     return f"""<!doctype html>
 <html lang="es"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>La historia que SECOP borra</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
 <style>{ESTILO}</style>
 </head><body>
 <div class="hoja">
 
-<div class="banda">
-  <span>corte vivo de la fuente <b>{e(CORTE_VIVO[:10])}</b></span>
-  <span>sin regenerarse <span class="chip">{e(congelada)} días</span></span>
-  <span>contratos versionados <b>{e(n(d["contratos"]))}</b></span>
-  <span>tablero generado <b>{e(d["generado"])}</b></span>
+<h1>La historia que SECOP borra cada vez que publica</h1>
+
+<p class="intro">
+  Colombia publica todos sus contratos públicos como datos abiertos. Cada vez que
+  regenera el conjunto lo reemplaza entero, así que nadie puede saber cuánto valía
+  un contrato antes de una adición, ni cuántas veces le corrieron el plazo. Este
+  proyecto guarda una foto de cada corte y reconstruye esa serie.
+</p>
+
+<p class="nota">
+  Corte vivo de la fuente: {e(CORTE_VIVO[:10])} &nbsp;|&nbsp;
+  lleva {e(congelada)} días sin regenerarse &nbsp;|&nbsp;
+  tablero generado el {e(d["generado"])}
+</p>
+
+<h2>Lo que hay guardado</h2>
+{cifras([
+    tarjeta(n(d["observaciones"]), "observaciones en la capa cruda"),
+    tarjeta(n(d["contratos"]), "contratos distintos"),
+    tarjeta(n(d["versiones"]), "versiones en la serie"),
+    tarjeta(n(d["cambios"]), "cambios anotados columna por columna"),
+    tarjeta(n(d["entidades"]), "entidades contratantes"),
+    tarjeta(n(d["raw_mb"]) + " MB", "en disco, comprimido"),
+])}
+<p class="nota">Frente a guardar la foto entera sin comprimir en cada corte, la
+  reducción es de al menos 428 veces: 8,9 los pone la compresión y 48,2 la
+  deduplicación por huella antes de escribir.</p>
+
+<h2>La fuente declara frecuencia diaria y no la cumple</h2>
+<p class="intro">La ficha oficial dice que el conjunto se actualiza a diario. Se
+  comprobó con una petición de dos segundos, repetida todos los días, y es falso.</p>
+{tira_de_cadencia(CADENCIA)}
+<p class="nota">Cada celda es un día de agosto de 2026. Tres regeneraciones y cinco
+  días sin regenerar, entre los días en que alguien miró.</p>
+<p class="aviso">Al generar este tablero la fuente lleva <b>{e(congelada)} días</b>
+  sin regenerarse. No es una caída de la plataforma: un conjunto hermano que escribe
+  en continuo registró escrituras esa misma mañana. Lo que está detenido es el
+  proceso que rehace la vista publicada.</p>
+<p class="nota">De ahí sale una decisión de ingeniería: el pipeline no se puede
+  disparar por reloj, porque ningún horario acierta contra un evento que a veces no
+  ocurre. Se dispara por el estado de la fuente.</p>
+
+<h2>El evento más frecuente es el que la fuente no registra</h2>
+<p class="intro">De las 28 columnas que cuentan como cambio real, estas son las que
+  más se movieron. Las cuatro primeras son ejecución financiera: pagos y facturación.
+  Ninguna fecha las acompaña, así que la única manera de detectarlas es volver a
+  bajar el contrato entero y compararlo con la observación anterior.</p>
+{barras(d["columnas_que_cambian"], "columna", "contratos", destacar=4)}
+<p class="nota">Esas cuatro son la razón por la que el pipeline barre 2,8 millones de
+  contratos en cada corte en lugar de pedir solo lo que cambió.</p>
+
+<h2>Cuánto se extiende el plazo, y cuánto cuesta</h2>
+<p class="intro">Son las dos preguntas que no se pueden responder con datos
+  públicos, porque exigen comparar el contrato de hoy contra el de antes.</p>
+{cifras([
+    tarjeta(n(total_ext), "contratos con el plazo extendido"),
+    tarjeta(n(total_dias), "días de extensión en total"),
+    tarjeta(n(total_adic), "contratos con adición de valor"),
+    tarjeta(n(total_pesos, 1), "mil millones de pesos adicionados"),
+])}
+<p class="aviso">El plazo también se acorta y el valor también baja:
+  <b>{e(n(acort))}</b> contratos redujeron su plazo y <b>{e(n(reduc))}</b> bajaron su
+  valor. Los cuatro conteos van separados a propósito. Sumarlos en neto y llamar al
+  resultado extensiones esconde una población detrás del nombre de la otra, y fue un
+  defecto real de la primera versión de este modelo.</p>
+
+<h3>Cuánto se extienden</h3>
+{barras(d["tramos_de_extension"], "tramo", "n", destacar=5)}
+
+<h2>Lo que este tablero todavía no puede decir</h2>
+<p class="intro">Un análisis de sobrecosto solo vale para los contratos que
+  observamos desde cerca de su firma. De los demás vimos un pedazo: sus adiciones
+  anteriores ya venían incorporadas en la primera foto y son invisibles. Mezclar las
+  dos poblaciones subestima el resultado sin que nada falle.</p>
+
+<div class="caja">
+  <h3>Población medible</h3>
+  <table>
+    <tbody>
+      {par("Contratos", med["contratos"])}
+      {par("Con el plazo extendido", med["con_extension"])}
+      {par("Días de extensión", med["dias"])}
+      {par("Con adición de valor", med["con_adicion"])}
+    </tbody>
+  </table>
+  <p class="nota">Observados dentro de los {MARGEN_DIAS} días de su firma. Tienen
+    historia completa, así que el número es correcto.</p>
 </div>
 
-<header class="encabezado">
-  <h1>La historia que SECOP borra cada vez que publica</h1>
-  <p class="entrada">
-    Colombia publica todos sus contratos públicos como datos abiertos. Cada vez que
-    regenera el conjunto lo reemplaza entero, así que nadie puede saber cuánto valía
-    un contrato antes de una adición, ni cuántas veces le corrieron el plazo. Este
-    proyecto guarda una foto de cada corte y reconstruye esa serie.
-  </p>
-</header>
+<div class="caja">
+  <h3>Cota inferior</h3>
+  <table>
+    <tbody>
+      {par("Contratos", amp["contratos"])}
+      {par("Con el plazo extendido", amp["con_extension"])}
+      {par("Días de extensión", amp["dias"])}
+      {par("Con adición de valor", amp["con_adicion"])}
+    </tbody>
+  </table>
+  <p class="nota">Historia truncada por la izquierda. El número es más grande y es
+    un piso, no una medición.</p>
+</div>
 
-<section>
-  <h2>Lo que hay guardado</h2>
-  <div class="rejilla">
-    {tarjeta(n(d["observaciones"]), "observaciones en la capa cruda")}
-    {tarjeta(n(d["contratos"]), "contratos distintos")}
-    {tarjeta(n(d["versiones"]), "versiones en la serie")}
-    {tarjeta(n(d["cambios"]), "cambios anotados columna por columna")}
-    {tarjeta(n(d["entidades"]), "entidades contratantes")}
-    {tarjeta(n(d["raw_mb"]) + " MB", "en disco, comprimido")}
-  </div>
-  <p class="nota">Frente a guardar la foto entera sin comprimir en cada corte, la
-    reducción es de al menos 428 veces: 8,9 los pone la compresión y 48,2 la
-    deduplicación por huella antes de escribir.</p>
-</section>
+<h3>Cuánta historia alcanzamos a ver</h3>
+<table>
+  <thead><tr><th>Margen</th><th class="num">Contratos</th><th class="num">%</th></tr></thead>
+  <tbody>{margenes}</tbody>
+</table>
+<p class="nota">El margen no puede ser cero: la fuente publica con un día de rezago,
+  así que ningún contrato se observa el mismo día en que se firma. La mediana del
+  hueco entre la firma y la primera observación es de 657 días.</p>
+<p class="nota">Este número <b>crece solo</b> con cada corte ingerido. No es un
+  defecto del modelo: es que el pipeline lleva una semana de vida contra una fuente
+  que publica desde 2015.</p>
 
-<section>
-  <h2>La fuente declara frecuencia diaria y no la cumple</h2>
-  <p class="entrada">La ficha oficial dice que el conjunto se actualiza a diario. Se
-    comprobó con una petición de dos segundos, repetida todos los días, y es falso.</p>
-  {tira_de_cadencia(CADENCIA)}
-  <p class="nota">Cada celda es un día de agosto de 2026. Tres regeneraciones y cinco
-    días sin regenerar, entre los días en que alguien miró.</p>
-  <p class="aviso">Al generar este tablero la fuente lleva <b>{e(congelada)} días</b>
-    sin regenerarse. No es una caída de la plataforma: un conjunto hermano que escribe
-    en continuo registró escrituras esa misma mañana. Lo que está detenido es el
-    proceso que rehace la vista publicada.</p>
-  <p class="nota">De ahí sale una decisión de ingeniería: el pipeline no se puede
-    disparar por reloj, porque ningún horario acierta contra un evento que a veces no
-    ocurre. Se dispara por el estado de la fuente.</p>
-</section>
-
-<section>
-  <h2>El evento más frecuente es el que la fuente no registra</h2>
-  <p class="entrada">De las 28 columnas que cuentan como cambio real, estas son las que
-    más se movieron. Las cuatro primeras son ejecución financiera: pagos y facturación.
-    Ninguna fecha las acompaña, así que la única manera de detectarlas es volver a
-    bajar el contrato entero y compararlo con la observación anterior.</p>
-  {barras(d["columnas_que_cambian"], "columna", "contratos", destacar=4,
-          detalle=lambda x: f'{x["columna"]}: {n(x["contratos"])} contratos')}
-  <p class="nota">Esas cuatro son la razón por la que el pipeline barre 2,8 millones de
-    contratos en cada corte en lugar de pedir solo lo que cambió.</p>
-</section>
-
-<section>
-  <h2>Cuánto se extiende el plazo, y cuánto cuesta</h2>
-  <p class="entrada">Son las dos preguntas que no se pueden responder con datos
-    públicos, porque exigen comparar el contrato de hoy contra el de antes.</p>
-  <div class="rejilla">
-    {tarjeta(n(total_ext), "contratos con el plazo extendido")}
-    {tarjeta(n(total_dias), "días de extensión en total")}
-    {tarjeta(n(total_adic), "contratos con adición de valor")}
-    {tarjeta(n(total_pesos, 1), "mil millones de pesos adicionados")}
-  </div>
-  <p class="aviso">El plazo también se acorta y el valor también baja:
-    <b>{e(n(acort))}</b> contratos redujeron su plazo y <b>{e(n(reduc))}</b> bajaron su
-    valor. Los cuatro conteos van separados a propósito. Sumarlos en neto y llamar al
-    resultado extensiones esconde una población detrás del nombre de la otra, y fue un
-    defecto real de la primera versión de este modelo.</p>
-  <h3>Cuánto se extienden</h3>
-  {barras(d["tramos_de_extension"], "tramo", "n", destacar=5,
-          detalle=lambda x: f'{x["n"]} contratos se extendieron {x["tramo"]}')}
-</section>
-
-<section>
-  <h2>Lo que este tablero todavía no puede decir</h2>
-  <p class="entrada">Un análisis de sobrecosto solo vale para los contratos que
-    observamos desde cerca de su firma. De los demás vimos un pedazo: sus adiciones
-    anteriores ya venían incorporadas en la primera foto y son invisibles. Mezclar las
-    dos poblaciones subestima el resultado sin que nada falle.</p>
-
-  <div class="dos">
-    <div class="caja medible">
-      <h3>Población medible</h3>
-      <div class="par"><span>Contratos</span><b>{e(n(med["contratos"]))}</b></div>
-      <div class="par"><span>Con el plazo extendido</span><b>{e(n(med["con_extension"]))}</b></div>
-      <div class="par"><span>Días de extensión</span><b>{e(n(med["dias"]))}</b></div>
-      <div class="par"><span>Con adición de valor</span><b>{e(n(med["con_adicion"]))}</b></div>
-      <p class="nota">Observados dentro de los {MARGEN_DIAS} días de su firma. Tienen
-        historia completa, así que el número es correcto.</p>
-    </div>
-    <div class="caja">
-      <h3>Cota inferior</h3>
-      <div class="par"><span>Contratos</span><b>{e(n(amp["contratos"]))}</b></div>
-      <div class="par"><span>Con el plazo extendido</span><b>{e(n(amp["con_extension"]))}</b></div>
-      <div class="par"><span>Días de extensión</span><b>{e(n(amp["dias"]))}</b></div>
-      <div class="par"><span>Con adición de valor</span><b>{e(n(amp["con_adicion"]))}</b></div>
-      <p class="nota">Historia truncada por la izquierda. El número es más grande y es
-        un piso, no una medición.</p>
-    </div>
-  </div>
-
-  <h3>Cuánta historia alcanzamos a ver</h3>
-  {margenes}
-  <p class="nota">El margen no puede ser cero: la fuente publica con un día de rezago,
-    así que ningún contrato se observa el mismo día en que se firma. La mediana del
-    hueco entre la firma y la primera observación es de 657 días.</p>
-  <p class="nota">Este número <b>crece solo</b> con cada corte ingerido. No es un
-    defecto del modelo: es que el pipeline lleva una semana de vida contra una fuente
-    que publica desde 2015.</p>
-
-  <h3>Quién extiende más, dentro de la población medible</h3>
-  <div class="envoltura">
-  <table class="ranking"><thead><tr>
+<h3>Quién extiende más, dentro de la población medible</h3>
+<table>
+  <thead><tr>
     <th>Entidad</th><th class="num">Contratos</th><th class="num">Extendidos</th>
     <th class="num">Tasa</th><th class="num">Días</th>
-  </tr></thead><tbody>{ranking}</tbody></table>
-  </div>
-  <p class="nota">Solo entidades con veinte contratos o más, para que la tasa signifique
-    algo. Aun así son pocos casos: la palabra sistemáticamente todavía no se sostiene, y
-    por eso el ranking va con su denominador a la vista.</p>
-</section>
+  </tr></thead>
+  <tbody>{ranking}</tbody>
+</table>
+<p class="nota">Solo entidades con veinte contratos o más, para que la tasa signifique
+  algo. Aun así son pocos casos: la palabra sistemáticamente todavía no se sostiene, y
+  por eso el ranking va con su denominador a la vista.</p>
 
-<section>
-  <h2>Otras cosas que aparecieron en el camino</h2>
-  <h3>El 74% de la contratación pública es directa</h3>
-  {barras(d["modalidades"], "modalidad", "n", destacar=2,
-          detalle=lambda x: f'{x["modalidad"]}: {n(x["n"])} observaciones')}
-  <p class="nota">Sumando contratación directa, directa con ofertas y régimen especial,
-    la contratación sin licitación abierta supera el 90%.</p>
-  <div class="rejilla" style="margin-top:26px">
-    {tarjeta("7", "contratos por encima del presupuesto nacional",
-             "El mayor lo supera 23 veces y es de un instituto municipal de deportes. Los siete tienen forma válida: el sistema de tipos no los atrapa.")}
-    {tarjeta(n(pct_ciudad, 0) + "%", "de los contratos no tiene ciudad",
-             "El dato no está escondido en otra columna: la fuente no lo publica. Un análisis por municipio deja fuera esa quinta parte.")}
-    {tarjeta(n(100 - pct_material, 1) + "%", "de los cambios no cambian el contrato",
-             "Cuatro de cada diez veces que la fuente publica un contrato como modificado, al contrato no le pasó nada.")}
-    {tarjeta("26,5 M", "filas con la fecha truncada",
-             "En un conjunto oficial hermano, ni el día ni el mes superan nunca el 9. La columna está tipada como fecha y parsea sin error.")}
-  </div>
-</section>
+<h2>Otras cosas que aparecieron en el camino</h2>
+<h3>El 74% de la contratación pública es directa</h3>
+{barras(d["modalidades"], "modalidad", "n", destacar=2)}
+<p class="nota">Sumando contratación directa, directa con ofertas y régimen especial,
+  la contratación sin licitación abierta supera el 90%.</p>
+
+{cifras([
+    tarjeta("7", "contratos por encima del presupuesto nacional",
+            "El mayor lo supera 23 veces y es de un instituto municipal de deportes. Los siete tienen forma válida: el sistema de tipos no los atrapa."),
+    tarjeta(n(pct_ciudad, 0) + "%", "de los contratos no tiene ciudad",
+            "El dato no está escondido en otra columna: la fuente no lo publica."),
+    tarjeta(n(100 - pct_material, 1) + "%", "de los cambios no cambian el contrato",
+            "Cuatro de cada diez veces que la fuente publica un contrato como modificado, al contrato no le pasó nada."),
+    tarjeta("26,5 M", "filas con la fecha truncada",
+            "En un conjunto oficial hermano, ni el día ni el mes superan nunca el 9. La columna está tipada como fecha y parsea sin error."),
+])}
 
 <p class="pie">
   Datos públicos de la Agencia Nacional de Contratación Pública, Colombia Compra
