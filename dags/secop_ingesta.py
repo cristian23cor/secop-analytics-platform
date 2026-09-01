@@ -64,12 +64,27 @@ segundo lugar autoritativo.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pendulum
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import DAG
 
-# El proyecto entero, desde el punto de vista del worker. Se declara una vez.
-RAIZ = "{{ var.value.get('secop_raiz', '/home/crist/projects/secop-analytics') }}"
+# Donde vive el proyecto, desde el punto de vista de quien ejecuta la tarea.
+#
+# Sale del propio archivo y no de una ruta escrita a mano: este DAG esta en
+# `<proyecto>/dags/`, asi que el proyecto es dos niveles arriba. Antes tenia una
+# ruta absoluta como valor por defecto de una variable de Airflow, y eso es lo
+# peor de las dos opciones: funcionaba en una sola maquina, y como funcionaba,
+# nadie se enteraba de que habia una variable que definir.
+#
+# Asi el DAG no necesita que se configure NADA en la interfaz de Airflow para
+# correr, que es lo que permite que CI lo pruebe sin levantar un scheduler.
+#
+# La variable sigue existiendo como escape, para el caso en que la carpeta de
+# DAGs sea una copia y no el repositorio: si esta definida, manda.
+_AQUI = Path(__file__).resolve().parent.parent
+RAIZ = f"{{{{ var.value.get('secop_raiz', '{_AQUI}') }}}}"
 
 # Codigo con el que el cargador dice "el corte ya estaba ingerido". No es un
 # error: es la respuesta correcta la mayoria de los dias.

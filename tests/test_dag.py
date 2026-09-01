@@ -107,3 +107,36 @@ def test_el_limite_de_tiempo_cubre_el_peor_caso(dag):
     tarea = dag.get_task("cargar_vivos")
     assert tarea.execution_timeout is not None, "sin limite, una corrida colgada cuelga el DAG"
     assert tarea.execution_timeout.total_seconds() >= 4 * 3600
+
+
+def test_la_raiz_apunta_al_proyecto(dag):
+    """El DAG deduce donde vive el proyecto a partir de su propio archivo.
+
+    Es lo que permite que no haya NADA que configurar en la interfaz de Airflow:
+    sin esto haria falta definir una variable, y un DAG que necesita que alguien
+    toque una interfaz antes de correr no se puede probar ni reproducir.
+
+    El modo de fallo es que apunte a un directorio que no es el proyecto. No
+    avisa: el `cd` falla recien cuando la tarea corre, cincuenta minutos despues
+    de que alguien la lanzo esperando un barrido.
+    """
+    from secop_ingesta import _AQUI
+
+    assert (_AQUI / "scripts" / "cargar_raw.py").is_file(), (
+        f"{_AQUI} no parece la raiz del proyecto: no tiene scripts/cargar_raw.py"
+    )
+    assert (_AQUI / "dags" / "secop_ingesta.py").is_file()
+
+
+def test_no_hay_rutas_absolutas_escritas_a_mano(dag):
+    """Una ruta absoluta en el archivo funciona en una maquina y en ninguna otra,
+    y como funciona, nadie se entera de que hay algo que configurar."""
+    from pathlib import Path
+
+    fuente = (Path(__file__).resolve().parent.parent / "dags"
+              / "secop_ingesta.py").read_text(encoding="utf-8")
+    for linea in fuente.splitlines():
+        codigo = linea.split("#")[0]
+        assert "'/home/" not in codigo and '"/home/' not in codigo, (
+            f"ruta absoluta en el DAG: {linea.strip()}"
+        )
