@@ -412,6 +412,7 @@ scripts/
   verificar_carga_raw.py           Contra la API real, cuatro fases
   medir_particiones.py             Distribución del universo vivo
   medir_rn1.py                     Las fuentes de financiación contra raw
+  verificar_incremental.py         Lo incremental da lo mismo que reconstruir
   subir_raw_a_snowflake.py         Sube la capa cruda a un stage, conservando la ruta
   generar_raw_sintetico.py         Datos chicos y sembrados, para que CI pueda correr dbt
   generar_tablero.py               Escribe docs/index.html desde el modelo

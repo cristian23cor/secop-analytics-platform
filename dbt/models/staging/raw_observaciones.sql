@@ -66,7 +66,7 @@
     del macro generado: es lo que impide que el esquema que dbt lee se separe del que
     la ingesta le pide a la API. -#}
 
-{{ config(materialized="table") }}
+{{ config(materialized="incremental") }}
 
 {#- Lo unico que cambia entre motores es de donde salen los archivos. La
     proyeccion de abajo es la misma para los dos, asi que las columnas y su orden
@@ -140,3 +140,4 @@ select
     {%- endfor %}
 
 from archivos
+{{ solo_particiones_nuevas() }}

@@ -119,3 +119,40 @@
     datos.{{ columna }}
     {%- endif -%}
 {%- endmacro %}
+
+
+{#- ------------------------------------------------------------------------
+    La particion como clave, y el filtro incremental que la usa.
+
+    Una particion de raw se escribe una vez, se marca con `_COMPLETO` y no
+    vuelve a cambiar. Eso es lo que permite que estos dos modelos sean
+    incrementales sin poner en riesgo la propiedad de D5: como solo se agregan
+    filas y ninguna se modifica, la ruta incremental y la de `--full-refresh`
+    dan la misma tabla por construccion, no por demostracion.
+
+    Los modelos con ventanas (el SCD2 y las dos dimensiones con historia) NO
+    entran aca: en ellos una observacion nueva tiene que CERRAR una version que
+    estaba abierta, o sea modificar una fila existente, y ahi la equivalencia
+    hay que demostrarla.
+    ------------------------------------------------------------------------ -#}
+
+{% macro clave_de_particion() -%}
+    ruta_flujo || '/' || ruta_fecha_extraccion || '/' || ruta_particion
+{%- endmacro %}
+
+
+{% macro solo_particiones_nuevas() -%}
+{%- if is_incremental() %}
+{#  La clave es el TRIPLE y no la fecha sola. El 22/08 hay tres particiones bajo
+    la misma `fecha_extraccion`, una por flujo, asi que un `> max(fecha)` las
+    trataria como una. Y una particion nueva puede llegar con una fecha ya
+    vista: retomar una interrumpida, o cargar los flujos 1 y 2 el mismo dia.
+
+    Va concatenado en vez de comparar la tupla entera porque `(a,b,c) in
+    (select ...)` no se escribe igual en los dos motores, y D9 pide que la
+    frontera del dialecto sea un macro y no un modelo.  #}
+where {{ clave_de_particion() }} not in (
+    select distinct {{ clave_de_particion() }} from {{ this }}
+)
+{%- endif %}
+{%- endmacro %}

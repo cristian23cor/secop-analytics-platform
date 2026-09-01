@@ -61,7 +61,7 @@
     `try_cast` dio nulo. Usa los mismos ayudantes que la proyección de arriba: escritos
     por separado, el contador podría medir algo distinto de lo que la columna guarda. -#}
 
-{{ config(materialized="table") }}
+{{ config(materialized="incremental") }}
 
 with origen as (
     select * from {{ ref("raw_observaciones") }}
@@ -122,3 +122,4 @@ limpio as (
 )
 
 select * from limpio
+{{ solo_particiones_nuevas() }}

@@ -164,8 +164,36 @@ def main() -> int:
     total = 0
     total += escribir(args.destino, "refresco_de_vivos", "2026-08-23", "completo", primero)
     total += escribir(args.destino, "refresco_de_vivos", "2026-08-25", "completo", segundo)
-    total += escribir(args.destino, "contratos_nuevos", "2026-08-25",
-                      "2026-08-24_a_2026-08-25", [fila(rng, n + i) for i in range(20)])
+    # Los flujos 1 y 2 corren juntos sobre la MISMA ventana, asi que escriben
+    # dos particiones que solo se distinguen por el flujo: misma
+    # `fecha_extraccion` y mismo nombre de particion. Esta en la capa cruda real
+    # (el 22/08 hay dos asi) y hay que reproducirla, porque es lo que obliga a
+    # que la clave de una particion incluya el flujo.
+    #
+    # Sin este caso, `verificar_incremental.py` daba verde con una clave que
+    # ignoraba el flujo. Se comprobo rompiendola a proposito.
+    ventana = "2026-08-24_a_2026-08-25"
+    total += escribir(args.destino, "contratos_nuevos", "2026-08-25", ventana,
+                      [fila(rng, n + i) for i in range(20)])
+    total += escribir(args.destino, "eventos_contractuales", "2026-08-25", ventana,
+                      [fila(rng, n + 100 + i) for i in range(20)])
+
+    # Y un mismo flujo con DOS particiones el mismo dia, que es lo que produce
+    # un barrido del flujo 3 partido por rangos de fecha. Hoy no hay ninguno asi
+    # en la capa cruda real, pero el diseno lo soporta (para eso existe
+    # `medir_particiones.py`) y es lo que obliga a que la clave incluya el
+    # nombre de la particion y no solo el flujo y la fecha.
+    # Los rangos llevan contratos DISJUNTOS, y el desplazamiento es una
+    # constante y no `hash(rango)`: el hash de las cadenas de Python cambia en
+    # cada proceso, asi que la salida dejaba de ser reproducible pese al
+    # `--semilla`, y de tanto en tanto los dos rangos se solapaban y metian el
+    # mismo contrato dos veces bajo la misma `fecha_extraccion`. Eso viola el
+    # supuesto que `fct_una_observacion_por_contrato_y_fecha` vigila, y el test
+    # lo atrapo.
+    for desplazamiento, rango in ((300, "2021-01-01_a_2021-02-01"),
+                                  (400, "2021-02-01_a_2021-03-01")):
+        total += escribir(args.destino, "refresco_de_vivos", "2026-08-26", rango,
+                          [fila(rng, n + desplazamiento + i) for i in range(10)])
 
     peso = sum(f.stat().st_size for f in args.destino.rglob("*.jsonl.gz"))
     print(f"OK {args.destino}  {total} observaciones, {peso / 1024:.0f} KB")

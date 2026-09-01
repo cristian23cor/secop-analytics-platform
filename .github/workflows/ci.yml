@@ -80,6 +80,16 @@ jobs:
           cd dbt
           uv run dbt build --profiles-dir . --vars '{"ruta_raw": "/tmp/raw_ci"}'
 
+      - name: Lo incremental da lo mismo que reconstruir de cero
+        # `raw_observaciones` y `stg_contratos` son incrementales, y eso mete
+        # estado acumulado donde D5 dice que no debe haberlo. La salvaguarda es
+        # `--full-refresh`, y esto comprueba que las dos rutas den la misma
+        # tabla en vez de suponerlo: construye en seis etapas y compara contra
+        # una construccion de cero, fila por fila.
+        env:
+          SECOP_DUCKDB: /tmp/ci_incremental.duckdb
+        run: uv run python scripts/verificar_incremental.py
+
       - name: Instalar Airflow
         # En su propio grupo y en su propio paso. Son 127 paquetes que los pasos
         # de arriba no necesitan, y ponerlos en el `uv sync` general obligaría a

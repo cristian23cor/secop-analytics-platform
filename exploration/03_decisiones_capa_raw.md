@@ -1350,6 +1350,104 @@ raw (cuya cifra quedó retirada por depender de un intervalo de ancho supuesto,
 ver D3) pero el número correcto es 171.
 
 
+###  Materializacion incremental: la mitad segura, el 01/09/2026
+
+Los once modelos se reconstruian enteros en cada corrida. Dos pasaron a
+incrementales y el resto no, y esa division no es de rendimiento sino
+estructural.
+
+#### Que se puede y que no
+
+`raw_observaciones` y `stg_contratos` son transformaciones **fila a fila** sobre
+particiones que no cambian: una particion se escribe una vez, se marca con
+`_COMPLETO` y no se toca mas. Incremental ahi solo agrega filas, asi que la
+propiedad de D5 (borrar y reconstruir da lo mismo) se conserva **por
+construccion**.
+
+El SCD2 y las dos dimensiones con historia no. Ahi una observacion nueva tiene
+que **cerrar la version que estaba abierta**, o sea modificar una fila que ya
+existe. Eso necesita `merge` con una ventana de retroceso y la equivalencia hay
+que demostrarla en serio. Se dejaron como tabla, y esa decision queda abierta.
+
+#### La clave de una particion es el triple, no la fecha
+
+El filtro natural, `where fecha > (select max(fecha) from this)`, esta mal, y el
+motivo esta en la capa cruda real: el 22/08 hay dos particiones con la **misma
+`fecha_extraccion` y el mismo nombre de particion**, una de cada flujo, porque
+los flujos 1 y 2 corren juntos sobre la misma ventana. Un filtro por fecha las
+trata como una y pierde la segunda sin fallar.
+
+La clave es `flujo/fecha/particion`, concatenada. Va concatenada y no como tupla
+porque `(a,b,c) in (select ...)` no se escribe igual en los dos motores, y D9
+pide que el dialecto viva en un macro.
+
+La estrategia es `append` y no `merge`: las particiones son disjuntas, asi que no
+hay nada que actualizar y un `merge` costaria un anti-join sobre 2,9 millones de
+filas para protegerse de algo que no puede pasar.
+
+#### Lo que se midio, y lo que se esperaba de mas
+
+| | |
+|---|---|
+| Construccion completa de los dos modelos y sus tests | 252 s |
+| Segunda pasada incremental, sin nada nuevo | **88 s** |
+
+Las dos tablas quedan con las mismas 2.902.163 filas.
+
+La estimacion previa era mas optimista, unos 10 segundos, y estaba mal por una
+razon que se midio antes de escribir el codigo: **el filtro no evita abrir los
+archivos.** Un `where` sobre la columna que sale del nombre del archivo poda el
+parseo, no la apertura. Contra los 898 MB reales, una consulta que no devuelve
+ni una fila igual tarda casi seis segundos, y con las 67 columnas del modelo
+pesa mas. Donde esta el ahorro grande es en `stg_contratos`, que lee una tabla y
+no archivos.
+
+#### El modo de fallo que queda, escrito
+
+Una particion reescrita con `--forzar-corte-repetido` **no se vuelve a leer**: su
+clave ya esta en la tabla. Hay que reconstruir con `--full-refresh`. No se
+intento resolverlo automaticamente porque cualquier deteccion (comparar conteos,
+mirar marcas de tiempo) seria una segunda respuesta a una pregunta que el
+manifiesto ya contesta, y hoy no hay modelo que lo lea.
+
+#### Y se demuestra, no se supone
+
+`scripts/verificar_incremental.py` construye la capa sintetica en **seis etapas**,
+agregando una particion por vez, y compara el resultado contra una construccion
+de cero con `--full-refresh`, fila por fila y en los dos sentidos. Corre en 39
+segundos y esta en CI.
+
+Las seis etapas no son decorativas: se probo el verificador rompiendo el filtro a
+proposito seis veces y **la primera version solo detectaba tres**. Cargaba varias
+particiones juntas, asi que el filtro por fecha sola las dejaba pasar y la prueba
+daba verde con el filtro roto.
+
+Arreglarlo obligo a sembrar dos casos nuevos en el generador sintetico: dos
+flujos escribiendo la misma fecha y la misma ventana (que existe en la capa cruda
+real) y un mismo flujo con dos particiones el mismo dia (que el diseno soporta
+para un barrido partido, aunque hoy no haya ninguno). Con esos dos casos, las
+seis mutaciones se detectan.
+
+> Un dato de prueba en el que todo sale bien prueba que el codigo corre, no que
+> decida bien. Y un verificador que solo se vio dar verde tampoco esta probado.
+
+#### El caso nuevo destapo un defecto en el generador
+
+Al sembrar el barrido partido, los dos rangos recibieron su desplazamiento de
+contratos con `hash(rango) % 50`. El hash de las cadenas de Python **cambia en
+cada proceso**, asi que el generador dejo de ser reproducible pese a tener un
+parametro `--semilla`, y de tanto en tanto los dos rangos se solapaban y metian
+el mismo contrato dos veces bajo la misma `fecha_extraccion`.
+
+Lo atrapo `fct_una_observacion_por_contrato_y_fecha`, el test que vigila el
+supuesto no escrito del SCD2. Un test del modelo encontrando un defecto en los
+datos de prueba es exactamente para lo que estaba puesto, y es la segunda vez que
+un arnes de este proyecto encuentra un error en su propia fixture.
+
+> Una semilla que no reproduce no es una semilla. Si el generador acepta
+> `--semilla`, dos corridas tienen que dar los mismos bytes, y eso se comprueba
+> comparandolos.
+
 ###  Los reintentos ante 429 y 5xx, escritos el 31/08/2026
 
 El TODO más viejo del módulo. Cada barrido son unas 570 peticiones y cincuenta
