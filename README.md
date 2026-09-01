@@ -398,6 +398,7 @@ exploration/                    Cuatro documentos con el razonamiento completo
   00_inventario_fuentes.md        La fuente principal, sus hallazgos, el glosario
   01_modelo_dimensional.md        El modelo, las reglas de negocio, las preguntas abiertas
   02_ecosistema_secop.md          Los datasets hermanos y por qué no entran
+  cadencia.csv              Un dia por linea. El unico dato no recuperable
   03_decisiones_capa_raw.md       Cada decisión con su alternativa descartada
 
 src/secop_analytics/
@@ -418,6 +419,7 @@ scripts/
   medir_particiones.py             Distribución del universo vivo
   medir_rn1.py                     Las fuentes de financiación contra raw
   verificar_incremental.py         Lo incremental da lo mismo que reconstruir
+  sondear.py                       Que corte esta publicado. Lo corre Actions
   subir_raw_a_snowflake.py         Sube la capa cruda a un stage, conservando la ruta
   generar_raw_sintetico.py         Datos chicos y sembrados, para que CI pueda correr dbt
   generar_tablero.py               Escribe docs/index.html desde el modelo
@@ -436,7 +438,8 @@ docs/
   index.html             El tablero. Lo publica GitHub Pages; lo escribe el generador
 
 .github/workflows/
-  ci.yml                 Cinco comprobaciones, ninguna toca la red
+  ci.yml                 Seis comprobaciones, ninguna toca la red
+  sondeo.yml             Cada tres horas: pregunta por el corte y avisa
 
 tests/                   215 tests. Los 5 del DAG se saltan si Airflow no está
 ```

@@ -1,0 +1,96 @@
+# Pregunta que corte de la fuente esta publicado, y avisa cuando cambia.
+#
+# Vive en GitHub Actions y no en el DAG de Airflow por una razon concreta: el
+# DAG corre en una maquina que se apaga, y esto tiene que funcionar de noche y
+# los fines de semana. El registro de cadencia es el unico insumo del proyecto
+# que no se recupera hacia atras.
+name: Sondeo de la fuente
+
+on:
+  schedule:
+    # Cada tres horas, en UTC. Colombia es UTC-5, asi que estas ocho caen a las
+    # 20, 23, 02, 05, 08, 11, 14 y 17 hora colombiana.
+    #
+    # El offset no es casual: las tres regeneraciones conocidas ocurrieron entre
+    # las 04:06 y las 04:41 COT, y el sondeo de las 10:00 UTC cae a las 05:00
+    # COT, unos veinte minutos despues de la mas tardia. Con tres observaciones
+    # esa ventana no es una ley, por eso se sigue preguntando las otras siete
+    # veces.
+    - cron: "0 1-23/3 * * *"
+  # Y a mano, para probarlo sin esperar tres horas.
+  workflow_dispatch:
+
+permissions:
+  contents: write   # para anotar la linea del dia
+  issues: write     # para avisar cuando la fuente se mueve
+
+# Dos sondeos a la vez pelearian por el mismo archivo y por el push.
+concurrency:
+  group: sondeo
+  cancel-in-progress: false
+
+jobs:
+  sondear:
+    name: Que corte esta publicado
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Instalar dependencias
+        run: uv sync --frozen
+
+      - name: Preguntar
+        id: sondeo
+        env:
+          SOCRATA_APP_TOKEN: ${{ secrets.SOCRATA_APP_TOKEN }}
+        run: |
+          set +e
+          uv run python scripts/sondear.py
+          codigo=$?
+          set -e
+          # 0 = no se movio, 5 = regenero. Los dos son respuestas correctas y
+          # ninguno es un fallo: es el mismo criterio por el que el cargador
+          # devuelve 4 en vez de 1. Cualquier otro codigo si aborta.
+          if [ "$codigo" -ne 0 ] && [ "$codigo" -ne 5 ]; then
+            echo "El sondeo fallo con codigo $codigo"
+            exit "$codigo"
+          fi
+
+      - name: Anotar la linea del dia
+        # Solo cuando hay algo que guardar. Sin esto serian ocho commits diarios.
+        if: steps.sondeo.outputs.guardar == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add exploration/cadencia.csv
+          if git diff --staged --quiet; then
+            echo "El registro no cambio."
+          else
+            git commit -m "sondeo: corte ${{ steps.sondeo.outputs.corte }}"
+            git push
+          fi
+
+      - name: Avisar que la fuente regenero
+        if: steps.sondeo.outputs.regenero == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "La fuente regenero: corte ${{ steps.sondeo.outputs.corte }}" \
+            --body "El corte publicado cambio. Hay una observacion nueva que se
+          pierde si la fuente vuelve a regenerar antes de ingerirla.
+
+          Para cargarla:
+
+              uv run python scripts/cargar_raw.py --flujo vivos
+
+          Son unos cincuenta minutos y corre desatendido: los reintentos absorben
+          un 429 pasajero. Al terminar, regenerar el tablero para que la tira de
+          cadencia y el conteo de dias queden al dia.
+
+          Corte nuevo: \`${{ steps.sondeo.outputs.corte }}\`"

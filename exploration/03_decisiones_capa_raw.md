@@ -1350,6 +1350,74 @@ raw (cuya cifra quedó retirada por depender de un intervalo de ancho supuesto,
 ver D3) pero el número correcto es 171.
 
 
+###  El registro de cadencia, y quien lo escribe: 01/09/2026
+
+Cierra la pregunta abierta de donde vive el registro de sondeo, y la cierra de
+una forma que no estaba entre las opciones que se habian pensado.
+
+#### El registro vive en `exploration/cadencia.csv`
+
+Una linea por dia, versionada. No en `datos/`, que no va a git: esto es una
+medicion y no datos crudos, pesa unos bytes por dia, y es **lo unico del proyecto
+que no se recupera hacia atras**. Un dia que nadie miro es un dia perdido, porque
+la fuente ya sobrescribio.
+
+No crea un segundo lugar autoritativo, que era el reparo: los manifiestos guardan
+los cortes **ingeridos**, y este archivo los **vistos**. Son conjuntos distintos y
+los vistos-y-no-cargados son justamente los que miden la cadencia.
+
+El tablero lo lee en vez de tener su propia copia. Antes tenia la lista escrita a
+mano en una constante de Python, y eso ya se habia separado: **el tablero
+publicado mostraba el 30 de agosto como "nadie miro" cuando se puede deducir que
+no regenero.**
+
+#### La deduccion, escrita
+
+El corte solo avanza. Si dos observaciones que rodean un dia muestran **el mismo**
+corte, ese dia no regenero: una regeneracion lo habria movido y no puede volver
+atras. Si los cortes difieren, los dias del medio son genuinamente desconocidos,
+porque pudieron regenerar y quedar pisados.
+
+Aplicada de forma pareja, la regla convierte dos dias de "no se sabe" en "no
+regenero" (el 27 y el 30 de agosto) y deja cuatro genuinamente desconocidos. El
+tablero deducia uno de los dos y el otro no, sin motivo.
+
+#### Quien lo escribe, y por que no es Airflow
+
+**Lo escribe GitHub Actions con un cron, no el DAG.** El motivo es que Airflow
+corre en una maquina que se apaga, y la fuente no espera a que la enciendan. La
+pregunta cuesta dos segundos y el repositorio ya tiene Actions montado.
+
+Y hay una segunda razon: el DAG corre el cargador, que sale por codigo 4 cuando
+el corte ya se ingirio, **sin dejar rastro de haber preguntado**. Un sondeo que no
+carga no es lo mismo que una carga que no hizo falta.
+
+`scripts/sondear.py` devuelve codigo 5 cuando la fuente regenero, distinto de 0 y
+de los errores. Es el mismo criterio del 4 del cargador: quien orqueste tiene que
+poder separar "hay trabajo" de "algo se rompio".
+
+#### Dos decisiones que salieron de imaginarlo corriendo
+
+**Sondea cada tres horas pero escribe una vez al dia.** Si commiteara en cada
+sondeo serian ocho commits diarios de ruido en un historial que alguien va a
+leer. Los sondeos frecuentes existen para **detectar rapido**; el registro
+necesita una linea por dia. Se escribe en el primer sondeo del dia, y despues
+solo si el corte cambio.
+
+**Un sondeo posterior agrega informacion, nunca la quita.** Salio de ver la
+salida: la consulta al testigo puede fallar sin abortar el sondeo, y sin cuidado
+un fallo pasajero al mediodia borraba el testigo bueno de la manana. Lo mismo con
+la bandera de regeneracion: una vez que el dia se marco como `si`, un sondeo
+posterior que vea el mismo corte no lo baja.
+
+#### Lo que queda cojo, y conviene decirlo
+
+El tablero lee el registro, pero solo se regenera a mano. Asi que entre una
+ingesta y la siguiente su tira de cadencia va a ir quedando atras respecto del
+CSV. No es grave (la pagina dice con que fecha se genero) y el desfase esta
+acotado por la cadencia de ingesta, que es cuando la tira importa. Regenerarlo
+desde Actions exigiria la base DuckDB, que no esta ahi.
+
 ###  Materializacion incremental: la mitad segura, el 01/09/2026
 
 Los once modelos se reconstruian enteros en cada corrida. Dos pasaron a

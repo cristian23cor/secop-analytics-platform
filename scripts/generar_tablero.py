@@ -42,6 +42,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import csv
 import html
 import sys
 from datetime import date
@@ -63,24 +64,34 @@ SALIDA = BASE / "docs" / "index.html"
 # El registro de sondeo. No sale de la base: son observaciones de la fuente que
 # no se cargaron, y por eso ningún manifiesto las tiene. Ver la pregunta abierta
 # sobre dónde debería vivir este registro.
-CADENCIA: list[tuple[str, str]] = [
-    ("2026-08-18", "regenero"),
-    ("2026-08-19", "sin observar"),
-    ("2026-08-20", "regenero"),
-    ("2026-08-21", "no regenero"),
-    ("2026-08-22", "sin observar"),
-    ("2026-08-23", "sin observar"),
-    ("2026-08-24", "sin observar"),
-    ("2026-08-25", "regenero"),
-    ("2026-08-26", "no regenero"),
-    ("2026-08-27", "no regenero"),
-    ("2026-08-28", "no regenero"),
-    ("2026-08-29", "no regenero"),
-    ("2026-08-30", "sin observar"),
-    ("2026-08-31", "no regenero"),
-    ("2026-09-01", "no regenero"),
-]
-CORTE_VIVO = "2026-08-25T09:05:54.277Z"
+# La cadencia y el corte vivo salen del registro, no de una lista escrita aca.
+# Es el mismo criterio que con las columnas: un dato que existe en un archivo no
+# se copia a otro, porque el dia que se separen nadie se entera.
+REGISTRO = BASE / "exploration" / "cadencia.csv"
+
+# El registro dice si/no/vacio; la tira necesita el nombre de su estado.
+_ESTADO = {"si": "regenero", "no": "no regenero", "": "sin observar"}
+
+
+def leer_cadencia() -> tuple[list[tuple[str, str]], str]:
+    """Devuelve los dias con su estado, y el ultimo corte visto.
+
+    El corte vivo es el de la ultima linea que lo trae: los dias deducidos y los
+    que nadie miro lo dejan vacio, y eso no significa que la fuente no tuviera
+    corte sino que ese dia no se consulto.
+    """
+    filas = [
+        f for f in csv.DictReader(
+            l for l in REGISTRO.read_text(encoding="utf-8").splitlines()
+            if not l.startswith("#")
+        )
+    ]
+    dias = [(f["fecha"], _ESTADO[f["regenero"]]) for f in filas]
+    corte = next(f["corte_vivo"] for f in reversed(filas) if f["corte_vivo"])
+    return dias, corte
+
+
+CADENCIA, CORTE_VIVO = leer_cadencia()
 
 # El margen con el que el mart separa las dos poblaciones. Se repite acá porque
 # el tablero lo tiene que explicar, no porque lo decida: la fuente es el modelo.
