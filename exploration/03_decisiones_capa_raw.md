@@ -1997,6 +1997,47 @@ poder avanzar, **no un dato**: el salto máximo observado es de cinco días y el
 salto en curso es de tres. Se verifica con el registro de sondeo. Si un intervalo
 pasa de siete días, hay que volver acá.
 
+#### Comprobado el 01/09/2026: el supuesto no se sostiene
+
+**El intervalo llegó a siete días sin regenerar y el supuesto se retira.** El
+corte vivo sigue siendo el del 25 de agosto (`2026-08-25T09:05:54.277Z`)
+comprobado el 1 de septiembre, o sea una semana entera, que es justo el umbral
+que esta nota se puso a sí misma para volver acá.
+
+Y no es la plataforma: el testigo escribió ese mismo día a las 10:21 COT. Lo
+detenido es el proceso que rehace la vista publicada, no Socrata.
+
+La cadencia observada, sobre quince días de calendario y diez de observación:
+
+| | |
+|---|---|
+| Regeneraciones | 3 (18, 20 y 25 de agosto) |
+| Días comprobados sin regenerar | 7 |
+| Saltos entre regeneraciones | 2 días, 5 días, y uno en curso de 7 o más |
+
+**Lo que reemplaza al supuesto es no tener ninguno.** No hay cota superior
+establecida para el intervalo, y con tres regeneraciones no se puede estimar una:
+lo único que se sabe es que el máximo observado crece cada vez que se mira.
+
+Eso no obliga a rediseñar nada, y conviene decir por qué: el diseño ya estaba
+escrito para no depender de la cadencia. El disparador es el corte y no el
+calendario (D11), el DAG no lleva horario, y las columnas se llaman
+`observado_desde` y `observado_hasta` justamente porque un intervalo largo
+significa que no miramos, no que nada cambió. Lo que se cae es la
+**planificación**, no la arquitectura.
+
+De las tres cosas que dependían del supuesto: el umbral de `freshness` no se
+puede fijar sin una cota superior, así que sigue abierto; el margen del DAG no
+dependía de la cadencia sino de cuánto dura un barrido, y ya está puesto contra
+el peor caso; y del patrón de días hábiles no hay evidencia, salvo que las tres
+regeneraciones cayeron en día hábil y ninguna en fin de semana.
+
+**La consecuencia que sí duele es de producto y no de código.** La población
+medible del mart crece solo cuando la fuente regenera y se ingiere. Sigue en 39
+contratos para la pregunta del valor, y va a seguir ahí hasta que la fuente se
+mueva.
+
+
 ### El registro de sondeo
 
 Una línea por día: fecha, hora COT y el valor de `max(:updated_at)`. Es lo único

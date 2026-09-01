@@ -175,10 +175,15 @@ Ninguna de las dos fichas declara que uno sea vista del otro.
 Esta es la que más costó, porque la evidencia estaba escrita y nadie la había
 leído.
 
-La ficha oficial dice que el conjunto se actualiza a diario. En nueve días
-observados hubo tres regeneraciones y cuatro días sin ninguna, tres de ellos
-consecutivos. Los saltos entre cortes conocidos son de dos y de cinco días. No
-hay un solo par de cortes separados por exactamente un día.
+La ficha oficial dice que el conjunto se actualiza a diario. En diez días
+observados hubo tres regeneraciones y siete días sin ninguna. Los saltos entre
+cortes conocidos son de dos y de cinco días, y el que está en curso lleva siete:
+el 1 de septiembre de 2026 seguía publicado el corte del 25 de agosto. No hay un
+solo par de cortes separados por exactamente un día.
+
+Y no es una caída de la plataforma. Un conjunto oficial hermano, que escribe en
+continuo, registró escrituras esa misma mañana. Lo que está detenido es el
+proceso que rehace la vista publicada.
 
 Se detecta con una petición de dos segundos, porque todas las filas comparten el
 mismo sello de tiempo. Y para descartar que fuera una caída de la plataforma
@@ -319,7 +324,7 @@ sí admiten reprocesar el pasado, pero devuelven una sola observación por contr
 (la de hoy, filtrada por una fecha vieja) y no una serie.
 
 **La serie tiene la resolución de la fuente, no la diaria.** Entre dos
-regeneraciones separadas por cinco días, dos modificaciones del mismo contrato son
+regeneraciones separadas por siete días, dos modificaciones del mismo contrato son
 indistinguibles: llegan juntas en el mismo corte. El diseño lo aguanta; lo que no
 se puede es inventar los días que faltan.
 

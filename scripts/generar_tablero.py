@@ -78,6 +78,7 @@ CADENCIA: list[tuple[str, str]] = [
     ("2026-08-29", "no regenero"),
     ("2026-08-30", "sin observar"),
     ("2026-08-31", "no regenero"),
+    ("2026-09-01", "no regenero"),
 ]
 CORTE_VIVO = "2026-08-25T09:05:54.277Z"
 
@@ -304,7 +305,12 @@ def pagina(d: dict) -> str:
     total_pesos = (med["pesos"] + amp["pesos"]) / 1e9
     acort = med["acortamientos"] + amp["acortamientos"]
     reduc = med["reducciones"] + amp["reducciones"]
-    congelada = (date.fromisoformat(d["generado"]) - date(2026, 8, 25)).days
+    # Contra el corte vivo y no contra una fecha escrita aparte: el dia que la
+    # fuente regenere, `CORTE_VIVO` cambia y esta cuenta lo sigue sola.
+    regenero = sum(1 for _, e_ in CADENCIA if e_ == "regenero")
+    no_regenero = sum(1 for _, e_ in CADENCIA if e_ == "no regenero")
+    congelada = (date.fromisoformat(d["generado"])
+                 - date.fromisoformat(CORTE_VIVO[:10])).days
     pct_ciudad = d["sin_ciudad"] / d["observaciones"] * 100
     pct_material = d["cambios_materiales"] / 52954 * 100
 
@@ -366,8 +372,9 @@ def pagina(d: dict) -> str:
 <p class="intro">La ficha oficial dice que el conjunto se actualiza a diario. Se
   comprobó con una petición de dos segundos, repetida todos los días, y es falso.</p>
 {tira_de_cadencia(CADENCIA)}
-<p class="nota">Cada celda es un día de agosto de 2026. Tres regeneraciones y cinco
-  días sin regenerar, entre los días en que alguien miró.</p>
+<p class="nota">Cada celda es un día observado. {e(n(regenero))} regeneraciones y
+  {e(n(no_regenero))} días sin regenerar, sobre {e(n(regenero + no_regenero))} días
+  en que alguien miró; los grises nadie los comprobó.</p>
 <p class="aviso">Al generar este tablero la fuente lleva <b>{e(congelada)} días</b>
   sin regenerarse. No es una caída de la plataforma: un conjunto hermano que escribe
   en continuo registró escrituras esa misma mañana. Lo que está detenido es el
