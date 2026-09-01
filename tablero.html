@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>La historia que SECOP borra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+/* Tipografía. Newsreader para titulares: es una serif de texto pensada para
+   lectura larga, con más carácter que una grotesca y sin el aire de folleto de
+   una display. IBM Plex Sans para el cuerpo y la interfaz. IBM Plex Mono para
+   cifras, fechas y etiquetas, porque el vocabulario de este tema es la marca de
+   tiempo y el identificador de contrato. */
+:root {
+  color-scheme: light;
+  --plano:      #f9f9f7;
+  --superficie: #fcfcfb;
+  --tinta:      #0b0b0b;
+  --tinta-2:    #52514e;
+  --tinta-3:    #898781;
+  --linea:      #e1e0d9;
+  --borde:      rgba(11,11,11,.10);
+  --serie-1:    #2a78d6;
+  --serie-2:    #eb6834;
+  --contexto:   #c9c8bf;
+  --bien:       #0ca30c;
+  --mal:        #d03b3b;
+  --neutro:     #d5d4cc;
+  --chip:       rgba(208,59,59,.10);
+
+  --titular: "Newsreader", Georgia, "Times New Roman", serif;
+  --texto:   "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --dato:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --plano: #0d0d0d; --superficie: #1a1a19; --tinta: #ffffff; --tinta-2: #c3c2b7;
+    --tinta-3: #898781; --linea: #2c2c2a; --borde: rgba(255,255,255,.10);
+    --serie-1: #3987e5; --serie-2: #d95926; --contexto: #46453f; --neutro: #33322e;
+    --chip: rgba(208,59,59,.18);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --plano: #0d0d0d; --superficie: #1a1a19; --tinta: #ffffff; --tinta-2: #c3c2b7;
+  --tinta-3: #898781; --linea: #2c2c2a; --borde: rgba(255,255,255,.10);
+  --serie-1: #3987e5; --serie-2: #d95926; --contexto: #46453f; --neutro: #33322e;
+  --chip: rgba(208,59,59,.18);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--plano); color: var(--tinta);
+  font: 400 15.5px/1.65 var(--texto);
+  -webkit-font-smoothing: antialiased;
+}
+.hoja { max-width: 860px; margin: 0 auto; padding: 0 24px 96px; }
+
+/* La banda de estado. Va arriba de todo porque en un tablero lo primero es en
+   qué estado está la fuente, no cuántas filas hay. */
+.banda {
+  display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: baseline;
+  border-bottom: 1px solid var(--linea); padding: 14px 0 13px; margin-bottom: 40px;
+  font-family: var(--dato); font-size: 12px; letter-spacing: .01em;
+  color: var(--tinta-3);
+}
+.banda b { color: var(--tinta); font-weight: 500; }
+.chip {
+  background: var(--chip); color: var(--mal); border-radius: 4px;
+  padding: 2px 7px; font-weight: 600; letter-spacing: .02em;
+}
+
+h1 { font: 400 clamp(30px, 5.2vw, 44px)/1.12 var(--titular); margin: 0 0 16px;
+     letter-spacing: -.015em; text-wrap: balance; max-width: 18ch; }
+h2 { font: 400 24px/1.2 var(--titular); margin: 0 0 8px; letter-spacing: -.01em;
+     text-wrap: balance; }
+h3 { font-family: var(--texto); font-size: 12px; font-weight: 600; margin: 28px 0 10px;
+     color: var(--tinta-3); text-transform: uppercase; letter-spacing: .07em; }
+p { margin: 0 0 14px; }
+.entrada { color: var(--tinta-2); font-size: 17px; line-height: 1.6; max-width: 62ch; }
+.nota { color: var(--tinta-3); font-size: 13px; line-height: 1.55; margin: 10px 0 0;
+        max-width: 68ch; }
+.pie { color: var(--tinta-3); font-size: 12.5px; border-top: 1px solid var(--linea);
+       margin-top: 56px; padding-top: 22px; max-width: 68ch; }
+code { font-family: var(--dato); font-size: .92em; }
+
+section { background: var(--superficie); border: 1px solid var(--borde);
+          border-radius: 3px; padding: 28px; margin: 20px 0; }
+section > p:last-child, section > div:last-child { margin-bottom: 0; }
+.encabezado { border: 0; background: none; padding: 0; margin: 0 0 36px; }
+
+.rejilla { display: grid; gap: 1px; background: var(--borde);
+           border: 1px solid var(--borde); border-radius: 3px;
+           grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); }
+.tarjeta { background: var(--superficie); padding: 16px 18px; }
+.cifra { font-family: var(--dato); font-size: 25px; font-weight: 500; margin: 0;
+         letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.etiqueta { font-size: 12.5px; color: var(--tinta-2); margin: 3px 0 0; line-height: 1.4; }
+.tarjeta .nota { font-size: 12px; margin-top: 8px; }
+
+.barras { margin: 6px 0 0; }
+.fila { display: grid; grid-template-columns: minmax(120px, 16em) 1fr 5.5em;
+        gap: 14px; align-items: center; padding: 3px 0; position: relative; }
+.nombre { font-size: 12.5px; color: var(--tinta-2); overflow: hidden;
+          text-overflow: ellipsis; white-space: nowrap; }
+.pista { height: 14px; display: block; }
+.barra { display: block; height: 14px; border-radius: 0 4px 4px 0; }
+.barra.serie { background: var(--serie-1); }
+.barra.contexto { background: var(--contexto); }
+.valor { font-family: var(--dato); font-size: 12.5px; color: var(--tinta);
+         text-align: right; font-variant-numeric: tabular-nums; }
+
+.fila[data-detalle]:hover::after, .dia[data-detalle]:hover::after {
+  content: attr(data-detalle); position: absolute; left: 0; top: 100%;
+  transform: translateY(3px); z-index: 5;
+  background: var(--tinta); color: var(--superficie);
+  font-family: var(--texto); font-size: 12px; line-height: 1.45;
+  padding: 7px 10px; border-radius: 4px;
+  white-space: normal; max-width: 34em; pointer-events: none;
+  box-shadow: 0 3px 14px rgba(0,0,0,.20);
+}
+
+.tira { display: flex; gap: 3px; flex-wrap: wrap; margin: 12px 0 0; }
+.dia { position: relative; width: 46px; height: 46px; border-radius: 3px;
+       display: flex; align-items: center; justify-content: center; }
+.dia .num { font-family: var(--dato); font-size: 12px; font-weight: 500;
+            font-variant-numeric: tabular-nums; }
+.dia.bien   { background: var(--bien);   color: #fff; }
+.dia.mal    { background: var(--mal);    color: #fff; }
+.dia.neutro { background: var(--neutro); color: var(--tinta-3); }
+.leyenda { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px;
+           font-size: 12px; color: var(--tinta-2); }
+.clave { display: flex; align-items: center; gap: 7px; }
+.punto { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.punto.bien { background: var(--bien); } .punto.mal { background: var(--mal); }
+.punto.neutro { background: var(--neutro); }
+
+.dos { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(272px, 1fr)); }
+.caja { border: 1px solid var(--borde); border-radius: 3px; padding: 18px; }
+.caja h3 { margin-top: 0; }
+.caja.medible { border-color: var(--serie-1); border-width: 1px 1px 1px 3px; }
+.par { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0;
+       border-bottom: 1px solid var(--linea); font-size: 13.5px; }
+.par:last-of-type { border-bottom: 0; }
+.par b { font-family: var(--dato); font-variant-numeric: tabular-nums; font-weight: 500; }
+
+.tabla { margin-top: 14px; }
+.tabla summary { font-size: 12px; color: var(--tinta-3); cursor: pointer; }
+.tabla summary:focus-visible { outline: 2px solid var(--serie-1); outline-offset: 2px; }
+.tabla > table { border-collapse: collapse; margin-top: 10px; font-size: 13px; width: 100%; }
+.tabla td { border-bottom: 1px solid var(--linea); padding: 5px 8px; }
+.tabla td:last-child { text-align: right; font-family: var(--dato);
+                       font-variant-numeric: tabular-nums; }
+
+.aviso { border-left: 2px solid var(--serie-2); padding-left: 16px; color: var(--tinta-2);
+         font-size: 14.5px; }
+.envoltura { overflow-x: auto; }
+table.ranking { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 10px; }
+table.ranking th { text-align: left; font-weight: 600; color: var(--tinta-3);
+                   font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+                   padding: 5px 8px; border-bottom: 1px solid var(--linea); white-space: nowrap; }
+table.ranking td { padding: 6px 8px; border-bottom: 1px solid var(--linea); }
+table.ranking td.num { text-align: right; font-family: var(--dato);
+                       font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (max-width: 620px) {
+  .fila { grid-template-columns: minmax(88px, 9em) 1fr 4.5em; gap: 10px; }
+  .hoja { padding: 0 16px 64px; }
+  section { padding: 20px; }
+}
+</style>
+</head><body>
+<div class="hoja">
+
+<div class="banda">
+  <span>corte vivo de la fuente <b>2026-08-25</b></span>
+  <span>sin regenerarse <span class="chip">6 días</span></span>
+  <span>contratos versionados <b>2.849.209</b></span>
+  <span>tablero generado <b>2026-08-31</b></span>
+</div>
+
+<header class="encabezado">
+  <h1>La historia que SECOP borra cada vez que publica</h1>
+  <p class="entrada">
+    Colombia publica todos sus contratos públicos como datos abiertos. Cada vez que
+    regenera el conjunto lo reemplaza entero, así que nadie puede saber cuánto valía
+    un contrato antes de una adición, ni cuántas veces le corrieron el plazo. Este
+    proyecto guarda una foto de cada corte y reconstruye esa serie.
+  </p>
+</header>
+
+<section>
+  <h2>Lo que hay guardado</h2>
+  <div class="rejilla">
+    <div class="tarjeta"><p class="cifra">2.902.163</p><p class="etiqueta">observaciones en la capa cruda</p></div>
+    <div class="tarjeta"><p class="cifra">2.849.209</p><p class="etiqueta">contratos distintos</p></div>
+    <div class="tarjeta"><p class="cifra">2.881.640</p><p class="etiqueta">versiones en la serie</p></div>
+    <div class="tarjeta"><p class="cifra">88.395</p><p class="etiqueta">cambios anotados columna por columna</p></div>
+    <div class="tarjeta"><p class="cifra">5.162</p><p class="etiqueta">entidades contratantes</p></div>
+    <div class="tarjeta"><p class="cifra">895 MB</p><p class="etiqueta">en disco, comprimido</p></div>
+  </div>
+  <p class="nota">Frente a guardar la foto entera sin comprimir en cada corte, la
+    reducción es de al menos 428 veces: 8,9 los pone la compresión y 48,2 la
+    deduplicación por huella antes de escribir.</p>
+</section>
+
+<section>
+  <h2>La fuente declara frecuencia diaria y no la cumple</h2>
+  <p class="entrada">La ficha oficial dice que el conjunto se actualiza a diario. Se
+    comprobó con una petición de dos segundos, repetida todos los días, y es falso.</p>
+  <div class="tira"><div class="dia bien" data-detalle="2026-08-18: se regeneró"><span class="num">18</span></div><div class="dia neutro" data-detalle="2026-08-19: nadie miró"><span class="num">19</span></div><div class="dia bien" data-detalle="2026-08-20: se regeneró"><span class="num">20</span></div><div class="dia mal" data-detalle="2026-08-21: NO se regeneró"><span class="num">21</span></div><div class="dia neutro" data-detalle="2026-08-22: nadie miró"><span class="num">22</span></div><div class="dia neutro" data-detalle="2026-08-23: nadie miró"><span class="num">23</span></div><div class="dia neutro" data-detalle="2026-08-24: nadie miró"><span class="num">24</span></div><div class="dia bien" data-detalle="2026-08-25: se regeneró"><span class="num">25</span></div><div class="dia mal" data-detalle="2026-08-26: NO se regeneró"><span class="num">26</span></div><div class="dia mal" data-detalle="2026-08-27: NO se regeneró"><span class="num">27</span></div><div class="dia mal" data-detalle="2026-08-28: NO se regeneró"><span class="num">28</span></div><div class="dia mal" data-detalle="2026-08-29: NO se regeneró"><span class="num">29</span></div><div class="dia neutro" data-detalle="2026-08-30: nadie miró"><span class="num">30</span></div><div class="dia mal" data-detalle="2026-08-31: NO se regeneró"><span class="num">31</span></div></div><div class="leyenda"><span class="clave"><span class="punto bien"></span>se regeneró</span><span class="clave"><span class="punto mal"></span>no se regeneró</span><span class="clave"><span class="punto neutro"></span>sin observación</span></div>
+  <p class="nota">Cada celda es un día de agosto de 2026. Tres regeneraciones y cinco
+    días sin regenerar, entre los días en que alguien miró.</p>
+  <p class="aviso">Al generar este tablero la fuente lleva <b>6 días</b>
+    sin regenerarse. No es una caída de la plataforma: un conjunto hermano que escribe
+    en continuo registró escrituras esa misma mañana. Lo que está detenido es el
+    proceso que rehace la vista publicada.</p>
+  <p class="nota">De ahí sale una decisión de ingeniería: el pipeline no se puede
+    disparar por reloj, porque ningún horario acierta contra un evento que a veces no
+    ocurre. Se dispara por el estado de la fuente.</p>
+</section>
+
+<section>
+  <h2>El evento más frecuente es el que la fuente no registra</h2>
+  <p class="entrada">De las 28 columnas que cuentan como cambio real, estas son las que
+    más se movieron. Las cuatro primeras son ejecución financiera: pagos y facturación.
+    Ninguna fecha las acompaña, así que la única manera de detectarlas es volver a
+    bajar el contrato entero y compararlo con la observación anterior.</p>
+  <div class="barras"><div class="fila" data-detalle="valor_pendiente_de_pago: 18.510 contratos"><span class="nombre">valor_pendiente_de_pago</span><span class="pista"><span class="barra serie" style="width:100.0%"></span></span><span class="valor">18.510</span></div><div class="fila" data-detalle="valor_pendiente_de_ejecucion: 18.431 contratos"><span class="nombre">valor_pendiente_de_ejecucion</span><span class="pista"><span class="barra serie" style="width:99.6%"></span></span><span class="valor">18.431</span></div><div class="fila" data-detalle="valor_facturado: 18.123 contratos"><span class="nombre">valor_facturado</span><span class="pista"><span class="barra serie" style="width:97.9%"></span></span><span class="valor">18.123</span></div><div class="fila" data-detalle="valor_pagado: 16.539 contratos"><span class="nombre">valor_pagado</span><span class="pista"><span class="barra serie" style="width:89.4%"></span></span><span class="valor">16.539</span></div><div class="fila" data-detalle="ultima_actualizacion: 2.853 contratos"><span class="nombre">ultima_actualizacion</span><span class="pista"><span class="barra contexto" style="width:15.4%"></span></span><span class="valor">2.853</span></div><div class="fila" data-detalle="estado_contrato: 2.528 contratos"><span class="nombre">estado_contrato</span><span class="pista"><span class="barra contexto" style="width:13.7%"></span></span><span class="valor">2.528</span></div><div class="fila" data-detalle="fecha_de_fin_del_contrato: 2.227 contratos"><span class="nombre">fecha_de_fin_del_contrato</span><span class="pista"><span class="barra contexto" style="width:12.0%"></span></span><span class="valor">2.227</span></div><div class="fila" data-detalle="dias_adicionados: 2.083 contratos"><span class="nombre">dias_adicionados</span><span class="pista"><span class="barra contexto" style="width:11.3%"></span></span><span class="valor">2.083</span></div></div><details class="tabla"><summary>Ver como tabla</summary><table><tbody><tr><td>valor_pendiente_de_pago</td><td>18.510</td></tr><tr><td>valor_pendiente_de_ejecucion</td><td>18.431</td></tr><tr><td>valor_facturado</td><td>18.123</td></tr><tr><td>valor_pagado</td><td>16.539</td></tr><tr><td>ultima_actualizacion</td><td>2.853</td></tr><tr><td>estado_contrato</td><td>2.528</td></tr><tr><td>fecha_de_fin_del_contrato</td><td>2.227</td></tr><tr><td>dias_adicionados</td><td>2.083</td></tr></tbody></table></details>
+  <p class="nota">Esas cuatro son la razón por la que el pipeline barre 2,8 millones de
+    contratos en cada corte en lugar de pedir solo lo que cambió.</p>
+</section>
+
+<section>
+  <h2>Cuánto se extiende el plazo, y cuánto cuesta</h2>
+  <p class="entrada">Son las dos preguntas que no se pueden responder con datos
+    públicos, porque exigen comparar el contrato de hoy contra el de antes.</p>
+  <div class="rejilla">
+    <div class="tarjeta"><p class="cifra">2.131</p><p class="etiqueta">contratos con el plazo extendido</p></div>
+    <div class="tarjeta"><p class="cifra">134.296</p><p class="etiqueta">días de extensión en total</p></div>
+    <div class="tarjeta"><p class="cifra">1.824</p><p class="etiqueta">contratos con adición de valor</p></div>
+    <div class="tarjeta"><p class="cifra">121,1</p><p class="etiqueta">mil millones de pesos adicionados</p></div>
+  </div>
+  <p class="aviso">El plazo también se acorta y el valor también baja:
+    <b>96</b> contratos redujeron su plazo y <b>101</b> bajaron su
+    valor. Los cuatro conteos van separados a propósito. Sumarlos en neto y llamar al
+    resultado extensiones esconde una población detrás del nombre de la otra, y fue un
+    defecto real de la primera versión de este modelo.</p>
+  <h3>Cuánto se extienden</h3>
+  <div class="barras"><div class="fila" data-detalle="895 contratos se extendieron 1 a 30 días"><span class="nombre">1 a 30 días</span><span class="pista"><span class="barra serie" style="width:100.0%"></span></span><span class="valor">895</span></div><div class="fila" data-detalle="540 contratos se extendieron 31 a 90"><span class="nombre">31 a 90</span><span class="pista"><span class="barra serie" style="width:60.3%"></span></span><span class="valor">540</span></div><div class="fila" data-detalle="630 contratos se extendieron 91 a 180"><span class="nombre">91 a 180</span><span class="pista"><span class="barra serie" style="width:70.4%"></span></span><span class="valor">630</span></div><div class="fila" data-detalle="62 contratos se extendieron 181 a 365"><span class="nombre">181 a 365</span><span class="pista"><span class="barra serie" style="width:6.9%"></span></span><span class="valor">62</span></div><div class="fila" data-detalle="4 contratos se extendieron más de un año"><span class="nombre">más de un año</span><span class="pista"><span class="barra serie" style="width:0.6%"></span></span><span class="valor">4</span></div></div><details class="tabla"><summary>Ver como tabla</summary><table><tbody><tr><td>1 a 30 días</td><td>895</td></tr><tr><td>31 a 90</td><td>540</td></tr><tr><td>91 a 180</td><td>630</td></tr><tr><td>181 a 365</td><td>62</td></tr><tr><td>más de un año</td><td>4</td></tr></tbody></table></details>
+</section>
+
+<section>
+  <h2>Lo que este tablero todavía no puede decir</h2>
+  <p class="entrada">Un análisis de sobrecosto solo vale para los contratos que
+    observamos desde cerca de su firma. De los demás vimos un pedazo: sus adiciones
+    anteriores ya venían incorporadas en la primera foto y son invisibles. Mezclar las
+    dos poblaciones subestima el resultado sin que nada falle.</p>
+
+  <div class="dos">
+    <div class="caja medible">
+      <h3>Población medible</h3>
+      <div class="par"><span>Contratos</span><b>76.245</b></div>
+      <div class="par"><span>Con el plazo extendido</span><b>140</b></div>
+      <div class="par"><span>Días de extensión</span><b>1.912</b></div>
+      <div class="par"><span>Con adición de valor</span><b>28</b></div>
+      <p class="nota">Observados dentro de los 30 días de su firma. Tienen
+        historia completa, así que el número es correcto.</p>
+    </div>
+    <div class="caja">
+      <h3>Cota inferior</h3>
+      <div class="par"><span>Contratos</span><b>2.701.452</b></div>
+      <div class="par"><span>Con el plazo extendido</span><b>1.991</b></div>
+      <div class="par"><span>Días de extensión</span><b>132.384</b></div>
+      <div class="par"><span>Con adición de valor</span><b>1.796</b></div>
+      <p class="nota">Historia truncada por la izquierda. El número es más grande y es
+        un piso, no una medición.</p>
+    </div>
+  </div>
+
+  <h3>Cuánta historia alcanzamos a ver</h3>
+  <div class="par"><span>Dentro de 0 días de la firma</span><b>0 &nbsp;(0,00%)</b></div><div class="par"><span>Dentro de 7 días de la firma</span><b>11.066 &nbsp;(0,39%)</b></div><div class="par"><span>Dentro de 30 días de la firma</span><b>76.245 &nbsp;(2,68%)</b></div><div class="par"><span>Dentro de 90 días de la firma</span><b>173.033 &nbsp;(6,07%)</b></div><div class="par"><span>Dentro de 365 días de la firma</span><b>928.688 &nbsp;(32,59%)</b></div>
+  <p class="nota">El margen no puede ser cero: la fuente publica con un día de rezago,
+    así que ningún contrato se observa el mismo día en que se firma. La mediana del
+    hueco entre la firma y la primera observación es de 657 días.</p>
+  <p class="nota">Este número <b>crece solo</b> con cada corte ingerido. No es un
+    defecto del modelo: es que el pipeline lleva una semana de vida contra una fuente
+    que publica desde 2015.</p>
+
+  <h3>Quién extiende más, dentro de la población medible</h3>
+  <div class="envoltura">
+  <table class="ranking"><thead><tr>
+    <th>Entidad</th><th class="num">Contratos</th><th class="num">Extendidos</th>
+    <th class="num">Tasa</th><th class="num">Días</th>
+  </tr></thead><tbody><tr><td>ALCALDÍA DEL DISTRITO TURÍSTICO Y CULTURAL DE CARTAG</td><td class="num">435</td><td class="num">22</td><td class="num">5,1%</td><td class="num">164</td></tr><tr><td>EMPRESAS PÚBLICAS DEL QUINDIO SA ESP</td><td class="num">20</td><td class="num">1</td><td class="num">5,0%</td><td class="num">1</td></tr><tr><td>CLÍNICA GIRÓN ESE</td><td class="num">29</td><td class="num">1</td><td class="num">3,4%</td><td class="num">61</td></tr><tr><td>CORPORACION AUTONOMA REGIONAL DEL ALTO MAGDALENA</td><td class="num">30</td><td class="num">1</td><td class="num">3,3%</td><td class="num">1</td></tr><tr><td>IDS</td><td class="num">31</td><td class="num">1</td><td class="num">3,2%</td><td class="num">2</td></tr><tr><td>GOBERNACION DE SUCRE</td><td class="num">161</td><td class="num">5</td><td class="num">3,1%</td><td class="num">50</td></tr><tr><td>GOBERNACIÓN DEL DEPARTAMENTO ARCHIPIELAGO DE SAN AND</td><td class="num">97</td><td class="num">3</td><td class="num">3,1%</td><td class="num">8</td></tr><tr><td>EMPRESA DE ENERGÍA DE CASANARE S.A. E.S.P.</td><td class="num">68</td><td class="num">2</td><td class="num">2,9%</td><td class="num">2</td></tr></tbody></table>
+  </div>
+  <p class="nota">Solo entidades con veinte contratos o más, para que la tasa signifique
+    algo. Aun así son pocos casos: la palabra sistemáticamente todavía no se sostiene, y
+    por eso el ranking va con su denominador a la vista.</p>
+</section>
+
+<section>
+  <h2>Otras cosas que aparecieron en el camino</h2>
+  <h3>El 74% de la contratación pública es directa</h3>
+  <div class="barras"><div class="fila" data-detalle="Contratación directa: 2.141.401 observaciones"><span class="nombre">Contratación directa</span><span class="pista"><span class="barra serie" style="width:100.0%"></span></span><span class="valor">2.141.401</span></div><div class="fila" data-detalle="Contratación régimen especial: 486.517 observaciones"><span class="nombre">Contratación régimen especial</span><span class="pista"><span class="barra serie" style="width:22.7%"></span></span><span class="valor">486.517</span></div><div class="fila" data-detalle="Mínima cuantía: 141.405 observaciones"><span class="nombre">Mínima cuantía</span><span class="pista"><span class="barra contexto" style="width:6.6%"></span></span><span class="valor">141.405</span></div><div class="fila" data-detalle="Contratación Directa (con ofertas): 30.303 observaciones"><span class="nombre">Contratación Directa (con ofertas)</span><span class="pista"><span class="barra contexto" style="width:1.4%"></span></span><span class="valor">30.303</span></div><div class="fila" data-detalle="Selección Abreviada de Menor Cuantía: 29.083 observaciones"><span class="nombre">Selección Abreviada de Menor Cuantía</span><span class="pista"><span class="barra contexto" style="width:1.4%"></span></span><span class="valor">29.083</span></div><div class="fila" data-detalle="Contratación régimen especial (con ofertas): 25.233 observaciones"><span class="nombre">Contratación régimen especial (con ofertas)</span><span class="pista"><span class="barra contexto" style="width:1.2%"></span></span><span class="valor">25.233</span></div></div><details class="tabla"><summary>Ver como tabla</summary><table><tbody><tr><td>Contratación directa</td><td>2.141.401</td></tr><tr><td>Contratación régimen especial</td><td>486.517</td></tr><tr><td>Mínima cuantía</td><td>141.405</td></tr><tr><td>Contratación Directa (con ofertas)</td><td>30.303</td></tr><tr><td>Selección Abreviada de Menor Cuantía</td><td>29.083</td></tr><tr><td>Contratación régimen especial (con ofertas)</td><td>25.233</td></tr></tbody></table></details>
+  <p class="nota">Sumando contratación directa, directa con ofertas y régimen especial,
+    la contratación sin licitación abierta supera el 90%.</p>
+  <div class="rejilla" style="margin-top:26px">
+    <div class="tarjeta"><p class="cifra">7</p><p class="etiqueta">contratos por encima del presupuesto nacional</p><p class="nota">El mayor lo supera 23 veces y es de un instituto municipal de deportes. Los siete tienen forma válida: el sistema de tipos no los atrapa.</p></div>
+    <div class="tarjeta"><p class="cifra">21%</p><p class="etiqueta">de los contratos no tiene ciudad</p><p class="nota">El dato no está escondido en otra columna: la fuente no lo publica. Un análisis por municipio deja fuera esa quinta parte.</p></div>
+    <div class="tarjeta"><p class="cifra">38,8%</p><p class="etiqueta">de los cambios no cambian el contrato</p><p class="nota">Cuatro de cada diez veces que la fuente publica un contrato como modificado, al contrato no le pasó nada.</p></div>
+    <div class="tarjeta"><p class="cifra">26,5 M</p><p class="etiqueta">filas con la fecha truncada</p><p class="nota">En un conjunto oficial hermano, ni el día ni el mes superan nunca el 9. La columna está tipada como fecha y parsea sin error.</p></div>
+  </div>
+</section>
+
+<p class="pie">
+  Datos públicos de la Agencia Nacional de Contratación Pública, Colombia Compra
+  Eficiente, consultados desde datos.gov.co bajo la Ley 1712 de 2014. Este tablero lo
+  genera <code>scripts/generar_tablero.py</code> a partir del modelo, así que se rehace
+  después de cada ingesta y no se edita a mano.
+</p>
+
+</div></body></html>
