@@ -4,7 +4,7 @@
 
 El proyecto entero se apoya en que cualquiera pueda clonar el repositorio y abrir
 un archivo de raw con la biblioteca estándar. El tablero sigue el mismo criterio:
-este script consulta el modelo, escribe `tablero.html` con los datos adentro, y
+este script consulta el modelo, escribe `docs/index.html` con los datos adentro,
 esa página se abre con doble clic, se manda por correo o se publica en cualquier
 lado. Sin servidor, sin proceso corriendo, sin instalar nada.
 
@@ -36,7 +36,7 @@ reservados, y nunca cargan significado solos: van siempre con su etiqueta.
 Uso:
 
     uv run python scripts/generar_tablero.py
-    uv run python scripts/generar_tablero.py --salida /tmp/tablero.html
+    uv run python scripts/generar_tablero.py --salida /tmp/prueba.html
 """
 
 from __future__ import annotations
@@ -55,7 +55,10 @@ from cargar_raw import hoy
 BASE = Path(__file__).resolve().parent.parent
 DUCKDB = BASE / "datos" / "secop.duckdb"
 RAW = BASE / "datos" / "raw"
-SALIDA = BASE / "tablero.html"
+# `docs/index.html` y no `tablero.html` en la raiz: GitHub Pages sirve el
+# contenido de `docs/` en la raiz de la URL, asi que el tablero queda en
+# usuario.github.io/repo/ en vez de .../repo/tablero.html. Se comparte mejor.
+SALIDA = BASE / "docs" / "index.html"
 
 # El registro de sondeo. No sale de la base: son observaciones de la fuente que
 # no se cargaron, y por eso ningún manifiesto las tiene. Ver la pregunta abierta
@@ -637,6 +640,7 @@ def main() -> int:
             html_completo[html_completo.index("<title>"):html_completo.rindex("</body>")]
             .replace("</head><body>", "")
         )
+    args.salida.parent.mkdir(parents=True, exist_ok=True)
     args.salida.write_text(html_completo, encoding="utf-8")
     kb = args.salida.stat().st_size // 1024
     print(f"OK {args.salida}  ({kb} KB)")

@@ -1,5 +1,7 @@
 # SECOP: reconstruir lo que el Estado colombiano borra
 
+[![CI](https://github.com/cristian23cor/secop-analytics-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/cristian23cor/secop-analytics-platform/actions/workflows/ci.yml)
+
 Colombia publica todos sus contratos públicos como datos abiertos. El conjunto
 tiene casi seis millones de filas, se puede descargar sin registrarse y está
 razonablemente completo.
@@ -13,6 +15,10 @@ había pagado en marzo, ni cuántas veces le corrieron el plazo. Esa historia no
 está archivada en ningún lado: se destruye en cada regeneración y no hay copia.
 
 Este proyecto guarda una foto de cada corte y reconstruye la serie.
+
+**El tablero está en <https://cristian23cor.github.io/secop-analytics-platform/>.** Se genera desde el
+modelo con `scripts/generar_tablero.py`, así que se rehace después de cada ingesta
+y no se edita a mano.
 
 ---
 
@@ -365,8 +371,8 @@ avisos de reglas de negocio con sus mismos números, hasta el último peso de lo
 segundos contra 344 en el portátil, y esa diferencia dice más del techo de memoria
 de la máquina local que del diseño.
 
-Falta: publicar el tablero, el orquestador e integración continua. Ningún modelo es
-incremental todavía: la construcción completa se rehace entera cada vez.
+Falta: el orquestador. Ningún modelo es incremental todavía: la construcción
+completa se rehace entera cada vez.
 
 Las preguntas abiertas están numeradas en `exploration/`, con lo que haría falta
 para cerrar cada una. Algunas necesitan datos externos que todavía no conseguí: el
