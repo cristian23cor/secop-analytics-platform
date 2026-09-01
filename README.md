@@ -2,130 +2,129 @@
 
 [![CI](https://github.com/cristian23cor/secop-analytics-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/cristian23cor/secop-analytics-platform/actions/workflows/ci.yml)
 
-Colombia publica todos sus contratos públicos como datos abiertos. El conjunto
-tiene casi seis millones de filas, se puede descargar sin registrarse y está
-razonablemente completo.
+Colombia publica todos sus contratos públicos como datos abiertos: casi seis
+millones de filas, gratis y sin registrarse.
 
-Tiene un problema: cada vez que se regenera, se sobrescribe entero.
+El problema es que cada vez que actualizan el archivo, lo reemplazan entero.
 
-No es que borren contratos. Lo que se pierde es el pasado de cada uno. Si un
-contrato de mil millones se adiciona a mil quinientos, la fila cambia y la
-anterior deja de existir. Nadie puede consultar cuánto valía antes, ni cuánto se
-había pagado en marzo, ni cuántas veces le corrieron el plazo. Esa historia no
-está archivada en ningún lado: se destruye en cada regeneración y no hay copia.
+No borran contratos: borran el pasado de cada uno. Si un contrato de mil millones
+se amplía a mil quinientos, la fila cambia y la anterior desaparece. Nadie puede
+consultar cuánto valía antes, ni cuánto se había pagado en marzo, ni cuántas veces
+le corrieron la fecha de entrega. Esa historia no queda archivada en ningún lado.
 
-Este proyecto guarda una foto de cada corte y reconstruye la serie.
+**Este proyecto le saca una foto cada vez que el archivo se actualiza, y con esas
+fotos reconstruye la historia.**
 
-**El tablero está en <https://cristian23cor.github.io/secop-analytics-platform/>.** Se genera desde el
-modelo con `scripts/generar_tablero.py`, así que se rehace después de cada ingesta
-y no se edita a mano.
+El tablero está en <https://cristian23cor.github.io/secop-analytics-platform/> y
+se genera solo desde los datos, no se edita a mano.
 
 ---
 
-## Por qué importa
+## Cómo funciona
 
-Hay siete preguntas que un vendedor le hace al mercado público antes de decidir
-si le vende al Estado. Cinco se responden con los datos tal como vienen: quién
-compra mi categoría, quién es el proveedor dominante, cuánto vale un contrato
-típico, cuándo se abren las licitaciones, cuánto se adjudica a dedo.
+```mermaid
+flowchart TD
+    API["API de datos abiertos<br/>5,9M de contratos<br/>se reemplaza entera, sin avisar"]
+
+    API -->|"contratos nuevos"| CARGA
+    API -->|"modificaciones y cierres"| CARGA
+    API -->|"los 2,8M vivos, enteros"| CARGA
+
+    CARGA["<b>cargar_raw.py</b><br/>le saca una huella (hash) a cada fila<br/>y tira la que ya vio igual"]
+    CARGA --> RAW[("<b>capa raw</b><br/>tal como llegaron<br/>898 MB · no se editan nunca")]
+
+    RAW --> LIMPIA["<b>staging</b><br/>tipos, centinelas a nulo"]
+    LIMPIA --> HIST["<b>la historia (SCD tipo 2)</b><br/>una fila por cada estado<br/>que tuvo cada contrato<br/>2.881.640 versiones"]
+    HIST --> HOY["<b>hoy</b><br/>2.849.209 contratos<br/>en su estado actual"]
+    HIST --> CAMBIOS["<b>qué cambió</b><br/>88.395 cambios,<br/>columna por columna"]
+    CAMBIOS --> MART["<b>el mart</b><br/>quién alarga plazos<br/>y cuánto cuesta"]
+
+    MART --> TABLERO["tablero público"]
+
+    style API fill:#fff3cd,stroke:#8a6d3b
+    style RAW fill:#e8e8e8,stroke:#555
+    style MART fill:#d4edda,stroke:#2e7d32
+    style TABLERO fill:#d4edda,stroke:#2e7d32
+```
+
+Tres formas de pedirle datos a la fuente, un cargador que guarda solo lo que
+cambió, y las tres capas de transformación que usa dbt (staging, intermediate y
+marts) para armar un **modelo dimensional**: una tabla de hechos en el centro y
+cinco dimensiones alrededor.
+
+---
+
+## Por qué hace falta todo eso
+
+Un vendedor que le quiere vender al Estado se hace siete preguntas. Cinco se
+contestan con los datos tal como vienen: quién compra lo que yo vendo, quién es
+el proveedor dominante, cuánto vale un contrato típico, cuándo salen las
+licitaciones, cuánto se adjudica a dedo.
 
 Las otras dos no:
 
-> **6.** ¿Qué entidades y categorías extienden sistemáticamente el plazo, y
-> cuántos días?
+> **6.** ¿Qué entidades alargan sistemáticamente los plazos, y cuántos días?
 >
-> **7.** ¿Cuánto cuesta esa extensión en pesos?
+> **7.** ¿Cuánto cuesta ese alargue en pesos?
 
-Para responderlas hace falta comparar el contrato de hoy contra el de antes, y
-"el de antes" no existe en ninguna fuente pública. Busqué la serie en todo el
-ecosistema SECOP antes de construirla:
+Para contestarlas hay que comparar el contrato de hoy contra el de antes, y "el
+de antes" no existe en ninguna fuente pública. Lo busqué antes de ponerme a
+construirlo:
 
-- El dataset oficial de modificaciones tiene una fila por adición y **ninguna
-  columna de valor**. El monto está escrito en prosa, en letras y en números,
-  mezclado con la prórroga de plazo en la misma frase.
-- Su única fecha viene corrupta, y de una forma que ningún sistema detecta
-  (abajo, en los hallazgos).
-- La publicación en formato OCDS, que sí modelaba enmiendas, se apagó en abril
-  de 2022.
+- El archivo oficial de modificaciones tiene una fila por cada cambio y **ninguna
+  columna con el monto**. La plata está escrita en prosa, en letras y en números,
+  mezclada con el cambio de fecha en la misma frase.
+- Su única columna de fecha está corrupta, y de una forma que ningún sistema
+  detecta (más abajo).
+- La publicación en un formato internacional que sí modelaba esto se apagó en
+  2022.
 
-O sea que el Estado publica el evento sin la medida. Esta plataforma reconstruye
-la medida sin el evento, comparando fotos.
-
-El tablero oficial de la agencia, que son unas veinte visualizaciones en Power
-BI, cubre las cinco primeras preguntas y no toca las dos últimas.
+O sea: el Estado publica que hubo un cambio, pero no cuánto. Este proyecto
+reconstruye el cuánto comparando fotos.
 
 ---
 
-## Qué hace
+## Por qué hay que bajarlo todo cada vez
 
-Tres flujos de ingesta escriben archivos comprimidos en disco, y dbt los
-transforma en un modelo dimensional.
-
-La fuente no tiene ninguna columna que diga cuándo cambió cada fila, así que no
-hay carga incremental posible en el sentido habitual. Hay tres mecanismos de
-cambio distintos y solo dos dejan rastro:
+La fuente no tiene ninguna columna que diga cuándo cambió cada fila. Hay tres
+cosas que pueden cambiar y solo dos dejan rastro:
 
 | Qué cambió | Cómo se detecta |
 |---|---|
-| Contrato nuevo | ventana sobre `fecha_de_firma` |
-| Evento contractual: modificación, cesión, cierre | ventana sobre `ultima_actualizacion` |
-| Avance de pagos y facturación | **ninguna columna lo registra** |
+| Se firmó un contrato nuevo | filtrando por fecha de firma |
+| Lo modificaron, lo cedieron o lo cerraron | filtrando por fecha de actualización |
+| Le pagaron una cuota | **ninguna columna lo registra** |
 
-El tercero afecta a 735.809 contratos y es el que obliga a barrer los 2,8
-millones de contratos vivos completos en cada corte, comparar y quedarse con lo
-que cambió.
+El tercero afecta a 735.809 contratos, y es el que obliga a bajar los 2,8
+millones de contratos vivos completos y compararlos uno por uno.
 
-Ese barrido tarda unos cincuenta minutos y devuelve 8 GB de JSON. En disco quedan
-18 MB, porque el cargador calcula un hash de cada fila antes de escribirla y
-descarta la que ya vio idéntica. Sobre la última corrida medida, el 98,13% de las
-filas conocidas se descartó.
-
-Después dbt arma el modelo:
-
-```
-datos/raw/*.jsonl.gz
-  raw_observaciones          2.902.163 observaciones, 67 columnas como texto
-    stg_contratos            tipos, centinelas a nulo, urlproceso aplanado
-      dim_entidad            5.168 filas, con historia
-      dim_proveedor          930.071, con historia
-      dim_modalidad          232
-      dim_geografia          958
-      fct_contratos_snapshot 2.881.640 versiones (SCD tipo 2)
-        fct_contratos           2.849.209 contratos
-          dim_categoria         11.231 codigos UNSPSC
-        int_cambios_por_columna 88.395 cambios, con su delta
-          mart_extension_de_plazo   las preguntas 6 y 7
-```
-
-La construcción completa son once modelos y tarda siete minutos y medio en un
-portátil, con 46 tests de dbt y 215 de pytest. Los mismos modelos corren en
-Snowflake en 79 segundos.
+Ese barrido tarda unos cincuenta minutos y trae 8 GB. En disco quedan **18 MB**,
+porque el cargador **deduplica por bytes**: le calcula una huella a cada fila
+antes de escribirla y descarta la que ya vio idéntica. En la última corrida medida tiró el 98,13% de
+las filas que ya conocía.
 
 ---
 
 ## Cómo correrlo
 
-Hace falta Python 3.12 y [uv](https://docs.astral.sh/uv/). Nada más: los archivos
-de la capa cruda se abren con `gzip.open` de la biblioteca estándar, sin instalar
-un compresor de terceros.
+Hace falta Python 3.12 y [uv](https://docs.astral.sh/uv/). Nada más.
 
 ```bash
 uv sync
 
-# Bajar el corte vivo de la fuente. Tarda ~50 minutos.
+# Bajar la foto de hoy. Tarda ~50 minutos.
 uv run python scripts/cargar_raw.py --flujo vivos
 
-# Construir el modelo. ~7 minutos.
+# Armar el modelo. ~3 minutos.
 cd dbt && uv run dbt build --profiles-dir .
 ```
 
-El cargador consulta el corte de la fuente antes de empezar y se planta si ya
-ingirió ese mismo estado, así que correrlo dos veces el mismo día no cuesta nada
-ni escribe una partición vacía. Devuelve código 4 en ese caso, distinto del 1 y
-del 2, para que un orquestador pueda separar "no había nada nuevo" de "algo se
-rompió".
+El cargador pregunta primero si la fuente cambió desde la última vez, y **si no
+cambió no baja nada**. Así que correrlo dos veces el mismo día no cuesta nada.
+Sale con el código 4 en ese caso, distinto de los códigos de error, para que un
+orquestador pueda diferenciar "no había nada nuevo" de "algo se rompió".
 
-Los otros dos flujos, que son ventanas de un día y tardan segundos:
+Los otros dos flujos son ventanas de un día y tardan segundos:
 
 ```bash
 uv run python scripts/cargar_raw.py --flujo nuevos  --desde 2026-08-20 --hasta 2026-08-21
@@ -134,384 +133,336 @@ uv run python scripts/cargar_raw.py --flujo eventos --desde 2026-08-20 --hasta 2
 
 ---
 
-## Lo que encontramos
+## Lo que apareció en el camino
 
-Los hallazgos valen más que el volumen. Cualquiera procesa millones de filas;
-encontrar defectos que la fuente no confiesa es lo que demuestra criterio. Todos
-están documentados con la consulta que los reproduce, en `exploration/`.
+Cualquiera procesa millones de filas. Lo que cuesta es encontrar los defectos que
+la fuente no confiesa. Cada uno de estos está documentado en `exploration/` con la
+consulta que lo reproduce.
 
-### Un dataset oficial con las fechas truncadas al primer dígito
+### Un archivo oficial con las fechas cortadas al primer dígito
 
-El registro de modificaciones contractuales tiene 26,5 millones de filas y una
-columna de fecha declarada como fecha, que parsea sin error. En ninguna de esas
-26,5 millones de filas el día es mayor que 9. Tampoco el mes.
+El registro de modificaciones tiene 26,5 millones de filas y una columna de fecha
+que el sistema acepta sin quejarse. En ninguna de esas 26,5 millones el día pasa
+de 9. El mes tampoco.
 
-La fecha está truncada al primer dígito significativo: el 21 de diciembre se
-guardó como 1 de enero, el 15 de julio como 1 de julio. Se confirmó de dos
-maneras independientes, y la segunda es la que prueba el mecanismo y no solo el
-síntoma. Si truncás el día, el balde "1" absorbe once días reales (el 1 y del 10
-al 19), el "2" otros once, el "3" apenas tres, y del "4" al "9" uno cada uno.
-Contando filas por balde, el 1 vale 12,6 días, el 2 vale 14,0 y el 3 vale 3,0.
-La hipótesis predice 11, 10,9 y 2,5. Ninguna lectura alternativa produce esa
-distribución.
+Las fechas están cortadas al primer dígito: el 21 de diciembre quedó guardado como
+1 de enero, el 15 de julio como 1 de julio.
 
-El daño no es parejo, y ahí está la parte útil: el año sobrevive siempre, el mes
-en el 79% de las filas y la fecha entera en el 13,6%. Como los meses solo llegan
-a 12, apenas tres colapsan; los días llegan a 31 y colapsan veintidós. Se sabe
-fila por fila de cuáles fiarse.
+Lo confirmé de dos formas, y la segunda prueba el mecanismo y no solo el síntoma.
+Si cortás el día, el "1" se traga once días reales (el 1 y del 10 al 19), el "2"
+otros once, el "3" apenas tres, y del "4" al "9" uno cada uno. Contando filas, el
+1 pesa 12,6 días, el 2 pesa 14,0 y el 3 pesa 3,0. La hipótesis predecía 11, 10,9 y
+2,5. Ninguna otra explicación da esa distribución.
 
-### Dos datasets publican las mismas filas con las etiquetas invertidas
+El daño no es parejo, y ahí está lo útil: **el año sobrevive siempre, el mes en el
+79% de las filas y la fecha entera en el 13,6%.** Como los meses solo llegan a 12,
+apenas tres se pierden; los días llegan a 31 y se pierden veintidós. Se sabe fila
+por fila de cuál fiarse.
 
-Comparando conteos anuales entre el registro de modificaciones y el de
-suspensiones aparecieron catorce números idénticos cruzados. No era coincidencia:
-son las mismas filas. Uno de los dos tiene las etiquetas dadas vuelta, y se puede
-saber cuál leyendo la descripción en texto libre. Ocho de ocho filas verificadas
-dicen "se suspende" y están clasificadas como reactivación.
+### Dos archivos publican las mismas filas con las etiquetas al revés
 
-Ninguna de las dos fichas declara que uno sea vista del otro.
+Comparando conteos por año entre el registro de modificaciones y el de
+suspensiones aparecieron catorce números idénticos, pero cruzados. No era
+casualidad: son las mismas filas, y uno de los dos las tiene mal etiquetadas. Se
+sabe cuál leyendo la descripción: ocho de ocho filas dicen "se suspende" y están
+clasificadas como reactivación.
 
-### La fuente declara frecuencia diaria y no la cumple
+Ninguna de las dos fichas oficiales dice que uno sea copia del otro.
 
-Esta es la que más costó, porque la evidencia estaba escrita y nadie la había
+### La fuente dice que se actualiza a diario y no es cierto
+
+Esta fue la que más costó, porque la evidencia estaba a la vista y nadie la había
 leído.
 
-La ficha oficial dice que el conjunto se actualiza a diario. En diez días
-observados hubo tres regeneraciones y siete días sin ninguna. Los saltos entre
-cortes conocidos son de dos y de cinco días, y el que está en curso lleva siete:
-el 1 de septiembre de 2026 seguía publicado el corte del 25 de agosto. No hay un
-solo par de cortes separados por exactamente un día.
+En diez días observados hubo **tres actualizaciones y siete días sin ninguna**.
+Los saltos son de dos, cinco y siete días. No hay un solo par separado por
+exactamente un día. El 1 de septiembre de 2026 seguía publicada la foto del 25 de
+agosto.
 
-Y no es una caída de la plataforma. Un conjunto oficial hermano, que escribe en
-continuo, registró escrituras esa misma mañana. Lo que está detenido es el
-proceso que rehace la vista publicada.
+Y no es que la plataforma esté caída: un archivo hermano, que se escribe
+continuamente, registró escrituras esa misma mañana. Lo que está detenido es el
+proceso que rehace la vista pública.
 
-Se detecta con una petición de dos segundos, porque todas las filas comparten el
-mismo sello de tiempo. Y para descartar que fuera una caída de la plataforma
-sirve un dataset hermano, que escribe en continuo: mientras el principal llevaba
-tres días congelado, el hermano registraba escrituras de esa misma mañana. Son
-dos sistemas y solo uno estaba detenido.
-
-La consecuencia de ingeniería es concreta: el pipeline no puede dispararse por
-calendario. Ningún horario acierta contra un evento que a veces no ocurre. Se
-dispara por el estado de la fuente.
+Se detecta con una consulta de dos segundos. Y tiene una consecuencia directa:
+**el pipeline no puede dispararse por horario.** Ningún horario le acierta a algo
+que a veces no pasa, así que se dispara mirando el estado de la fuente.
 
 ### Seis entidades cambiaron de clasificación y ya no queda rastro
 
-Entre el barrido del 23 de agosto y el del 25, 20.675 contratos cambiaron la
+Entre la foto del 23 de agosto y la del 25, 20.675 contratos cambiaron la
 clasificación de su entidad. Son seis entidades, y el cambio va en las dos
 direcciones: una unidad del SENA pasó a centralizada mientras otra del mismo SENA
 pasó a descentralizada, el mismo día.
 
-Quien consulte SECOP hoy no puede saber que eso pasó. La fuente se sobrescribió y
-solo dice el valor nuevo. El evento existe únicamente porque se guardaron las dos
-fotos y se compararon, y es la premisa del proyecto demostrada con un caso real
-en vez de con un argumento.
+Quien consulte SECOP hoy no puede enterarse: la fuente se sobrescribió y solo
+muestra el valor nuevo. **Ese evento existe únicamente porque guardamos las dos
+fotos**, y es la premisa del proyecto demostrada con un caso real.
 
-### Siete contratos por encima del presupuesto del Estado
+### Siete contratos valen más que el presupuesto del país
 
 El Presupuesto General de la Nación de 2026 es de 546,9 billones de pesos. Siete
-contratos declaran valores por encima de esa cifra. El mayor, 12.858 billones, la
-supera veintitrés veces y pertenece a un instituto municipal de deportes.
+contratos declaran valores por encima. El mayor, 12.858 billones, lo supera
+veintitrés veces y es de un instituto municipal de deportes.
 
-Los siete castean limpio a `decimal(20,2)`: para el sistema de tipos son válidos.
-En 2,9 millones de observaciones, el tipado atrapa **un** valor mal formado y toda
-la demás basura pasa. Esta clase de error solo la detecta una regla de negocio con
-un techo defendible, y el techo se elige contra una cifra pública, no a ojo.
+Los siete son válidos para el sistema de tipos: son números bien escritos. En 2,9
+millones de filas el tipado atrapa **un solo** valor mal formado y toda la demás
+basura pasa. Esto solo lo detecta una regla de negocio con un techo defendible, y
+el techo se elige contra una cifra pública, no a ojo.
 
-El dinero no se movió: seis de los siete declaran cero pagado. Son errores de
-digitación publicados sin ningún filtro. La afirmación que se sostiene es que la
-fuente oficial no valida sus propios valores.
+La plata no se movió: seis de los siete declaran cero pagado. Son errores de
+tipeo publicados sin ningún filtro, y lo que se sostiene es que la fuente oficial
+no valida sus propios valores.
 
-### El 74% de la contratación pública es directa
+### El 21% de los contratos no dice en qué ciudad es
 
-Sumando contratación directa, directa con ofertas y régimen especial, la
-contratación sin licitación abierta supera el 90% de los contratos. Sale de una
-dimensión de 232 filas.
+Al armar la dimensión geográfica parecía que otra columna podía rellenar los
+611.751 contratos sin ciudad. No puede: recupera 2.875, el 0,47%. Los demás traen
+"No Definido" adentro del texto, así que esa columna **miente cuando dice que no
+tiene nulos**: el valor está, pero es un centinela, no un dato.
 
-### El 21% de los contratos no tiene ciudad, y el dato no está escondido
-
-Al construir la dimensión geográfica parecía que la columna `localizaci_n`
-(que tiene cero nulos) podía rellenar los 611.751 contratos sin ciudad. No puede:
-de esos 611.751 permite recuperar 2.875, el 0,47%. Los demás traen "No Definido"
-adentro de la cadena, así que la columna miente sus cero nulos.
-
-Y tiene una trampa aparte. Un departamento colombiano se llama *San Andrés,
-Providencia y Santa Catalina*, con comas en el nombre, así que 17.085 filas traen
-cuatro campos donde el resto trae tres. Un parseo por comas habría inventado un
+Y trae una trampa aparte: un departamento se llama *San Andrés, Providencia y
+Santa Catalina*, con comas en el nombre. Separar por comas habría inventado un
 departamento llamado "Providencia y Santa Catalina" con 13.102 contratos, sin que
 nada fallara.
 
-La conclusión es que la fuente no publica ese dato. Un análisis por municipio deja
-fuera la quinta parte de la contratación, y eso hay que decirlo en el tablero en
-lugar de compensarlo.
+Un análisis por municipio deja afuera la quinta parte de la contratación, y eso
+hay que decirlo en vez de disimularlo.
 
-### El 38,8% de lo que la fuente marca como cambio no es un cambio
+De paso, contando esa misma dimensión: sumando contratación directa, directa con
+ofertas y régimen especial, **lo que se adjudica sin licitación abierta supera el
+90%** de los contratos.
 
-Entre dos cortes, la fuente publicó 52.954 contratos como modificados. De esos,
+### El 38,8% de lo que la fuente marca como cambio no cambió nada
+
+Entre dos fotos, la fuente publicó 52.954 contratos como modificados. De esos,
 solo 32.431 cambiaron algo del contrato. Los otros 20.523 cambiaron el registro y
-no el contrato, y casi todos por un solo evento administrativo.
+no el contrato, y casi todos por un mismo trámite administrativo.
 
-Es la razón por la que el modelo clasifica las 85 columnas en materiales,
-cosméticas e imposibles antes de decidir si genera una versión. Sin esa
-clasificación, la serie temporal tendría un 60% más de filas y ninguna
-información adicional.
+Por eso el modelo clasifica las 85 columnas en tres grupos antes de decidir si
+guarda una versión nueva. Sin esa clasificación la historia tendría un 60% más de
+filas y ni un dato más.
 
 ---
 
-## Decisiones que vale la pena mirar
+## Las decisiones que le dan forma
 
-El razonamiento completo de cada una, con las alternativas que se descartaron,
-está en `exploration/03_decisiones_capa_raw.md`. Acá van las que explican la forma
-del proyecto.
+El razonamiento completo, con las alternativas descartadas, está en
+`exploration/03_decisiones_capa_raw.md`.
 
 **Entre un error que sobra y uno que falta, se elige el que sobra.** Resolvió seis
-de las ocho decisiones de arquitectura. La deduplicación compara bytes crudos, así
-que puede guardar una fila de más si la fuente cambia `"1000"` por `"1000.00"`;
-nunca puede descartar un cambio real. El cargador escribe el archivo antes de
-tocar el índice de hashes, así que una muerte a mitad deja un duplicado en disco y
-no una fila perdida. Cuando se puede elegir la dirección del error, se elige la
-que se puede corregir después.
+de las ocho decisiones de arquitectura. La comparación mira los bytes crudos, así
+que puede guardar una fila de más si la fuente cambia `"1000"` por `"1000.00"`,
+pero nunca puede tirar un cambio real. El cargador escribe el archivo antes de
+anotar la huella, así que si se corta la luz queda un duplicado en disco y no una
+fila perdida. Cuando se puede elegir hacia qué lado fallar, se elige el que se
+puede corregir después.
 
-**La capa cruda guarda lo que devolvió la API sin tocar un carácter.** La
-tentación de normalizar al escribir es fuerte y es un error caro: si la limpieza
-tiene un defecto (y esta fuente ya demostró que los tiene) con datos crudos se
-corrige el código y se reprocesa. Con datos ya limpiados queda un agujero
-permanente, porque la fuente que los originó se sobrescribió.
+**Los archivos crudos se guardan sin tocar un carácter.** La tentación de
+limpiarlos al escribir es fuerte y sale cara: si la limpieza tiene un error, con
+los datos crudos se arregla el código y se vuelve a procesar; con los datos ya
+limpiados queda un agujero permanente, porque la fuente original se sobrescribió.
 
 **La lista de columnas no se documenta, se genera.** La clasificación de las 85
-columnas vive en un módulo de Python. Un script escribe desde ahí el macro que usa
-dbt, y otro falla si los dos archivos difieren en un byte. No es documentación que
-haya que mantener sincronizada con dbt: es la fuente desde la cual dbt se genera.
+columnas vive en un archivo de Python. Un script escribe desde ahí lo que usa dbt,
+y otro falla si los dos se separan en un solo byte. No hay dos listas que alguien
+tenga que mantener iguales: hay una, y la otra sale de ella.
 
-**Un solo modelo sabe de qué motor se trata.** Los archivos se leen en un único
-modelo frontera, que se ramifica según el objetivo: DuckDB los lee del disco,
-Snowflake de un stage interno. La proyección de las 67 columnas es la misma para
-las dos ramas, así que las columnas y su orden coinciden por construcción y no
-porque alguien las mantenga a la par.
+**Un solo archivo sabe contra qué base de datos está corriendo.** Los datos crudos
+se leen en un único **modelo frontera** que se ramifica: DuckDB los lee del disco,
+Snowflake de su propio almacén. El resto del proyecto no se entera.
 
 Eso salió a medias la primera vez, y la corrección vale más que el acierto. "Un
-único modelo toca los archivos" no implica "un único modelo habla dialecto": la
-capa de limpieza aplanaba una columna anidada con funciones que solo existen en
-DuckDB, y nadie lo había notado en tres días de escribir SQL. Lo destapó un grep
-por funciones sospechosas sobre los once modelos, que es una comprobación de
-treinta segundos. Las tres diferencias de dialecto viven ahora en macros y los
-modelos volvieron a ser agnósticos.
+solo archivo toca los datos crudos" no es lo mismo que "un solo archivo habla el
+dialecto": la capa de limpieza usaba funciones que solo existen en DuckDB, y nadie
+lo había notado en tres días. Lo destapó una búsqueda de treinta segundos.
 
-**El SCD tipo 2 está escrito a mano.** La funcionalidad nativa de dbt no sirve
-acá, por dos razones. Compara contra la tabla destino en vez de contra los
-archivos, lo que impediría corregir el pasado; y no tiene forma de expresar una
-clasificación de tres vías, o sea de decirle "estas 32 columnas cambian sin
-generar versión".
+**La historia (un SCD tipo 2) está escrita a mano y no con `dbt snapshot`.** Esa función
+compara contra la tabla de destino en vez de contra los archivos, lo que impediría
+corregir el pasado, y no sabe expresar que 32 columnas pueden cambiar sin que eso
+cuente como un cambio real.
 
-**Las fechas se llaman `observado_desde` y `observado_hasta`.** La plataforma no
-sabe cuándo cambió el contrato. Sabe cuándo el cambio se volvió visible. Un pago
-detectado el 25 pudo ocurrir cualquier día desde la observación anterior, y con la
-fuente saltando días ese hueco puede ser de una semana. Un nombre que promete
-menos vale más que la convención.
-
-**El disparador es el corte de la fuente, no el reloj.** El cargador pregunta qué
-estado está vivo antes de bajar una sola página y se planta si ya lo ingirió. La
-lógica vive en el cargador y no en el orquestador, para que correr a mano no la
-pierda.
+**Las fechas se llaman "observado desde" y "observado hasta", no "vigente".** La
+plataforma no sabe cuándo cambió el contrato: sabe cuándo el cambio se hizo
+visible. Un pago detectado el 25 pudo ocurrir cualquier día desde la observación
+anterior, y con la fuente saltando días ese hueco puede ser de una semana. Un
+nombre que promete menos vale más.
 
 ---
 
 ## Lo que no hace, y por qué
 
-**No se puede backfillear la historia.** No existe en ninguna fuente pública. La
-tabla de versiones arranca vacía y madura con el tiempo. Los dos primeros flujos
-sí admiten reprocesar el pasado, pero devuelven una sola observación por contrato
-(la de hoy, filtrada por una fecha vieja) y no una serie.
+**No se puede recuperar la historia vieja.** No existe en ninguna fuente pública.
+La tabla de versiones arranca vacía y va madurando con el tiempo.
 
-**La serie tiene la resolución de la fuente, no la diaria.** Entre dos
-regeneraciones separadas por siete días, dos modificaciones del mismo contrato son
-indistinguibles: llegan juntas en el mismo corte. El diseño lo aguanta; lo que no
-se puede es inventar los días que faltan.
+**La historia tiene la resolución de la fuente, no la diaria.** Si entre dos fotos
+pasaron siete días, dos modificaciones del mismo contrato llegan juntas y son
+indistinguibles. El diseño lo aguanta; lo que no se puede es inventar los días que
+faltan.
 
-**Los deltas solo son válidos para contratos observados desde su firma.** Esta es
-la limitación más importante y la más fácil de esconder. Un contrato firmado en
-2021 al que le vimos una sola versión no es un contrato sin modificaciones: es uno
-cuya historia empieza el día que encendimos el pipeline, con sus adiciones
-anteriores ya incorporadas en la primera foto.
+**Los cálculos de alargue solo valen para contratos que vimos desde su firma.**
+Esta es la limitación más importante y la más fácil de esconder. Un contrato
+firmado en 2021 al que le vimos una sola versión no es un contrato sin
+modificaciones: es uno cuya historia empieza el día que encendimos el pipeline,
+con todos sus cambios anteriores ya incorporados en la primera foto.
 
-Hoy eso deja poquísimo. Con un margen de treinta días entre la firma y la primera
-observación, la pregunta 7 se apoya en 39 contratos repartidos en 29 entidades.
-Con esa base la palabra "sistemáticamente" no se sostiene. Sin la restricción hay
-1.925 contratos, pero el número es cota inferior.
+Hoy eso deja poquísimo: **la pregunta 7 se apoya en 39 contratos** de 29
+entidades. Con esa base la palabra "sistemáticamente" no se sostiene. Sin esa
+restricción hay 1.925, pero ese número es un piso y no una medición: es una **cota
+inferior**, y el fenómeno se llama **censura por la izquierda**.
 
-El mart no elige por vos: lleva las dos poblaciones separadas por grano, cada una
-con su tamaño al lado, y la población medible crece sola con cada corte ingerido.
+El modelo no elige por vos: lleva las dos poblaciones separadas, cada una con su
+tamaño al lado, y la medible crece sola con cada foto nueva.
 
-**El análisis se restringe a 2020 en adelante.** Antes de ese año la curva de
-volumen mide la adopción de la plataforma, no el gasto público: se pasó de diez
-contratos en 2015 a más de un millón en 2025. Cualquier comparación interanual que
-cruce 2020 es inválida.
+**El análisis arranca en 2020.** Antes de ese año la curva no mide gasto público
+sino cuánta gente usaba la plataforma: se pasó de diez contratos en 2015 a más de
+un millón en 2025.
 
-**`orden`, `rama` y `sector` no son confiables.** Un hospital departamental figura
-como "Nacional" y una empresa social del Estado como "Corporación Autónoma". El
-diccionario oficial define esos campos de forma circular. Entran como atributos
-con la advertencia escrita, y no se construye lógica de negocio encima.
+**Tres columnas de clasificación no son confiables.** Un hospital departamental
+figura como "Nacional" y una empresa social del Estado como "Corporación
+Autónoma". El diccionario oficial las define de forma circular. Entran con la
+advertencia escrita y no se construye nada encima.
 
-**Los datos personales quedan fuera desde la extracción.** El conjunto expone
-cédulas, nombres completos, género y domicilio residencial del representante
-legal, del ordenador del gasto y del supervisor. Son datos legalmente abiertos,
-pero republicarlos en un tablero es una decisión distinta a consultarlos. Son 18
-columnas y el filtro corre en la petición a la API, no después: la exclusión más
-fácil de auditar es la que hace que el dato no viaje.
+**Los datos personales quedan afuera desde la descarga.** El archivo expone
+cédulas, nombres completos, género y domicilio del representante legal, del
+ordenador del gasto y del supervisor. Son legalmente abiertos, pero republicarlos
+en un tablero es una decisión distinta a consultarlos. Son 18 columnas y el filtro
+va en la petición a la API, no después: **la exclusión más fácil de auditar es la
+que hace que el dato no viaje.**
 
 ---
 
-## Estado
+## En qué está
 
-Funciona de punta a punta, con estas partes hechas y estas no.
+Funciona de punta a punta.
 
-Hecho: los tres flujos de ingesta, la deduplicación por hash, el índice
-reconstruible, el registro de procedencia de cada partición, el guardarraíl del
-corte, las tres capas de dbt, cinco dimensiones, el SCD2, la capa de cambios con
-sus deltas, el mart de las preguntas 6 y 7, y el porte a Snowflake.
+| | |
+|---|---|
+| Ingesta | los tres flujos, con reintentos y deduplicación por huella |
+| Modelo | 11 tablas, 5 dimensiones, la historia completa y el resultado final |
+| Pruebas | 294 de Python y 46 de dbt, corriendo solas en cada push |
+| Tablero | publicado, se regenera desde los datos |
+| Orquestador | escrito y probado; falta levantarlo en algún lado |
+| Vigilancia | una consulta cada tres horas avisa cuando la fuente se mueve |
 
-El porte está verificado, no solo conectado. Los mismos once modelos corren en los
-dos motores y devuelven exactamente lo mismo: cada conteo, cada suma y los dos
-avisos de reglas de negocio con sus mismos números, hasta el último peso de los
-121.078.133.897 adicionados. En Snowflake la construcción completa tarda 79
-segundos contra 344 en el portátil, y esa diferencia dice más del techo de memoria
-de la máquina local que del diseño.
+La construcción completa tarda **3 minutos** en un portátil y **70 segundos** en
+Snowflake. Dos de las once tablas usan **materialización incremental**: solo procesan lo que
+llegó nuevo, y eso bajó la construcción de 344 segundos a 184.
 
-**Los dos motores dan lo mismo, y está medido.** `exploration/paridad_de_motores.md`
-compara los once modelos en DuckDB y en Snowflake con 38 comprobaciones que no son
-solo conteos de filas: las huellas de la ingesta, los castings, las ventanas del
-SCD2, la jerarquía UNSPSC derivada y los cuatro contadores de signo del mart. Las
-38 coinciden.
+### El porte a Snowflake está verificado, no solo conectado
 
-En `exploration/evidencia/` quedan las capturas de esa corrida: el historial de
-consultas con los tiempos y las filas de cada sentencia, los once modelos en sus
-tres esquemas, el stage con sus 602 archivos y el particionado intacto, y el mart
-respondiendo la pregunta 6.
+Los mismos once archivos corren en las dos bases de datos, sin un solo modelo
+duplicado. `exploration/paridad_de_motores.md` los compara con 38 comprobaciones
+que no son solo conteos de filas: las huellas de la ingesta, las conversiones de
+tipo, las ventanas que arman la historia, la jerarquía de categorías y los cuatro
+contadores del resultado final. **Las 38 coinciden.**
+
+En `exploration/evidencia/` están las capturas de esa corrida.
 
 La cuenta de Snowflake es de prueba y vence el 12 de septiembre de 2026. Después
-de esa fecha el objetivo `snowflake` no se puede ejecutar, y este repositorio no
-depende de eso: la integración continua nunca lo toca, `dbt build` apunta a DuckDB
-por defecto, y lo que queda como evidencia es el informe fechado. Los tres macros
-con despacho por adaptador siguen ahí, que es lo que hace portable al proyecto
-aunque nadie pueda correrlo contra Snowflake.
+de esa fecha no se puede ejecutar allá, y el repositorio no depende de eso: las
+pruebas automáticas nunca la tocan, todo apunta a DuckDB por defecto, y lo que
+queda como evidencia es el informe fechado.
 
-El orquestador está escrito y probado: un DAG de Airflow que no se dispara por
-reloj sino por el estado de la fuente, porque ningún horario acierta contra un
-evento que a veces no ocurre. Cinco tests cuidan que sus decisiones sigan tomadas.
+### Lo que falta
 
-Falta levantarlo en algún lado. Ningún modelo es incremental todavía: la
-construcción completa se rehace entera cada vez.
+Levantar el orquestador en algún lado. Que las otras nueve tablas sean
+incrementales. Y una comprobación que avise si la fuente agrega una columna
+nueva, que hoy es el único lugar donde el proyecto podría perder datos sin
+enterarse.
 
-Las preguntas abiertas están numeradas en `exploration/`, con lo que haría falta
-para cerrar cada una. Algunas necesitan datos externos que todavía no conseguí: el
-catálogo UNSPSC para traducir códigos de categoría a nombres legibles, y el
-calendario de festivos colombianos.
+Las preguntas abiertas están numeradas en `exploration/`. Algunas necesitan datos
+que todavía no conseguí: el catálogo de categorías para traducir códigos a
+nombres, y el calendario de festivos colombianos.
+
+---
+
+## Cómo se verifica
+
+Dos costumbres que este proyecto adoptó por haberse equivocado.
+
+**Un número sin decir sobre qué se midió no es un número.** Cinco cifras
+documentadas como medidas resultaron falsas, todas por lo mismo: tomadas sobre
+muestras chicas y después citadas como hechos. Ahora cada cifra lleva escrito
+sobre qué se midió.
+
+**Un test que solo se vio dar cero no demuestra que sepa dar otra cosa.** Por eso
+hay guiones que **rompen el código a propósito** y comprueban que las pruebas se
+quejen. `verificar_tests_del_snapshot.py` siembra veintidós defectos en tablas
+falsas y comprueba que los veintidós salgan con el motivo correcto. El mismo
+método se aplicó a los reintentos de red, al orquestador y a la comparación entre
+bases de datos: doce roturas provocadas, doce detectadas.
+
+**Y todo eso corre solo en cada push**, en menos de un minuto. Ninguna
+comprobación toca internet, y no es casualidad: una prueba que falla porque el
+portal del Estado está caído enseña a ignorar las pruebas.
+
+| | |
+|---|---|
+| Las 294 pruebas de Python | con imitaciones de la API |
+| La lista de columnas contra lo que usa dbt | byte a byte |
+| Que las pruebas del modelo detecten sus defectos | 22 sembrados, 22 detectados |
+| Las 11 tablas y sus 46 pruebas | sobre datos falsos generados al vuelo |
+| Que lo incremental dé lo mismo que rehacer todo | seis etapas comparadas fila por fila |
+| Que el orquestador conserve sus decisiones | sin levantar nada |
 
 ---
 
 ## El repositorio
 
 ```
-exploration/                    Cuatro documentos con el razonamiento completo
-  00_inventario_fuentes.md        La fuente principal, sus hallazgos, el glosario
-  01_modelo_dimensional.md        El modelo, las reglas de negocio, las preguntas abiertas
-  02_ecosistema_secop.md          Los datasets hermanos y por qué no entran
-  cadencia.csv              Un dia por linea. El unico dato no recuperable
-  paridad_de_motores.md     38 comprobaciones, DuckDB contra Snowflake
-  evidencia/                Capturas de la corrida en Snowflake, antes de que venza
-  03_decisiones_capa_raw.md       Cada decisión con su alternativa descartada
+scripts/
+  se corren a mano
+    cargar_raw.py                    Baja datos. El punto de entrada
+    sondear.py                       Pregunta si la fuente cambio. 2 segundos
+
+  se generan, no se editan
+    generar_columnas_dbt.py          De columnas.py sale lo que usa dbt
+    generar_raw_sintetico.py         Datos falsos, para que las pruebas corran sin internet
+    generar_tablero.py               Escribe el tablero desde el modelo
+
+  corren solas en cada push
+    verificar_columnas_dbt.py        Falla si las dos listas de columnas se separan
+    verificar_tests_del_snapshot.py  Siembra 22 defectos, comprueba que salgan
+    verificar_incremental.py         Lo incremental da lo mismo que rehacer todo
+
+  a mano, y tocan internet
+    verificar_extraccion.py          Contra la API real
+    verificar_carga_raw.py           Contra la API real, cuatro fases
+    verificar_paridad_de_motores.py  DuckDB contra Snowflake
+    subir_raw_a_snowflake.py         Sube los datos crudos al almacen de Snowflake
+
+  analisis puntuales
+    medir_rn1.py                     Las seis fuentes de financiacion contra los datos crudos
 
 src/secop_analytics/
-  columnas.py       Qué se descarga y cómo se compara. Fuente de verdad del esquema
-  paginacion.py     Lo único que conoce la API. Paginación por keyset
+  columnas.py       Que se descarga y como se compara. De aca sale todo lo demas
+  paginacion.py     Lo unico que conoce la API. Paginacion por keyset, con reintentos
   flujos.py         Los tres flujos de ingesta
-  hashing.py        Canonicalización y hash
-  indice.py         Índice de hashes en DuckDB. Derivado, no autoritativo
-  escritura.py      Trozos comprimidos, manifiesto, marca de completitud
-
-scripts/
-  cargar_raw.py                    Orquestador. Punto de entrada
-  generar_columnas_dbt.py          Genera el macro de dbt desde columnas.py
-  verificar_columnas_dbt.py        Falla si los dos se separaron
-  verificar_tests_del_snapshot.py  Siembra defectos y comprueba que los tests los vean
-  verificar_extraccion.py          Contra la API real
-  verificar_carga_raw.py           Contra la API real, cuatro fases
-  medir_particiones.py             Distribución del universo vivo
-  medir_rn1.py                     Las fuentes de financiación contra raw
-  verificar_incremental.py         Lo incremental da lo mismo que reconstruir
-  sondear.py                       Que corte esta publicado. Lo corre Actions
-  airflow.sh                       Envoltorio: fija AIRFLOW_HOME y el dags/
-  verificar_paridad_de_motores.py  Compara los once modelos en los dos motores
-  subir_raw_a_snowflake.py         Sube la capa cruda a un stage, conservando la ruta
-  generar_raw_sintetico.py         Datos chicos y sembrados, para que CI pueda correr dbt
-  generar_tablero.py               Escribe docs/index.html desde el modelo
+  hashing.py        La huella de cada fila
+  indice.py         Las huellas ya vistas. Se puede reconstruir desde los archivos
+  escritura.py      JSONL comprimido, particionado estilo Hive, y marca de completitud
 
 dbt/
-  models/staging/        El modelo frontera y la limpieza
-  models/intermediate/   Qué columna cambió en cada versión, con su delta
-  models/marts/          Hechos, dimensiones y el mart
-  macros/                El generado desde columnas.py, y los de unión y limpieza
-  tests/                 Reglas de negocio e invariantes del modelo
+  models/staging/        Donde se leen los archivos y se limpia
+  models/intermediate/   Que columna cambio en cada version, y cuanto
+  models/marts/          El resultado: la historia, el hoy y la respuesta
+  macros/                Lo generado desde columnas.py, y el despacho por adaptador
+  tests/                 Reglas de negocio e invariantes
 
-dags/
-  secop_ingesta.py       El DAG. Se dispara por el corte de la fuente, no por reloj
-                         Se levanta con `./scripts/airflow.sh standalone`; su
-                         estado vive en .airflow/, que no va a git
+exploration/                        El razonamiento completo
+  00_inventario_fuentes.md            La fuente principal y sus hallazgos
+  01_modelo_dimensional.md            El modelo y las reglas de negocio
+  02_ecosistema_secop.md              Los archivos hermanos y por que no entran
+  03_decisiones_capa_raw.md           Cada decision con su alternativa descartada
+  cadencia.csv                        Un dia por linea. El unico dato irrecuperable
+  paridad_de_motores.md               38 comprobaciones, DuckDB contra Snowflake
+  evidencia/                          Capturas de la corrida en Snowflake
 
-docs/
-  index.html             El tablero. Lo publica GitHub Pages; lo escribe el generador
-
-.github/workflows/
-  ci.yml                 Seis comprobaciones, ninguna toca la red
-  sondeo.yml             Cada tres horas: pregunta por el corte y avisa
-
-tests/                   215 tests. Los 5 del DAG se saltan si Airflow no está
+dags/secop_ingesta.py    El orquestador. Se dispara por la fuente, no por reloj
+docs/index.html          El tablero que publica GitHub Pages
+tests/                   294 pruebas
+.github/workflows/       Las comprobaciones y el sondeo, corriendo solos
 ```
-
----
-
-## Sobre la verificación
-
-Dos costumbres que este proyecto adoptó por haberse equivocado, y que explican
-varios de los archivos de arriba.
-
-**Una medición sin su muestra anotada al lado no es una medición.** Cinco cifras
-documentadas como medidas resultaron falsas, todas por lo mismo: tomadas sobre
-muestras chicas y después citadas como hechos. Ahora cada número lleva escrito
-sobre qué se midió, y las cifras retiradas quedan tachadas con el motivo en vez de
-borrarse.
-
-**Un test que solo se ve dar cero no demuestra que sepa dar otra cosa.** Un test
-del punto de control pasaba y afirmaba el defecto que existía. Por eso los tests
-del modelo dimensional se verifican contra tablas corrompidas a propósito:
-`verificar_tests_del_snapshot.py` siembra veintidós defectos, comprueba que los
-veintidós salgan con el motivo correcto, y que los casos sanos no salgan de
-ninguno.
-
-La misma costumbre se aplicó a los reintentos de la ingesta y al DAG: se rompió la
-política a propósito seis veces cada uno, y las doce mutaciones fueron detectadas.
-
-**Y todo eso corre solo, en cada push.** Son cinco comprobaciones y ninguna toca la
-red, que no es casualidad: lo que necesita la API real se dejó fuera a propósito,
-porque un test que falla porque el portal del Estado está caído enseña a ignorar
-los tests.
-
-| | |
-|---|---|
-| Los 198 tests de la capa de ingesta | con dobles de la API |
-| `columnas.py` contra el macro de dbt | byte a byte, para que el esquema no se duplique |
-| Que los tests del modelo detecten sus defectos | 22 sembrados, 22 detectados |
-| Los once modelos y sus 46 tests | contra una capa cruda sintética generada al vuelo |
-| Que el DAG importe y conserve sus decisiones | `catchup`, una corrida a la vez, el código 4 |
-
-La capa cruda de CI se genera y no se commitea: son 898 MB los reales, y el
-repositorio guarda código. `generar_raw_sintetico.py` escribe 620 observaciones con
-los casos sembrados a propósito, incluidos cuarenta contratos cuyo único cambio es
-cosmético, para que el filtro que decide qué merece una versión se ejercite de
-verdad.
-
----
-
 ## Licencia y fuente
 
 Los datos son públicos, publicados por la Agencia Nacional de Contratación

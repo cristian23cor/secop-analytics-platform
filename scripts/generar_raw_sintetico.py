@@ -181,7 +181,7 @@ def main() -> int:
     # Y un mismo flujo con DOS particiones el mismo dia, que es lo que produce
     # un barrido del flujo 3 partido por rangos de fecha. Hoy no hay ninguno asi
     # en la capa cruda real, pero el diseno lo soporta (para eso existe
-    # `medir_particiones.py`) y es lo que obliga a que la clave incluya el
+    # un barrido partido por rangos de fecha) y es lo que obliga a que la clave incluya el
     # nombre de la particion y no solo el flujo y la fecha.
     # Los rangos llevan contratos DISJUNTOS, y el desplazamiento es una
     # constante y no `hash(rango)`: el hash de las cadenas de Python cambia en
