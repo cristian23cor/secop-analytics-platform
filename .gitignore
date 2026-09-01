@@ -39,7 +39,7 @@ datos/secop.duckdb
 .secretos/
 dbt/.user.yml
 
-# Airflow, si alguien lo levanta apuntando al proyecto
-airflow.db
-airflow.cfg
-webserver_config.py
+# Airflow: su configuracion, su base de metadatos y sus logs. El DAG SI va a
+# git, en dags/; lo que se ignora es el estado de la instalacion, que es local
+# y se puede borrar entera para empezar de cero.
+.airflow/

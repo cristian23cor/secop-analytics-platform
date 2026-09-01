@@ -1350,6 +1350,75 @@ raw (cuya cifra quedó retirada por depender de un intervalo de ancho supuesto,
 ver D3) pero el número correcto es 171.
 
 
+###  Airflow, instalado y probado en local: 01/09/2026
+
+El DAG existia y estaba probado; faltaba un scheduler que lo leyera. Se instalo
+en local y **no en Docker**, y la razon es una medicion y no una preferencia: el
+`docker-compose` oficial de Airflow levanta siete contenedores y su propia
+documentacion pide al menos 4 GB de RAM asignados a Docker. La maquina tiene 3,8
+GB en total.
+
+Hay una segunda razon, mas de fondo. El DAG ejecuta `cd RAIZ && uv run python
+scripts/cargar_raw.py`. Meterlo en un contenedor exigiria empaquetar adentro el
+proyecto, uv, el entorno virtual, el `.env` con el token, y montar `datos/raw`
+para que escriba afuera: seria empaquetar el proyecto entero para ejecutar un
+comando que ya funciona en la maquina donde vive.
+
+#### Donde vive su estado
+
+En `.airflow/` dentro del proyecto, ignorado por git. Por defecto seria
+`~/airflow`, fuera. Se elige adentro para que todo lo del proyecto este en un
+lugar y para que borrar ese directorio reinicie Airflow por completo sin tocar
+nada mas. El DAG **si** va a git, en `dags/`, que es lo que permite que CI lo
+pruebe.
+
+`scripts/airflow.sh` fija las cuatro variables y es tambien la documentacion de
+cual es cual: `AIRFLOW_HOME`, la carpeta de DAGs apuntando al repositorio, y los
+ejemplos apagados, que son varias decenas y esconden el unico que importa.
+
+SQLite y LocalExecutor, que es lo que trae `standalone`. Para un DAG con una
+tarea cada tres horas sobra: postgres y Celery existen para un paralelismo que
+aca no hay, y el DAG ya declara `max_active_runs=1` porque dos corridas
+pelearian por el indice de hashes.
+
+#### Lo que la prueba de punta a punta demostro
+
+Se corrio `airflow dags test secop_ingesta`, y salio barato por una circunstancia
+util: el corte vivo ya estaba ingerido, asi que el guardarrail de D11 corta antes
+de bajar una sola pagina.
+
+    Running command: cd ... && uv run python scripts/cargar_raw.py --flujo vivos
+      corte de la fuente: 2026-08-25T09:05:54.277Z
+    Este corte de la fuente ya se ingirio entero.
+    El corte ya estaba ingerido: no hay nada nuevo.
+    Skipping task. reason='Bash command returned exit code 99. Skipping.'
+    DagRun Finished: state=success, run_duration=7.13
+
+**Siete segundos, la tarea en `skipped` y la corrida en `success`.** Esa
+distincion es la que se diseno: con cadencia irregular ese va a ser el resultado
+la mayoria de los dias, y marcarlo como fallo haria sonar la alerta a diario
+hasta que nadie la mire.
+
+Y se comprobo contra lo que el scheduler realmente lee, que no es el archivo sino
+el DAG serializado en su base: `catchup: False`, `max_active_runs: 1`, cada tres
+horas.
+
+#### El limite que hay que decir, porque es el que decide todo
+
+**Airflow local no corre con la maquina apagada.** Da la interfaz, el historial y
+la demostracion de que el pipeline esta orquestado, pero no da operacion
+desatendida.
+
+Por eso la vigilancia de la fuente NO vive aca sino en GitHub Actions (ver la
+seccion del registro de cadencia): la pregunta de dos segundos corre de noche y
+los fines de semana, y avisa. El barrido de cincuenta minutos se lanza a mano
+cuando llega el aviso, y para eso hay entre dos y siete dias de margen, que es el
+salto observado entre regeneraciones.
+
+Hacer que el barrido tambien corra solo exigiria mudar la capa cruda y el indice
+de 354 MB a un bucket, y con ellos el modelo frontera. Es un proyecto aparte y
+esta anotado como tal, no como pendiente.
+
 ###  El registro de cadencia, y quien lo escribe: 01/09/2026
 
 Cierra la pregunta abierta de donde vive el registro de sondeo, y la cierra de
