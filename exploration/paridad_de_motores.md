@@ -6,6 +6,18 @@
 
 **38 de 38 comprobaciones coinciden.**
 
+| | Construido |
+|---|---|
+| DuckDB (`secop.duckdb`, fecha del archivo) | 2026-09-01 15:49 COT |
+| Snowflake (`last_altered` de las tablas) | 2026-09-01 15:46 COT |
+
+Las dos en hora colombiana: vienen de relojes distintos y se normalizan antes de
+mostrarlas.
+
+Esas dos fechas son lo primero que hay que mirar. Si estan lejos una de otra, el
+informe compara dos fotos de momentos distintos y no dice nada sobre el codigo de
+hoy.
+
 Contar filas no alcanza: dos tablas del mismo tamano pueden tener contenidos
 distintos. Estas comprobaciones apuntan a donde los motores hablan dialectos
 distintos, que es donde una divergencia aparecería: las huellas de la ingesta,

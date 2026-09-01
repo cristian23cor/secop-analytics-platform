@@ -58,7 +58,9 @@ sys.path.insert(0, str(RAIZ / "scripts"))
 # llamar a `date.today()`: es la tercera vez que un script nuevo del proyecto
 # cae en eso, y las tres las atrapo el linter y no una revision. Ver el defecto
 # de que `hoy()` viva en `scripts/` y no en `src/`.
-from cargar_raw import hoy
+from datetime import UTC
+
+from cargar_raw import ZONA, hoy
 
 BASE_LOCAL = os.environ.get("SECOP_DUCKDB", str(RAIZ / "datos" / "secop.duckdb"))
 INFORME = RAIZ / "exploration" / "paridad_de_motores.md"
@@ -130,6 +132,45 @@ COMPROBACIONES: list[tuple[str, str, list[tuple[str, str]]]] = [
 ]
 
 
+def cuando_se_construyo() -> tuple[str, str]:
+    """Cuando se construyo cada lado. Es lo primero que hay que mirar.
+
+    Sin esto, el informe compara lo que haya construido en cada motor **sin decir
+    de cuando es**, y eso ya engano una vez: el 01/09 este script dijo "38 de 38
+    coinciden" mientras la construccion de Snowflake estaba rota. Comparaba una
+    tabla local recien hecha contra una de Snowflake de dos dias antes, que era
+    correcta porque se habia construido con el codigo viejo.
+
+    Un informe que compara dos fotos de momentos distintos no dice nada sobre el
+    codigo de hoy, y no lo aclaraba.
+
+    De DuckDB se usa la fecha del archivo, que es un proxy: el motor no guarda
+    cuando se escribio cada tabla. De Snowflake, `last_altered`, que si es por
+    tabla.
+    """
+    from datetime import datetime
+
+    from subir_raw_a_snowflake import conectar
+
+    # Las dos se llevan a hora colombiana antes de mostrarlas. Vienen de relojes
+    # distintos (el del sistema y el de la cuenta de Snowflake) y sin normalizar
+    # daban una diferencia de horas que parecia real y no lo era.
+    local = datetime.fromtimestamp(
+        Path(BASE_LOCAL).stat().st_mtime, tz=UTC
+    ).astimezone(ZONA)
+
+    con = conectar()
+    cur = con.cursor()
+    cur.execute(
+        "select max(last_altered) from information_schema.tables "
+        "where table_type = 'BASE TABLE' and table_schema like 'RAW%'"
+    )
+    remoto = cur.fetchone()[0].astimezone(ZONA)
+    con.close()
+    f = "%Y-%m-%d %H:%M COT"
+    return local.strftime(f), remoto.strftime(f)
+
+
 def medir_duckdb() -> dict[tuple[str, str], object]:
     con = duckdb.connect(BASE_LOCAL, read_only=True)
     out: dict[tuple[str, str], object] = {}
@@ -185,6 +226,10 @@ def iguales(a: object, b: object) -> bool:
 
 
 def main() -> int:
+    print("  leyendo cuando se construyo cada lado...")
+    construido_local, construido_remoto = cuando_se_construyo()
+    print(f"    DuckDB:    {construido_local}")
+    print(f"    Snowflake: {construido_remoto}")
     print("  midiendo en DuckDB...")
     duck = medir_duckdb()
     print("  midiendo en Snowflake...")
@@ -212,6 +257,18 @@ def main() -> int:
 > duplicado, medidos en los dos motores.
 
 **{total - fallos} de {total} comprobaciones coinciden.**
+
+| | Construido |
+|---|---|
+| DuckDB (`{Path(BASE_LOCAL).name}`, fecha del archivo) | {construido_local} |
+| Snowflake (`last_altered` de las tablas) | {construido_remoto} |
+
+Las dos en hora colombiana: vienen de relojes distintos y se normalizan antes de
+mostrarlas.
+
+Esas dos fechas son lo primero que hay que mirar. Si estan lejos una de otra, el
+informe compara dos fotos de momentos distintos y no dice nada sobre el codigo de
+hoy.
 
 Contar filas no alcanza: dos tablas del mismo tamano pueden tener contenidos
 distintos. Estas comprobaciones apuntan a donde los motores hablan dialectos

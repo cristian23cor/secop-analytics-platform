@@ -89,7 +89,15 @@ with archivos as (
         $1:flujo::varchar            as flujo,
         $1:hash::varchar             as hash,
         $1:datos                     as datos
-    from @{{ var("stage_raw") }}
+    {# Calificado con el esquema, no suelto. Sin calificar, Snowflake lo
+        resuelve contra el esquema de la SESION, y ese contexto cambia segun
+        como dbt materialice el modelo: funcionaba como `table` y se rompio al
+        pasar a incremental, con el stage intacto y en su lugar.
+
+        `target.schema` sale del mismo `SNOWFLAKE_SCHEMA` que lee el script que
+        crea el stage, asi que los dos lados coinciden por construccion y no
+        porque alguien los haya mantenido a la par. #}
+    from @{{ target.schema }}.{{ var("stage_raw") }}
 
 {%- else %}
 

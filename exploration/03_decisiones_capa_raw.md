@@ -1350,6 +1350,92 @@ raw (cuya cifra quedó retirada por depender de un intervalo de ancho supuesto,
 ver D3) pero el número correcto es 171.
 
 
+###  La paridad entre motores, y lo que destapo: 01/09/2026
+
+La cuenta de Snowflake es de prueba y vence el 12/09/2026. Lo que sobrevive al
+vencimiento no es la cuenta sino la **medicion fechada**, si se captura antes. De
+ahi `scripts/verificar_paridad_de_motores.py` y su informe en
+`exploration/paridad_de_motores.md`: **38 comprobaciones, las 38 coinciden.**
+
+Contar filas no alcanza, porque dos tablas del mismo tamano pueden tener
+contenidos distintos. Las comprobaciones apuntan a donde los motores hablan
+dialectos distintos: las huellas blake2b de la ingesta (cuantas, cuantas
+distintas, la minima y la maxima sobre 2,9 millones), los castings, las ventanas
+del SCD2, los `datediff` de la capa intermedia, la jerarquia UNSPSC derivada con
+`substr`, y los cuatro contadores de signo del mart.
+
+#### Lo que destapo, que vale mas que el informe
+
+**El cambio a incremental habia roto Snowflake, y nadie lo sabia.** El modelo
+frontera referenciaba el stage sin calificar, `@secop_raw`, y Snowflake lo
+resuelve contra el esquema de la SESION. Funcionaba mientras el modelo se
+materializaba como `table` y dejo de funcionar al pasar a incremental, porque dbt
+cambia ese contexto. El stage estaba intacto, con sus 602 archivos en su lugar.
+
+El mismo defecto tenia el formato de archivo, un nivel mas abajo. Los dos se
+arreglaron calificando con `target.schema`, que sale del mismo `SNOWFLAKE_SCHEMA`
+que lee el script de subida: asi los dos lados coinciden por construccion y no
+porque alguien los mantenga a la par.
+
+**Fue invisible por dos razones y las dos importan.** CI no toca Snowflake, a
+proposito y con razon. Y nadie reconstruyo alla despues del cambio: el codigo se
+modifico por la manana y el motor conservaba las tablas del 31/08, correctas
+porque se habian construido con el codigo viejo.
+
+> Un porte no esta verificado por haber corrido una vez. Cada cambio en un modelo
+> compartido lo pone en duda otra vez, y si el otro motor no se reconstruye, sus
+> tablas viejas siguen dando la respuesta correcta a una pregunta que ya nadie
+> hizo.
+
+#### Y el informe mentia, por la misma razon
+
+La primera version de este script dijo **"38 de 38 coinciden" con la construccion
+de Snowflake rota.** Comparaba una tabla local recien hecha contra una de
+Snowflake de dos dias antes, y no decia de cuando era ninguna de las dos.
+
+El informe ahora **fecha los dos lados** y lo pone arriba de todo. Las dos fechas
+se normalizan a hora colombiana antes de mostrarlas: vienen de relojes distintos
+(el del sistema y el de la cuenta de Snowflake) y sin normalizar daban una
+diferencia de dos horas que parecia real. Con la correccion, tres minutos.
+
+> Una comparacion entre dos sistemas tiene que decir de cuando es cada lado. Sin
+> eso no compara el codigo de hoy: compara dos fotos, y una puede ser vieja.
+
+#### Quien vigila al que compara
+
+Se probo el verificador rompiendolo. Detecto que un lado midiera sobre un
+subconjunto, y **no detecto** que la funcion que compara dijera "igual" siempre:
+no puede, es la pieza con la que verifica. Se prueba desde afuera, con 14 tests.
+
+Escribirlos destapo otro defecto: **si una comprobacion fallaba en los dos
+motores, contaba como acuerdo.** Dos errores no son una coincidencia, son dos
+comprobaciones que no se hicieron, y sumarlas inflaba justo el numero que el
+informe existe para sostener.
+
+#### Una cifra documentada que estaba mal
+
+Los documentos decian "402 familias y 57 segmentos UNSPSC". Son **401 y 56**: el
+conteo viejo incluia el nulo de `UNSPECIFIED` como si fuera una familia. No lo
+es, es el centinela sin jerarquia, y el modelo lo deja nulo a proposito. Lo
+destapo esta comparacion, porque `count(distinct)` excluye el nulo.
+
+#### El jinja se comio los saltos de linea por cuarta vez
+
+Al calificar el stage se agrego un comentario `{#- ... -#}` entre la ultima
+columna y el `from`, y el SQL compilado dijo `as datosfrom @RAW.secop_raw`. Ya
+estaba documentado que iba a volver a pasar, y volvio.
+
+CI no puede atraparlo compilando: el modelo frontera tiene una rama que exige
+credenciales de Snowflake, y CI no las tiene ni debe tenerlas. Pero **el defecto
+es estatico**, se ve en el archivo. `tests/test_jinja_no_se_come_el_sql.py` marca
+un comentario que cierre con `-#}` cuando arriba queda un identificador y abajo
+empieza una clausula.
+
+Las dos mitades hacen falta. Con solo la de abajo, la regla marcaba tres modelos
+sanos donde arriba quedaba un `(` o un `{{ config() }}` que renderiza vacio, y
+**una regla que marca de mas se termina desactivando entera**. Con las dos, marca
+el caso real y ninguno mas: comprobado reintroduciendo el defecto.
+
 ###  Airflow, instalado y probado en local: 01/09/2026
 
 El DAG existia y estaba probado; faltaba un scheduler que lo leyera. Se instalo

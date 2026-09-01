@@ -43,8 +43,17 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 RAW = BASE / "datos" / "raw"
-STAGE = "secop_raw"
-FORMATO = "jsonl_gz"
+# Calificados con el esquema, no sueltos. Un nombre suelto lo resuelve Snowflake
+# contra el esquema de la SESION, y ese contexto no es el mismo cuando lo lee el
+# modelo de dbt: la capa de staging vive en `<esquema>_staging`, asi que un
+# `@secop_raw` sin calificar la busca ahi y no la encuentra.
+#
+# Se rompio de esa forma el 01/09, y de la peor manera posible: funcionaba
+# mientras el modelo se materializaba como `table` y dejo de funcionar al pasar a
+# incremental, con el stage intacto y los 602 archivos en su lugar.
+_ESQUEMA = os.environ.get("SNOWFLAKE_SCHEMA", "PUBLIC")
+STAGE = f"{_ESQUEMA}.secop_raw"
+FORMATO = f"{_ESQUEMA}.jsonl_gz"
 
 
 def conectar():
