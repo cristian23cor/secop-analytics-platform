@@ -324,6 +324,20 @@
     ]) }}
 {% endmacro %}
 
+{#- Las columnas que llegan como objeto anidado y no como escalar.
+
+    Hoy es una sola, `urlproceso`, y por eso es tentador escribir ese
+    nombre a mano donde haga falta. Se genera porque hay ya dos lugares
+    que necesitan saberlo: el `STRUCT` del modelo frontera, que la
+    declara JSON en vez de VARCHAR, y la proyeccion de ese mismo modelo,
+    que no le puede aplicar el casteo a texto que le aplica a las otras
+    66. Dos lugares es donde empieza la desincronizacion. -#}
+{% macro columnas_anidadas() %}
+    {{ return([
+        "urlproceso"
+    ]) }}
+{% endmacro %}
+
 {#- Las seis fuentes de financiación del contrato.
 
     Son un concepto, no una coincidencia de clasificación: RN1 exige

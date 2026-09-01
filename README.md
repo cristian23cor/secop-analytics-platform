@@ -271,6 +271,20 @@ columnas vive en un módulo de Python. Un script escribe desde ahí el macro que
 dbt, y otro falla si los dos archivos difieren en un byte. No es documentación que
 haya que mantener sincronizada con dbt: es la fuente desde la cual dbt se genera.
 
+**Un solo modelo sabe de qué motor se trata.** Los archivos se leen en un único
+modelo frontera, que se ramifica según el objetivo: DuckDB los lee del disco,
+Snowflake de un stage interno. La proyección de las 67 columnas es la misma para
+las dos ramas, así que las columnas y su orden coinciden por construcción y no
+porque alguien las mantenga a la par.
+
+Eso salió a medias la primera vez, y la corrección vale más que el acierto. "Un
+único modelo toca los archivos" no implica "un único modelo habla dialecto": la
+capa de limpieza aplanaba una columna anidada con funciones que solo existen en
+DuckDB, y nadie lo había notado en tres días de escribir SQL. Lo destapó un grep
+por funciones sospechosas sobre los once modelos, que es una comprobación de
+treinta segundos. Las tres diferencias de dialecto viven ahora en macros y los
+modelos volvieron a ser agnósticos.
+
 **El SCD tipo 2 está escrito a mano.** La funcionalidad nativa de dbt no sirve
 acá, por dos razones. Compara contra la tabla destino en vez de contra los
 archivos, lo que impediría corregir el pasado; y no tiene forma de expresar una
@@ -342,12 +356,17 @@ Funciona de punta a punta, con estas partes hechas y estas no.
 Hecho: los tres flujos de ingesta, la deduplicación por hash, el índice
 reconstruible, el registro de procedencia de cada partición, el guardarraíl del
 corte, las tres capas de dbt, cinco dimensiones, el SCD2, la capa de cambios con
-sus deltas y el mart de las preguntas 6 y 7. La conexión a Snowflake está probada
-con autenticación por par de claves.
+sus deltas, el mart de las preguntas 6 y 7, y el porte a Snowflake.
 
-Falta: el tablero, el orquestador, integración continua, y el porte efectivo a
-Snowflake (hoy la conexión pasa pero raw no está subido a un stage). Ningún modelo
-es incremental todavía: la construcción completa se rehace entera cada vez.
+El porte está verificado, no solo conectado. Los mismos once modelos corren en los
+dos motores y devuelven exactamente lo mismo: cada conteo, cada suma y los dos
+avisos de reglas de negocio con sus mismos números, hasta el último peso de los
+121.078.133.897 adicionados. En Snowflake la construcción completa tarda 79
+segundos contra 344 en el portátil, y esa diferencia dice más del techo de memoria
+de la máquina local que del diseño.
+
+Falta: publicar el tablero, el orquestador e integración continua. Ningún modelo es
+incremental todavía: la construcción completa se rehace entera cada vez.
 
 Las preguntas abiertas están numeradas en `exploration/`, con lo que haría falta
 para cerrar cada una. Algunas necesitan datos externos que todavía no conseguí: el

@@ -47,3 +47,75 @@
         integer
     {%- endif -%}
 {%- endmacro %}
+
+{#-
+  Dos diferencias de dialecto que no se pueden esconder en el modelo frontera.
+
+  D9 dice que un unico modelo toca los archivos, y eso se cumple. Lo que no dice,
+  y hay que anotar, es que el modelo frontera no es el unico que habla dialecto:
+  `stg_contratos` aplana `urlproceso` y le saca el `noticeUID`, y las dos cosas se
+  escriben distinto en cada motor.
+
+  Se resuelven aca, en un macro, y no con una rama dentro del modelo, por el mismo
+  criterio con el que la clasificacion de columnas se genera en vez de copiarse: si
+  la diferencia vive en un solo lugar, agregar un tercer motor es tocar ese lugar.
+  Si vive esparcida entre modelos, cada uno se entera por su cuenta y alguno se
+  olvida.
+
+  El dia que dbt traiga macros multiplataforma para JSON y para expresiones
+  regulares, estas dos desaparecen y los modelos no cambian.
+-#}
+
+{#-
+  Un campo de un objeto JSON, como texto.
+
+  DuckDB lo guarda como tipo JSON y se lee con `json_extract_string`; Snowflake lo
+  guarda como VARIANT y se lee con la notacion de dos puntos. Las dos devuelven
+  nulo si la clave no esta, que es lo que hace falta: la API omite las claves
+  nulas (H6), asi que la ausencia es normal y no un error.
+-#}
+{% macro campo_json(columna, clave) -%}
+    {%- if target.type == "snowflake" -%}
+    {{ columna }}:{{ clave }}::varchar
+    {%- else -%}
+    json_extract_string({{ columna }}, '$.{{ clave }}')
+    {%- endif -%}
+{%- endmacro %}
+
+
+{#-
+  El primer grupo de captura de una expresion regular.
+
+  `regexp_extract` en DuckDB toma el numero de grupo; `regexp_substr` en Snowflake
+  necesita posicion, ocurrencia y la bandera 'e' para devolver el grupo en vez de
+  la coincidencia entera. Olvidar esa bandera no falla: devuelve el texto completo,
+  que es mas largo y parece un valor valido.
+-#}
+{% macro extraer_grupo(expresion, patron) -%}
+    {%- if target.type == "snowflake" -%}
+    regexp_substr({{ expresion }}, '{{ patron }}', 1, 1, 'e')
+    {%- else -%}
+    regexp_extract({{ expresion }}, '{{ patron }}', 1)
+    {%- endif -%}
+{%- endmacro %}
+
+
+{#-
+  Una de las 67 columnas de `datos`, tal como la lee cada motor.
+
+  DuckDB abre el `STRUCT` con punto y ya viene tipada; Snowflake navega el VARIANT
+  con dos puntos y hay que castear. La excepcion son las columnas anidadas, que en
+  los dos motores se dejan como JSON para que `campo_json()` pueda entrar despues:
+  castearlas a texto acá las convertiria en una cadena y el aplanado de `staging`
+  dejaria de funcionar, sin fallar.
+
+  Cuales son anidadas sale del macro generado desde `columnas.py`, no de una lista
+  escrita acá. Hoy es una sola.
+-#}
+{% macro campo_de_datos(columna) -%}
+    {%- if target.type == "snowflake" -%}
+    datos:{{ columna }}{% if columna not in columnas_anidadas() %}::varchar{% endif %}
+    {%- else -%}
+    datos.{{ columna }}
+    {%- endif -%}
+{%- endmacro %}

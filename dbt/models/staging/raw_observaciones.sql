@@ -68,18 +68,37 @@
 
 {{ config(materialized="table") }}
 
+{#- Lo unico que cambia entre motores es de donde salen los archivos. La
+    proyeccion de abajo es la misma para los dos, asi que las columnas y su orden
+    coinciden por construccion y no porque alguien las haya mantenido a la par. -#}
 with archivos as (
 
+{%- if target.type == "snowflake" %}
+
+    {#- Snowflake no lee el disco: los mismos `.jsonl.gz` viven en un stage
+        interno, subidos con `scripts/subir_raw_a_snowflake.py`, que conserva la
+        ruta `flujo=/fecha_extraccion=/particion=` porque de ahi salen las tres
+        primeras columnas.
+
+        `$1` es el documento JSON de cada linea, y el formato del stage ya declara
+        gzip y una linea por fila. Las claves ausentes devuelven nulo, igual que
+        el `STRUCT` de DuckDB: la API omite los nulos (H6) y eso no es un error. -#}
     select
-        -- `filename` da la ruta del archivo de cada fila. Es lo que permite
-        -- reconstruir la partición sin confiar en las columnas de adentro: si
-        -- alguna vez la ruta y el contenido discreparan, queremos verlo.
+        metadata$filename            as filename,
+        $1:fecha_extraccion::varchar as fecha_extraccion,
+        $1:flujo::varchar            as flujo,
+        $1:hash::varchar             as hash,
+        $1:datos                     as datos
+    from @{{ var("stage_raw") }}
+
+{%- else %}
+
+    select
         filename,
         fecha_extraccion,
         flujo,
         hash,
         datos
-
     from read_json(
         '{{ var("ruta_raw") }}/**/*.jsonl.gz',
         format = 'newline_delimited',
@@ -92,26 +111,32 @@ with archivos as (
         }
     )
 
+{%- endif %}
+
 )
 
 select
-    -- La partición de la que vino cada observación. Se deriva de la ruta y no
-    -- de los metadatos de la fila, a propósito: es la llave con la que se une
-    -- la procedencia del manifiesto (D10).
-    regexp_extract(filename, 'flujo=([^/]+)', 1)            as ruta_flujo,
-    regexp_extract(filename, 'fecha_extraccion=([^/]+)', 1) as ruta_fecha_extraccion,
-    regexp_extract(filename, 'particion=([^/]+)', 1)        as ruta_particion,
+    {# La particion de la que vino cada observacion, sacada de la RUTA y no de
+       los metadatos de la fila: si alguna vez las dos discreparan, queremos
+       verlo. Los dos motores escriben distinto la extraccion de un grupo, y esa
+       diferencia vive en un macro.
 
-    -- Metadatos de la envoltura, que raw escribe FUERA del hash (I1).
+       Cierra sin guion a proposito: el guion se come el salto de linea y pega
+       el `select` con lo que sigue. #}
+    {{ extraer_grupo("filename", "flujo=([^/]+)") }}            as ruta_flujo,
+    {{ extraer_grupo("filename", "fecha_extraccion=([^/]+)") }} as ruta_fecha_extraccion,
+    {{ extraer_grupo("filename", "particion=([^/]+)") }}        as ruta_particion,
+
+    {#- Metadatos de la envoltura, que la ingesta escribe FUERA del hash (I1). -#}
     cast(fecha_extraccion as varchar) as fecha_extraccion,
     cast(flujo as varchar)            as flujo,
     cast(hash as varchar)             as hash,
 
-    -- Las 67 columnas, abiertas y como texto. La lista viene de
-    -- `columnas.py` vía el macro generado: es lo que impide que el esquema
-    -- que dbt lee se separe del que la ingesta le pide a la API.
-    {% for columna in columnas_extraidas() -%}
-    datos.{{ columna }} as {{ columna }}{{ "," if not loop.last }}
-    {% endfor %}
+    {#- Las 67 columnas, como texto. La lista sale de `columnas.py` via el macro
+        generado: es lo que impide que el esquema que dbt lee se separe del que la
+        ingesta le pide a la API. -#}
+    {%- for columna in columnas_extraidas() %}
+    {{ campo_de_datos(columna) }} as {{ columna }}{{ "," if not loop.last }}
+    {%- endfor %}
 
 from archivos

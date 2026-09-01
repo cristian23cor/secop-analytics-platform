@@ -27,6 +27,11 @@ vars:
   # por la ruta del stage. El resto de los modelos no necesita saberlo.
   ruta_raw: "../datos/raw"
 
+  # El stage de Snowflake donde viven esos mismos archivos. Solo lo usa el modelo
+  # frontera, en su rama de Snowflake. Lo crea y lo llena
+  # `scripts/subir_raw_a_snowflake.py`.
+  stage_raw: "secop_raw"
+
 models:
   secop:
     staging:

@@ -737,6 +737,52 @@ Se agrega una columna **`motivo_de_cierre`** que distinga:
 Un nulo que significa tres cosas distintas es un fallo silencioso esperando.
 
 
+###  D9, lo que el porte a Snowflake enseñó el 31/08/2026
+
+La disciplina de D9 decía: **un único modelo toca los archivos**, y por eso el
+porte iba a ser reescribir ese modelo y nada más.
+
+Se cumplió a medias, y la mitad que falló vale más que la que funcionó.
+
+**Lo que funcionó.** El modelo frontera se ramificó por motor y el resto del
+proyecto no se enteró. Solo cambia el CTE de origen: en DuckDB `read_json()` sobre
+el disco, en Snowflake un `select` sobre un stage interno. La proyección de las 67
+columnas quedó **compartida entre las dos ramas**, así que las columnas y su orden
+coinciden por construcción y no porque alguien las mantenga a la par.
+
+**Lo que no.** `stg_contratos` también hablaba dialecto, y nadie lo había notado.
+Aplana `urlproceso` con `json_extract_string` y saca el `noticeUID` con
+`regexp_extract`, y las dos funciones son de DuckDB. En Snowflake se escriben
+`urlproceso:url` y `regexp_substr(..., 1, 1, 'e')`.
+
+La lección se puede enunciar como corrección de D9: **"un único modelo toca los
+archivos" no implica "un único modelo habla dialecto".** Son dos propiedades
+distintas y solo la primera estaba vigilada. La segunda se descubrió corriendo un
+grep por funciones sospechosas sobre los once modelos, que es una comprobación de
+treinta segundos que nadie había hecho en tres días de escribir SQL.
+
+**Cómo se resolvió.** Tres macros en `limpieza.sql`, cada uno con su rama por
+motor: `campo_json()`, `extraer_grupo()` y `campo_de_datos()`. Los modelos quedaron
+otra vez agnósticos, y el día que aparezca un tercer motor se toca un archivo.
+
+Se comprobó que el refactor fuera **puro para DuckDB**: se reconstruyó
+`stg_contratos` y la salida es idéntica al byte, mismos conteos y mismos extremos.
+Un cambio que se justifica por otro motor y de paso mueve los números del motor que
+ya andaba es un cambio que hay que revertir.
+
+**Un cuarto macro salió del mismo trabajo.** `campo_de_datos()` necesita saber qué
+columnas son anidadas, porque a esas no se les aplica el casteo a texto. Es una
+sola, `urlproceso`, y escribir ese nombre a mano habría creado el segundo lugar que
+lo sabe: el primero es el `STRUCT` generado, que la declara JSON. Se agregó
+`columnas_anidadas()` al generador. Es la regla de siempre, aplicada antes de que
+la lista se desincronizara en vez de después.
+
+**Medido el 31/08/2026, sobre las tres particiones del 22 de agosto**, que son
+18.746 filas: los dos motores devuelven lo mismo. Mismo conteo, mismo mínimo y
+máximo de hash, mismo mínimo y máximo de `id_contrato`, mismo número de nulos en
+una columna que arranca vacía. Y la construcción completa en Snowflake pasa los 57
+nodos sin un solo error.
+
 ###  D10 IMPLEMENTADA: la procedencia se registra en el manifiesto de la partición
 
 > **Salta de D8 a D10 a propósito.** D9: dbt sobre DuckDB local, con el porte a

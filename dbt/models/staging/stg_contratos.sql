@@ -87,10 +87,9 @@ limpio as (
             normalizar, y raw guarda lo que llegó. El `noticeUID` sale a columna
             propia porque NO se puede reconstruir desde `proceso_de_compra`:
             son dos identificadores distintos (H6). -#}
-        json_extract_string(urlproceso, '$.url') as url_proceso,
-        regexp_extract(
-            json_extract_string(urlproceso, '$.url'), 'noticeUID=([^&]+)', 1
-        ) as notice_uid,
+        {{ campo_json("urlproceso", "url") }} as url_proceso,
+        {{ extraer_grupo(campo_json("urlproceso", "url"), "noticeUID=([^&]+)") }}
+            as notice_uid,
         {%- elif columna in columnas_centinela_es_valor() %}
         {#- Tres estados: "No Definido" no equivale a "No" (RN10). -#}
         {{ columna }} as {{ columna }},
