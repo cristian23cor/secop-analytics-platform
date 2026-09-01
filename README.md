@@ -383,6 +383,11 @@ solo conteos de filas: las huellas de la ingesta, los castings, las ventanas del
 SCD2, la jerarquía UNSPSC derivada y los cuatro contadores de signo del mart. Las
 38 coinciden.
 
+En `exploration/evidencia/` quedan las capturas de esa corrida: el historial de
+consultas con los tiempos y las filas de cada sentencia, los once modelos en sus
+tres esquemas, el stage con sus 602 archivos y el particionado intacto, y el mart
+respondiendo la pregunta 6.
+
 La cuenta de Snowflake es de prueba y vence el 12 de septiembre de 2026. Después
 de esa fecha el objetivo `snowflake` no se puede ejecutar, y este repositorio no
 depende de eso: la integración continua nunca lo toca, `dbt build` apunta a DuckDB
@@ -413,6 +418,7 @@ exploration/                    Cuatro documentos con el razonamiento completo
   02_ecosistema_secop.md          Los datasets hermanos y por qué no entran
   cadencia.csv              Un dia por linea. El unico dato no recuperable
   paridad_de_motores.md     38 comprobaciones, DuckDB contra Snowflake
+  evidencia/                Capturas de la corrida en Snowflake, antes de que venza
   03_decisiones_capa_raw.md       Cada decisión con su alternativa descartada
 
 src/secop_analytics/
