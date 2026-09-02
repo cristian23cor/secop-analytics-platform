@@ -31,12 +31,12 @@ flowchart TD
     API -->|"los 2,8M vivos, enteros"| CARGA
 
     CARGA["<b>cargar_raw.py</b><br/>le saca una huella (hash) a cada fila<br/>y tira la que ya vio igual"]
-    CARGA --> RAW[("<b>capa raw</b><br/>tal como llegaron<br/>898 MB · no se editan nunca")]
+    CARGA --> RAW[("<b>capa raw</b><br/>tal como llegaron<br/>~900 MB y creciendo · no se editan nunca")]
 
     RAW --> LIMPIA["<b>staging</b><br/>tipos, centinelas a nulo"]
-    LIMPIA --> HIST["<b>la historia (SCD tipo 2)</b><br/>una fila por cada estado<br/>que tuvo cada contrato<br/>2.881.640 versiones"]
-    HIST --> HOY["<b>hoy</b><br/>2.849.209 contratos<br/>en su estado actual"]
-    HIST --> CAMBIOS["<b>qué cambió</b><br/>88.395 cambios,<br/>columna por columna"]
+    LIMPIA --> HIST["<b>la historia (SCD tipo 2)</b><br/>una fila por cada estado<br/>que tuvo cada contrato<br/>2,9M de versiones"]
+    HIST --> HOY["<b>hoy</b><br/>2,8M de contratos<br/>en su estado actual"]
+    HIST --> CAMBIOS["<b>qué cambió</b><br/>cada cambio,<br/>columna por columna"]
     CAMBIOS --> MART["<b>el mart</b><br/>quién alarga plazos<br/>y cuánto cuesta"]
 
     MART --> TABLERO["tablero público"]
@@ -95,7 +95,7 @@ cosas que pueden cambiar y solo dos dejan rastro:
 | Lo modificaron, lo cedieron o lo cerraron | filtrando por fecha de actualización |
 | Le pagaron una cuota | **ninguna columna lo registra** |
 
-El tercero afecta a 735.809 contratos, y es el que obliga a bajar los 2,8
+El tercero afecta a más de 700.000 contratos, y es el que obliga a bajar los 2,8
 millones de contratos vivos completos y compararlos uno por uno.
 
 Ese barrido tarda unos cincuenta minutos y trae 8 GB. En disco quedan **18 MB**,
