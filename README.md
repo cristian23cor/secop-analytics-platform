@@ -189,8 +189,8 @@ que a veces no pasa, así que se dispara mirando el estado de la fuente.
 
 ### Seis entidades cambiaron de clasificación y ya no queda rastro
 
-Entre la foto del 23 de agosto y la del 25, 20.675 contratos cambiaron la
-clasificación de su entidad. Son seis entidades, y el cambio va en las dos
+Entre la foto del 23 de agosto y la del 25, **más de 20.000 contratos** cambiaron
+la clasificación de su entidad. Son seis entidades, y el cambio va en las dos
 direcciones: una unidad del SENA pasó a centralizada mientras otra del mismo SENA
 pasó a descentralizada, el mismo día.
 
@@ -215,15 +215,16 @@ no valida sus propios valores.
 
 ### El 21% de los contratos no dice en qué ciudad es
 
-Al armar la dimensión geográfica parecía que otra columna podía rellenar los
-611.751 contratos sin ciudad. No puede: recupera 2.875, el 0,47%. Los demás traen
-"No Definido" adentro del texto, así que esa columna **miente cuando dice que no
+Al armar la dimensión geográfica parecía que otra columna podía rellenar la
+quinta parte de los contratos que no traen ciudad. **No rellena ninguno:** esa
+columna tiene ciudad exactamente cuando la otra también la tiene, y cuando falta
+trae "No Definido" adentro del texto. Es decir que **miente cuando dice que no
 tiene nulos**: el valor está, pero es un centinela, no un dato.
 
 Y trae una trampa aparte: un departamento se llama *San Andrés, Providencia y
-Santa Catalina*, con comas en el nombre. Separar por comas habría inventado un
-departamento llamado "Providencia y Santa Catalina" con 13.102 contratos, sin que
-nada fallara.
+Santa Catalina*, con comas en el nombre, así que **17.085 filas traen cuatro
+campos donde el resto trae tres**. Separar por comas habría inventado un
+departamento llamado "Providencia y Santa Catalina" sin que nada fallara.
 
 Un análisis por municipio deja afuera la quinta parte de la contratación, y eso
 hay que decirlo en vez de disimularlo.
