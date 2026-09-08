@@ -1,6 +1,6 @@
 # Paridad entre DuckDB y Snowflake
 
-> Generado por `scripts/verificar_paridad_de_motores.py` el 2026-09-01.
+> Generado por `scripts/verificar_paridad_de_motores.py` el 2026-09-08.
 > Los once modelos construidos por el mismo proyecto de dbt, sin un solo modelo
 > duplicado, medidos en los dos motores.
 
@@ -8,8 +8,8 @@
 
 | | Construido |
 |---|---|
-| DuckDB (`secop.duckdb`, fecha del archivo) | 2026-09-01 15:49 COT |
-| Snowflake (`last_altered` de las tablas) | 2026-09-01 15:46 COT |
+| DuckDB (`secop.duckdb`, fecha del archivo) | 2026-09-08 15:57 COT |
+| Snowflake (`last_altered` de las tablas) | 2026-09-08 16:21 COT |
 
 Las dos en hora colombiana: vienen de relojes distintos y se normalizan antes de
 mostrarlas.
@@ -32,73 +32,73 @@ lo demas es el mismo SQL.
 
 | | DuckDB | Snowflake | |
 |---|---:|---:|:--|
-| filas | 2,902,163 | 2,902,163 | igual |
-| huellas distintas | 2,902,163 | 2,902,163 | igual |
+| filas | 3,369,650 | 3,369,650 | igual |
+| huellas distintas | 3,363,463 | 3,363,463 | igual |
 | huella minima | 0000153edaef26495fcd8315de620a10 | 0000153edaef26495fcd8315de620a10 | igual |
 | huella maxima | fffff8fdbab43a799ebc1aa16a96f001 | fffff8fdbab43a799ebc1aa16a96f001 | igual |
-| particiones | 5 | 5 | igual |
+| particiones | 6 | 6 | igual |
 
 ### `stg_contratos`
 
 | | DuckDB | Snowflake | |
 |---|---:|---:|:--|
-| filas | 2,902,163 | 2,902,163 | igual |
-| contratos distintos | 2,849,209 | 2,849,209 | igual |
+| filas | 3,369,650 | 3,369,650 | igual |
+| contratos distintos | 2,896,782 | 2,896,782 | igual |
 | castings fallidos | 1 | 1 | igual |
-| sin ciudad | 611,751 | 611,751 | igual |
+| sin ciudad | 827,485 | 827,485 | igual |
 
 ### `fct_contratos_snapshot`
 
 | | DuckDB | Snowflake | |
 |---|---:|---:|:--|
-| versiones | 2,881,640 | 2,881,640 | igual |
-| contratos distintos | 2,849,209 | 2,849,209 | igual |
-| suma de numeros de version | 2,914,071 | 2,914,071 | igual |
-| versiones vigentes | 2,849,209 | 2,849,209 | igual |
-| cerradas por version nueva | 32,431 | 32,431 | igual |
-| fuera de observacion | 6,649 | 6,649 | igual |
+| versiones | 3,148,643 | 3,148,643 | igual |
+| contratos distintos | 2,896,782 | 2,896,782 | igual |
+| suma de numeros de version | 3,410,297 | 3,410,297 | igual |
+| versiones vigentes | 2,896,782 | 2,896,782 | igual |
+| cerradas por version nueva | 251,861 | 251,861 | igual |
+| fuera de observacion | 3,882 | 3,882 | igual |
 
 ### `fct_contratos`
 
 | | DuckDB | Snowflake | |
 |---|---:|---:|:--|
-| contratos | 2,849,209 | 2,849,209 | igual |
-| entidades distintas | 5,162 | 5,162 | igual |
-| suma de versiones observadas | 2,881,640 | 2,881,640 | igual |
+| contratos | 2,896,782 | 2,896,782 | igual |
+| entidades distintas | 5,169 | 5,169 | igual |
+| suma de versiones observadas | 3,148,643 | 3,148,643 | igual |
 
 ### `int_cambios_por_columna`
 
 | | DuckDB | Snowflake | |
 |---|---:|---:|:--|
-| cambios | 88,395 | 88,395 | igual |
+| cambios | 863,951 | 863,951 | igual |
 | columnas distintas que cambiaron | 28 | 28 | igual |
-| suma de delta en dias | 259,841 | 259,841 | igual |
+| suma de delta en dias | 5,962,413 | 5,962,413 | igual |
 | columna mas temprana alfabeticamente | codigo_proveedor | codigo_proveedor | igual |
 
 ### `mart_extension_de_plazo`
 
 | | DuckDB | Snowflake | |
 |---|---:|---:|:--|
-| celdas | 118,264 | 118,264 | igual |
-| contratos observados | 2,777,697 | 2,777,697 | igual |
-| extensiones | 2,131 | 2,131 | igual |
-| dias extendidos | 134,296 | 134,296 | igual |
-| acortamientos | 96 | 96 | igual |
-| dias acortados | -2,351 | -2,351 | igual |
+| celdas | 121,836 | 121,836 | igual |
+| contratos observados | 2,825,266 | 2,825,266 | igual |
+| extensiones | 36,558 | 36,558 | igual |
+| dias extendidos | 3,575,988 | 3,575,988 | igual |
+| acortamientos | 694 | 694 | igual |
+| dias acortados | -23,738 | -23,738 | igual |
 
 ### `dim_entidad`
 
 | | DuckDB | Snowflake | |
 |---|---:|---:|:--|
-| versiones | 5,168 | 5,168 | igual |
-| entidades distintas | 5,162 | 5,162 | igual |
+| versiones | 5,244 | 5,244 | igual |
+| entidades distintas | 5,169 | 5,169 | igual |
 
 ### `dim_proveedor`
 
 | | DuckDB | Snowflake | |
 |---|---:|---:|:--|
-| versiones | 930,071 | 930,071 | igual |
-| proveedores distintos | 929,946 | 929,946 | igual |
+| versiones | 937,900 | 937,900 | igual |
+| proveedores distintos | 937,019 | 937,019 | igual |
 
 ### `dim_modalidad`
 
@@ -116,7 +116,7 @@ lo demas es el mismo SQL.
 
 | | DuckDB | Snowflake | |
 |---|---:|---:|:--|
-| codigos | 11,231 | 11,231 | igual |
+| codigos | 11,279 | 11,279 | igual |
 | familias UNSPSC derivadas | 401 | 401 | igual |
 | segmentos UNSPSC derivados | 56 | 56 | igual |
 | sin especificar | 1 | 1 | igual |
