@@ -59,3 +59,6 @@ dbt/.user.yml
 # `git add -A`.
 GUIA_DE_ESTUDIO.md
 TRASPASO.md
+
+# Archivos temporales que DuckDB deja cuando se queda sin memoria
+.tmp/

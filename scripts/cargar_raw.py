@@ -90,8 +90,42 @@ RUTA_INDICE = Path("datos/indice_hashes.duckdb")
 # anclas son de intervalos de 2 a 5 días. Si una corrida sana sobre un
 # intervalo largo canta, el umbral se baja **con esa cuarta ancla en la mano**,
 # no antes.
-UMBRAL_DE_DESCARTE = 0.90
+# El canario canta si el descarte SOBRE LAS CONOCIDAS baja de esto. Hay dos
+# umbrales porque **el descarte depende del ancho del intervalo**: cuantos mas
+# dias pasan entre dos cortes, mas contratos cambian de verdad.
+#
+# Las cuatro anclas medidas:
+#
+#   corrida                 intervalo    descarte sobre conocidas
+#   barrido inicial 23/08    -                            100,00%
+#   incremental     25/08    2 a 5 dias                    98,13%
+#   intervalo nulo  28/08    0 dias                       100,00%
+#   la del         08/09    14 dias                        83,02%   <- sana
+#
+# Esa ultima canto con el umbral unico de 0,90 y era correcta: catorce dias de
+# pagos sobre 2,8 millones de contratos. El 70% de sus 863.951 cambios fueron de
+# ejecucion financiera (H9), no una rotura.
+#
+# **Por que dos regimenes y no una formula.** La tentacion es normalizar por dia,
+# pero las anclas no lo permiten: el intervalo corto da 0,53% de cambio diario y
+# el largo 1,21%. Con dos puntos y una fuente que cambio de comportamiento en el
+# medio, ajustar una curva seria inventar. Se usa el umbral que cada regimen
+# tiene evidencia para sostener, y nada mas.
+UMBRAL_INTERVALO_CORTO = 0.90   # respaldado por tres anclas de 0 a 5 dias
+UMBRAL_INTERVALO_LARGO = 0.50   # una sola ancla (83,02%): solo atrapa rotura total
+DIAS_DE_INTERVALO_CORTO = 7
 MINIMO_PARA_EL_CANARIO = 1_000
+
+
+def umbral_de_descarte(dias: int | None) -> float:
+    """Que descarte minimo se espera, segun cuantos dias cubra la particion.
+
+    Sin dato de intervalo se usa el estricto: una particion sin procedencia es
+    de antes de D10, y todas esas fueron de intervalo corto.
+    """
+    if dias is not None and dias > DIAS_DE_INTERVALO_CORTO:
+        return UMBRAL_INTERVALO_LARGO
+    return UMBRAL_INTERVALO_CORTO
 
 # `fecha_extraccion` es el día COLOMBIANO, no el del reloj del sistema.
 #
@@ -148,6 +182,10 @@ class Resultado:
     # decide: un descarte del 0% significa cosas opuestas según si las filas
     # eran conocidas (los hashes dejaron de servir) o nuevas (partición nueva).
     conocidas: int = 0
+    # Cuantos dias cubre esta particion: del corte anterior al de esta corrida.
+    # `None` cuando no se sabe (particiones anteriores a D10). El canario lo
+    # necesita porque el descarte depende del ancho: ver `UMBRAL_DE_DESCARTE`.
+    dias_de_intervalo: int | None = None
 
     @property
     def tasa_descarte(self) -> float:
@@ -257,10 +295,11 @@ def _advertencia_de_descarte(resultado: Resultado) -> str | None:
         return None
 
     sobre_conocidas = resultado.tasa_sobre_conocidas
+    umbral = umbral_de_descarte(resultado.dias_de_intervalo)
     # La exclusión 2 ya garantiza que hay conocidas, así que esto no puede ser
     # None. Se comprueba igual: la alternativa es un TypeError a mitad de una
     # corrida de cincuenta minutos si alguien reordena las exclusiones.
-    if sobre_conocidas is None or sobre_conocidas >= UMBRAL_DE_DESCARTE:
+    if sobre_conocidas is None or sobre_conocidas >= umbral:
         return None
 
     return (
@@ -276,9 +315,12 @@ def _advertencia_de_descarte(resultado: Resultado) -> str | None:
         "el esquema\n  de la fuente: una columna nueva o un formato distinto "
         "invalidan los hashes\n  anteriores y llenan raw de duplicados que "
         "parecen cambios.\n"
-        "  Ojo también con el intervalo: cuantos más días entre cortes, más "
-        "contratos\n  cambian de verdad y más baja esta tasa sin que nada esté "
-        "roto."
+        f"  Esta partición cubre "
+        f"{resultado.dias_de_intervalo if resultado.dias_de_intervalo is not None else '?'}"
+        " días. Cuantos más días entre cortes, más contratos\n"
+        "  cambian de verdad y más baja esta tasa sin que nada esté roto: sobre "
+        "catorce\n  días se midió un 83% sano, con el 70% de los cambios en "
+        "ejecución financiera."
     )
 
 
@@ -303,7 +345,24 @@ def _procesar_paginas(
     punto de arranque solo se conoce después de abrir la partición: si quedó a
     medias, se retoma desde el cursor que dejó anotado en su manifiesto.
     """
-    resultado = Resultado(flujo=flujo.value, particion=particion)
+    # El ancho del intervalo que esta particion cubre, para que el canario sepa
+    # contra que umbral medir. Sale de los dos cortes que D10 ya registra: no
+    # hay consulta nueva ni estado nuevo.
+    dias_de_intervalo: int | None = None
+    if corte_anterior and corte_de_la_fuente is not None:
+        try:
+            dias_de_intervalo = (
+                date.fromisoformat(corte_de_la_fuente.mas_nuevo[:10])
+                - date.fromisoformat(corte_anterior[:10])
+            ).days
+        except ValueError:
+            dias_de_intervalo = None
+
+    resultado = Resultado(
+        flujo=flujo.value,
+        particion=particion,
+        dias_de_intervalo=dias_de_intervalo,
+    )
     inicio = time.perf_counter()
 
     # D10: el corte se anota en los TRES flujos, aunque solo el 3 lo lea para

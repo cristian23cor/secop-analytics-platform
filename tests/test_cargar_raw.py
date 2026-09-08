@@ -537,3 +537,68 @@ def test_el_mensaje_nombra_la_tasa_que_decidio():
     assert aviso is not None
     assert "sobre las filas ya conocidas" in aviso
     assert "0.0%" in aviso or "0,0%" in aviso
+
+
+# --------------------------------------------------------------------------
+# El umbral del canario depende del ancho del intervalo
+#
+# Salio de una corrida real: el 08/09/2026, sobre catorce dias, el descarte dio
+# 83,02% y el canario canto con el umbral unico de 0,90. Era una falsa alarma.
+# El 70% de sus 863.951 cambios fueron de ejecucion financiera (H9): catorce
+# dias de pagos sobre 2,8 millones de contratos, nada roto.
+# --------------------------------------------------------------------------
+
+def resultado_con_intervalo(recibidas, escritas, conocidas, dias):
+    from cargar_raw import Resultado
+
+    return Resultado(flujo="refresco_de_vivos", particion="completo",
+                     recibidas=recibidas, escritas=escritas,
+                     conocidas=conocidas, dias_de_intervalo=dias)
+
+
+def canta_con_intervalo(recibidas, escritas, conocidas, dias) -> bool:
+    from cargar_raw import _advertencia_de_descarte
+
+    return _advertencia_de_descarte(
+        resultado_con_intervalo(recibidas, escritas, conocidas, dias)
+    ) is not None
+
+
+# Las cuatro corridas reales, con el ancho que cubrio cada una. Todas SANAS.
+ANCLAS = [
+    pytest.param(2_835_895, 2_824_446, 11_449, None, id="barrido-inicial-sin-dato"),
+    pytest.param(2_840_337, 58_971, 2_834_320, 3, id="incremental-3-dias"),
+    pytest.param(2_840_337, 0, 2_840_337, 0, id="intervalo-nulo"),
+    pytest.param(1_850_076, 353_609, 1_802_511, 14, id="catorce-dias-08-09"),
+]
+
+
+@pytest.mark.parametrize(("recibidas", "escritas", "conocidas", "dias"), ANCLAS)
+def test_ninguna_corrida_real_hace_cantar_al_canario_con_su_intervalo(
+    recibidas, escritas, conocidas, dias
+):
+    """Las cuatro corridas del flujo 3 que existen son sanas, incluida la de
+    catorce dias que con el umbral unico daba falsa alarma."""
+    assert not canta_con_intervalo(recibidas, escritas, conocidas, dias)
+
+
+def test_un_intervalo_largo_no_se_mide_con_el_umbral_del_corto():
+    """El mismo descarte del 83% es sano sobre catorce dias y sospechoso sobre
+    tres. Sin el intervalo no hay forma de distinguirlos."""
+    assert not canta_con_intervalo(1_850_076, 353_609, 1_802_511, 14)
+    assert canta_con_intervalo(1_850_076, 353_609, 1_802_511, 3)
+
+
+def test_sin_dato_de_intervalo_se_usa_el_umbral_estricto():
+    """Una particion sin procedencia es anterior a D10, y todas esas fueron de
+    intervalo corto. Ante la duda, el umbral que tiene tres anclas."""
+    from cargar_raw import UMBRAL_INTERVALO_CORTO, umbral_de_descarte
+
+    assert umbral_de_descarte(None) == UMBRAL_INTERVALO_CORTO
+
+
+def test_la_rotura_total_canta_con_cualquier_intervalo():
+    """Lo que el canario existe para atrapar no depende del ancho: si la
+    canonicalizacion se rompe no calza ni un hash, y eso es cero por ciento."""
+    for dias in (0, 3, 14, 90):
+        assert canta_con_intervalo(1_850_076, 1_850_076, 1_802_511, dias), dias

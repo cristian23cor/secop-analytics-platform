@@ -31,11 +31,11 @@ flowchart TD
     API -->|"los 2,8M vivos, enteros"| CARGA
 
     CARGA["<b>cargar_raw.py</b><br/>le saca una huella (hash) a cada fila<br/>y tira la que ya vio igual"]
-    CARGA --> RAW[("<b>capa raw</b><br/>tal como llegaron<br/>~900 MB y creciendo · no se editan nunca")]
+    CARGA --> RAW[("<b>capa raw</b><br/>tal como llegaron<br/>~1 GB y creciendo · no se editan nunca")]
 
     RAW --> LIMPIA["<b>staging</b><br/>tipos, centinelas a nulo"]
-    LIMPIA --> HIST["<b>la historia (SCD tipo 2)</b><br/>una fila por cada estado<br/>que tuvo cada contrato<br/>2,9M de versiones"]
-    HIST --> HOY["<b>hoy</b><br/>2,8M de contratos<br/>en su estado actual"]
+    LIMPIA --> HIST["<b>la historia (SCD tipo 2)</b><br/>una fila por cada estado<br/>que tuvo cada contrato<br/>3,1M de versiones"]
+    HIST --> HOY["<b>hoy</b><br/>2,9M de contratos<br/>en su estado actual"]
     HIST --> CAMBIOS["<b>qué cambió</b><br/>cada cambio,<br/>columna por columna"]
     CAMBIOS --> MART["<b>el mart</b><br/>quién alarga plazos<br/>y cuánto cuesta"]
 
@@ -233,11 +233,11 @@ De paso, contando esa misma dimensión: sumando contratación directa, directa c
 ofertas y régimen especial, **lo que se adjudica sin licitación abierta supera el
 90%** de los contratos.
 
-### El 38,8% de lo que la fuente marca como cambio no cambió nada
+### El 44% de lo que la fuente marca como cambio no cambió nada
 
-Entre dos fotos, la fuente publicó 52.954 contratos como modificados. De esos,
-solo 32.431 cambiaron algo del contrato. Los otros 20.523 cambiaron el registro y
-no el contrato, y casi todos por un mismo trámite administrativo.
+Entre las fotos que llevamos, la fuente publicó 453.907 contratos como
+modificados. De esos, 251.861 cambiaron algo del contrato: los otros 202.046
+cambiaron el registro y no el contrato.
 
 Por eso el modelo clasifica las 85 columnas en tres grupos antes de decidir si
 guarda una versión nueva. Sin esa clasificación la historia tendría un 60% más de
@@ -340,7 +340,7 @@ Funciona de punta a punta.
 |---|---|
 | Ingesta | los tres flujos, con reintentos y deduplicación por huella |
 | Modelo | 11 tablas, 5 dimensiones, la historia completa y el resultado final |
-| Pruebas | 294 de Python y 46 de dbt, corriendo solas en cada push |
+| Pruebas | 312 de Python y 46 de dbt, corriendo solas en cada push |
 | Tablero | publicado, se regenera desde los datos |
 | Orquestador | escrito y probado; falta levantarlo en algún lado |
 | Vigilancia | una consulta cada tres horas avisa cuando la fuente se mueve |
@@ -399,7 +399,7 @@ portal del Estado está caído enseña a ignorar las pruebas.
 
 | | |
 |---|---|
-| Las 294 pruebas de Python | con imitaciones de la API |
+| Las 312 pruebas de Python | con imitaciones de la API |
 | La lista de columnas contra lo que usa dbt | byte a byte |
 | Que las pruebas del modelo detecten sus defectos | 22 sembrados, 22 detectados |
 | Las 11 tablas y sus 46 pruebas | sobre datos falsos generados al vuelo |
@@ -461,7 +461,7 @@ exploration/                        El razonamiento completo
 
 dags/secop_ingesta.py    El orquestador. Se dispara por la fuente, no por reloj
 docs/index.html          El tablero que publica GitHub Pages
-tests/                   294 pruebas
+tests/                   312 pruebas
 .github/workflows/       Las comprobaciones y el sondeo, corriendo solos
 ```
 ## Licencia y fuente
