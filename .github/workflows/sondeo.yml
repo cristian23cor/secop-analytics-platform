@@ -61,17 +61,43 @@ jobs:
             exit "$codigo"
           fi
 
-      - name: Anotar la linea del dia
+      # Que columnas declara la fuente. Va en el mismo job y no en uno propio a
+      # proposito: dos jobs del mismo workflow corren en paralelo y los dos
+      # empujarian al mismo branch, que es una carrera. Aca hay un solo commit.
+      #
+      - name: Preguntar por las columnas
+        id: columnas
+        env:
+          SOCRATA_APP_TOKEN: ${{ secrets.SOCRATA_APP_TOKEN }}
+        run: |
+          set +e
+          uv run python scripts/vigilar_columnas.py
+          codigo=$?
+          set -e
+          # 0 = el esquema no se movio, 5 = cambio. Mismo criterio que arriba.
+          if [ "$codigo" -ne 0 ] && [ "$codigo" -ne 5 ]; then
+            echo "El vigia de columnas fallo con codigo $codigo"
+            exit "$codigo"
+          fi
+
+      - name: Anotar lo que cambio
         # Solo cuando hay algo que guardar. Sin esto serian ocho commits diarios.
-        if: steps.sondeo.outputs.guardar == 'true'
+        if: >
+          steps.sondeo.outputs.guardar == 'true' ||
+          steps.columnas.outputs.guardar_columnas == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add exploration/cadencia.csv
+          git add exploration/cadencia.csv exploration/columnas_de_la_fuente.txt
           if git diff --staged --quiet; then
-            echo "El registro no cambio."
+            echo "Nada cambio."
           else
-            git commit -m "sondeo: corte ${{ steps.sondeo.outputs.corte }}"
+            if [ "${{ steps.columnas.outputs.columnas_cambio }}" = "true" ]; then
+              mensaje="sondeo: cambiaron las columnas de la fuente"
+            else
+              mensaje="sondeo: corte ${{ steps.sondeo.outputs.corte }}"
+            fi
+            git commit -m "$mensaje"
             git push
           fi
 
@@ -94,3 +120,39 @@ jobs:
           cadencia y el conteo de dias queden al dia.
 
           Corte nuevo: \`${{ steps.sondeo.outputs.corte }}\`"
+
+      # Un aviso aparte del anterior, y mas urgente de lo que parece: mientras
+      # una columna nueva siga sin clasificar, cada regeneracion de la fuente
+      # que se ingiera la pierde para siempre. La fuente se sobrescribe.
+      - name: Avisar que cambiaron las columnas
+        if: steps.columnas.outputs.columnas_cambio == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Por variable de entorno y no interpolados en el script: estos
+          # nombres los elige la fuente, no nosotros. Un `${{ }}` se sustituye
+          # ANTES de que bash lea la linea, asi que un nombre con comillas
+          # dejaria de ser un dato y pasaria a ser codigo.
+          APARECIERON: ${{ steps.columnas.outputs.aparecieron }}
+          SE_FUERON: ${{ steps.columnas.outputs.se_fueron }}
+        run: |
+          gh issue create \
+            --title "Cambio el esquema de la fuente" \
+            --body "El endpoint de metadatos declara columnas distintas a las de
+          la ultima observacion.
+
+          Aparecieron: \`$APARECIERON\`
+          Se fueron: \`$SE_FUERON\`
+
+          **Si aparecio una columna:** el \`\$select\` no la pide, asi que no
+          entra a raw y no se recupera despues. Hay que clasificarla a mano en
+          \`src/secop_analytics/columnas.py\` (material, cosmetica, imposible o
+          excluida por dato personal) y regenerar el macro de dbt:
+
+              uv run python scripts/generar_columnas_dbt.py
+
+          **Si se fue una columna:** el \`\$select\` la sigue nombrando y la
+          proxima corrida del cargador se va a caer con HTTP 400.
+
+          Este aviso sale una sola vez por cambio. El registro ya quedo
+          actualizado, asi que el proximo sondeo no lo repite; el problema sigue
+          reportandose en el log de cada corrida hasta que se arregle."

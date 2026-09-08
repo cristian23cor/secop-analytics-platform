@@ -244,6 +244,11 @@ class _Fuente:
         self.cortes: list[Corte] = []
         self.llamadas_a_corte: int = 0
         self.explotar_el_corte: Exception | None = None
+        # Guion de `columnas_publicadas()`. `None` significa "lo que el
+        # proyecto clasifica", que es el estado sano: los tests que quieran
+        # deriva la piden explicitamente.
+        self.columnas: set[str] | None = None
+        self.explotar_las_columnas: Exception | None = None
 
     def programar_cortes(self, *valores: Corte | str) -> None:
         """Respuestas sucesivas de `corte()`. La última se repite."""
@@ -260,6 +265,18 @@ class _Fuente:
         if len(self.cortes) > 1:
             return self.cortes.pop(0)
         return self.cortes[0]
+
+    def _columnas(self, *args, **kwargs) -> set[str]:
+        if self.explotar_las_columnas is not None:
+            raise self.explotar_las_columnas
+        if self.columnas is not None:
+            return set(self.columnas)
+        # `columnas.py` NO esta doblado: este default es el catalogo real, y
+        # por eso "no se guiono nada" equivale a "la fuente publica lo que el
+        # proyecto espera".
+        from secop_analytics.columnas import CLASIFICADAS
+
+        return set(CLASIFICADAS)
 
     def programar(self, clave: str, paginas: list[list[dict[str, Any]]]) -> None:
         self.paginas[clave] = paginas
@@ -279,6 +296,7 @@ _fuente = _Fuente()
 
 _paginacion.Corte = Corte
 _paginacion.corte = _fuente._corte
+_paginacion.columnas_publicadas = _fuente._columnas
 
 _flujos = types.ModuleType("secop_analytics.flujos")
 _flujos.Flujo = Flujo
@@ -318,6 +336,8 @@ def fuente():
     _fuente.cortes.clear()
     _fuente.llamadas_a_corte = 0
     _fuente.explotar_el_corte = None
+    _fuente.columnas = None
+    _fuente.explotar_las_columnas = None
     return _fuente
 
 

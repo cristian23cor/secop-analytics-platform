@@ -1,0 +1,96 @@
+# Las columnas que la fuente (jbjy-vk9h) declaraba la ultima vez que se le
+# pregunto, una por linea y ordenadas.
+#
+# Lo escribe scripts/vigilar_columnas.py. No se edita a mano: es el registro de
+# lo que la FUENTE publica, no de lo que el proyecto clasifica. Eso ultimo vive
+# en src/secop_analytics/columnas.py, y que los dos dejen de coincidir es
+# exactamente lo que este archivo sirve para detectar.
+#
+# Se versiona porque su historial de git es la unica evidencia de cuando el
+# esquema de la fuente cambio. La fuente se sobrescribe: si esto no queda
+# escrito, no se reconstruye.
+ciudad
+codigo_de_categoria_principal
+codigo_entidad
+codigo_proveedor
+condiciones_de_entrega
+departamento
+descripcion_del_proceso
+descripcion_documentos_tipo
+destino_gasto
+dias_adicionados
+direcci_n_de_ejecuci_n_del_contrato
+documento_proveedor
+documentos_tipo
+domicilio_representante_legal
+duraci_n_del_contrato
+el_contrato_puede_ser_prorrogado
+entidad_centralizada
+es_grupo
+es_pyme
+espostconflicto
+estado_contrato
+fecha_de_fin_del_contrato
+fecha_de_firma
+fecha_de_inicio_del_contrato
+fecha_de_notificaci_n_de_prorrogaci_n
+fecha_fin_liquidacion
+fecha_inicio_liquidacion
+g_nero_representante_legal
+habilita_pago_adelantado
+id_contrato
+identificaci_n_representante_legal
+justificacion_modalidad_de
+liquidaci_n
+localizaci_n
+modalidad_de_contratacion
+n_mero_de_cuenta
+n_mero_de_documento_ordenador_de_pago
+n_mero_de_documento_ordenador_del_gasto
+n_mero_de_documento_supervisor
+nacionalidad_representante_legal
+nit_entidad
+nombre_del_banco
+nombre_entidad
+nombre_ordenador_de_pago
+nombre_ordenador_del_gasto
+nombre_representante_legal
+nombre_supervisor
+objeto_del_contrato
+obligaci_n_ambiental
+obligaciones_postconsumo
+orden
+origen_de_los_recursos
+pilares_del_acuerdo
+presupuesto_general_de_la_nacion_pgn
+proceso_de_compra
+proveedor_adjudicado
+puntos_del_acuerdo
+rama
+recursos_de_credito
+recursos_propios
+recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_
+referencia_del_contrato
+reversion
+saldo_cdp
+saldo_vigencia
+sector
+sistema_general_de_participaciones
+sistema_general_de_regal_as
+tipo_de_contrato
+tipo_de_cuenta
+tipo_de_documento_ordenador_de_pago
+tipo_de_documento_ordenador_del_gasto
+tipo_de_documento_supervisor
+tipo_de_identificaci_n_representante_legal
+tipodocproveedor
+ultima_actualizacion
+urlproceso
+valor_amortizado
+valor_de_pago_adelantado
+valor_del_contrato
+valor_facturado
+valor_pagado
+valor_pendiente_de
+valor_pendiente_de_ejecucion
+valor_pendiente_de_pago

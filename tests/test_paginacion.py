@@ -211,3 +211,113 @@ def test_retry_after_como_fecha(esperas):
         que="x",
     )
     assert esperas and 8.0 <= esperas[0] <= 11.0
+
+
+# --------------------------------------------------------------------------
+# `columnas_publicadas()`: la tercera pregunta que no es por filas
+# --------------------------------------------------------------------------
+#
+# Se prueba acá y no en `test_vigilancia_de_columnas.py` porque esto ejercita el
+# módulo REAL, con el andamiaje que ya monta este archivo para esquivar el doble
+# de `conftest`. El vigía prueba la decisión; esto prueba la petición.
+
+
+class _Sesion:
+    """Una sesión que devuelve una ficha guionada. Anota cómo la llamaron."""
+
+    def __init__(self, *respuestas):
+        self.cola = list(respuestas)
+        self.llamadas: list[tuple[str, dict]] = []
+
+    def get(self, url, **kwargs):
+        self.llamadas.append((url, kwargs))
+        item = self.cola.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+def _ficha(cuerpo) -> requests.Response:
+    import json
+
+    r = requests.Response()
+    r.status_code = 200
+    r._content = json.dumps(cuerpo).encode()
+    r.url = pag.URL_METADATOS
+    return r
+
+
+@pytest.fixture
+def con_token(monkeypatch):
+    monkeypatch.setenv(pag.VARIABLE_TOKEN, "token-de-prueba")
+
+
+def test_lee_los_nombres_de_campo(con_token):
+    sesion = _Sesion(_ficha({"columns": [
+        {"fieldName": "nombre_entidad", "name": "Nombre Entidad"},
+        {"fieldName": "valor_pagado", "name": "Valor Pagado"},
+    ]}))
+    assert pag.columnas_publicadas(sesion=sesion) == {
+        "nombre_entidad", "valor_pagado",
+    }
+
+
+def test_devuelve_fieldname_y_no_el_titulo(con_token):
+    """El portal muestra `name`, en español y con tildes, y lo cambia sin
+    aviso. SODA2 responde con `fieldName`, que es lo único comparable contra
+    `columnas.py`. Confundirlos daría 85 desaparecidas y 85 nuevas de una vez."""
+    sesion = _Sesion(_ficha({"columns": [
+        {"fieldName": "localizaci_n", "name": "Localización"},
+    ]}))
+    assert pag.columnas_publicadas(sesion=sesion) == {"localizaci_n"}
+
+
+def test_pregunta_por_metadatos_y_no_por_filas(con_token):
+    sesion = _Sesion(_ficha({"columns": [{"fieldName": "x"}]}))
+    pag.columnas_publicadas(sesion=sesion)
+    url, kwargs = sesion.llamadas[0]
+    assert url == pag.URL_METADATOS
+    assert "/api/views/" in url, "el esquema no vive en /resource/"
+    assert kwargs["headers"]["X-App-Token"] == "token-de-prueba"
+
+
+def test_una_ficha_sin_columnas_levanta(con_token):
+    """Devolver el vacío haría que `validar_cobertura()` reportara las 85
+    columnas como desaparecidas: un aviso espectacular, y falso."""
+    sesion = _Sesion(_ficha({"id": "jbjy-vk9h"}))
+    with pytest.raises(RuntimeError, match="no trajo columnas"):
+        pag.columnas_publicadas(sesion=sesion)
+
+
+def test_una_columna_sin_fieldname_no_entra_como_vacia(con_token):
+    sesion = _Sesion(_ficha({"columns": [
+        {"fieldName": "valor_pagado"},
+        {"name": "una columna de sistema sin fieldName"},
+    ]}))
+    assert pag.columnas_publicadas(sesion=sesion) == {"valor_pagado"}
+
+
+def test_los_metadatos_tambien_se_reintentan(con_token, esperas):
+    """Va por `_pedir()` como las otras dos preguntas. Si se hubiera escrito
+    con un `http.get` suelto, un 503 pasajero la tumbaría."""
+    sesion = _Sesion(
+        respuesta(503),
+        _ficha({"columns": [{"fieldName": "valor_pagado"}]}),
+    )
+    assert pag.columnas_publicadas(sesion=sesion, verboso=False) == {"valor_pagado"}
+    assert esperas == [2.0], "debería haber esperado una sola vez, dos segundos"
+
+
+def test_sin_token_falla_antes_de_pedir(monkeypatch):
+    monkeypatch.delenv(pag.VARIABLE_TOKEN, raising=False)
+    sesion = _Sesion()
+    with pytest.raises(pag.ErrorDeConfiguracion):
+        pag.columnas_publicadas(sesion=sesion)
+    assert not sesion.llamadas, "no puede salir a la red sin token"
+
+
+def test_las_dos_url_apuntan_al_mismo_dataset():
+    """Estaban escritas dos veces. Si divergen, el vigía compara el esquema de
+    un dataset contra las filas de otro y las 85 columnas se ven mal de golpe."""
+    assert pag.DATASET in pag.URL_BASE
+    assert pag.DATASET in pag.URL_METADATOS

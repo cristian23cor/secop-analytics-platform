@@ -5,12 +5,16 @@ Este es el único módulo del proyecto que conoce `$limit`, `$offset`, `$where`,
 la capa raw) habla en términos de "traeme los contratos que cumplen tal
 condición" y nunca ve una URL.
 
-No todo lo que se le pregunta a la fuente son filas. `contar()` pregunta
-cuántas hay y `corte()` pregunta qué estado está publicado; las dos existen
-acá por la misma razón de aislamiento, y las dos son una sola petición sin
-paginar. La tercera pregunta de esa familia todavía falta: el endpoint de
-metadatos que `columnas.validar_cobertura()` necesita y que nadie puede llamar
-porque este módulo no lo expone.
+No todo lo que se le pregunta a la fuente son filas. `contar()` pregunta cuántas
+hay, `corte()` pregunta qué estado está publicado y `columnas_publicadas()`
+pregunta qué columnas declara; las tres existen acá por la misma razón de
+aislamiento, y las tres son una sola petición sin paginar.
+
+La tercera es la que le faltaba a `columnas.validar_cobertura()`, que estaba
+escrita y probada desde el principio pero que nadie podía llamar porque este
+módulo no exponía el endpoint. Vive en `/api/views/` y no en `/resource/`: es la
+única pregunta del proyecto que no se contesta en SODA2, porque el esquema del
+dataset no es una fila del dataset.
 
 El aislamiento es a propósito: SODA3 es el default de la plataforma desde
 octubre de 2025, y la v1 eligió SODA2 por depurabilidad. Migrar debe ser
@@ -60,7 +64,17 @@ import requests
 
 from .columnas import COLUMNAS_EXTRAIDAS, clausula_select
 
-URL_BASE = "https://www.datos.gov.co/resource/jbjy-vk9h.json"
+# El id del dataset se escribe una sola vez: las dos URL apuntan al mismo
+# recurso por caminos distintos, y tenerlo repetido es la forma de que un día
+# queden preguntándole a datasets diferentes sin que nadie lo note.
+DATASET = "jbjy-vk9h"
+URL_BASE = f"https://www.datos.gov.co/resource/{DATASET}.json"
+
+# El esquema no es una fila, así que no está en SODA2. Este endpoint devuelve la
+# ficha del dataset (título, licencia, columnas) y de todo eso acá solo se usa
+# `columns[].fieldName`.
+URL_METADATOS = f"https://www.datos.gov.co/api/views/{DATASET}.json"
+
 VARIABLE_TOKEN = "SOCRATA_APP_TOKEN"
 LIMITE_POR_DEFECTO = 5_000
 
@@ -461,14 +475,67 @@ def corte(
     return Corte(mas_viejo=cuerpo[0]["mas_viejo"], mas_nuevo=cuerpo[0]["mas_nuevo"])
 
 
-# TODO(pieza 3): reintentos con espera creciente ante 429 y 5xx.
-#
-# El argumento para postergarlo era que un reintento mal hecho convierte un
-# fallo ruidoso en una corrida lenta que nadie mira. Sigue en pie, pero ahora
-# hay un contrapeso: sin reintento, un solo 429 en la página 550 aborta la
-# corrida. Con `desde_cursor` ya implementado eso cuesta mucho menos que antes
-# (se retoma desde el manifiesto) así que la urgencia bajó, no subió.
-#
-# Cuando se agregue, mirar `indice.py::_abrir()`: ahí ya hay un reintento con
-# espera creciente que resolvió el mismo problema para los bloqueos de DuckDB,
+def columnas_publicadas(
+    *,
+    sesion: requests.Session | None = None,
+    tiempo_limite: int = 60,
+    verboso: bool = True,
+) -> set[str]:
+    """Qué columnas declara la fuente hoy, por su nombre de campo.
+
+    ## Por qué hace falta preguntarlo
+
+    La ingesta pide una lista explícita de 85 columnas en el `$select`. Esa
+    decisión es la que da fidelidad: la fuente no puede meter una columna en el
+    medio y correr las demás, ni cambiarle el tipo a una que no pedimos.
+
+    El precio es simétrico y menos visible. Un `$select` explícito **ignora en
+    silencio todo lo que la fuente agregue**: no falla, no avisa, simplemente no
+    lo trae. Una columna nueva se pierde con la misma cara que tiene una corrida
+    perfecta, y como raw guarda los bytes de lo que pedimos, tampoco se recupera
+    después. Esto es lo único que puede notar la diferencia.
+
+    El caso contrario (una columna que desaparece) sí es ruidoso: el `$select`
+    la nombra y la API responde 400. Pero enterarse por un 400 a mitad de un
+    barrido de cincuenta minutos es enterarse tarde y mal.
+
+    ## Por qué no va en el camino de la ingesta
+
+    Es una petición barata contra un endpoint distinto, y su respuesta no
+    cambia lo que la corrida tiene que hacer: si aparece una columna nueva, hay
+    que clasificarla a mano en `columnas.py` y eso no es algo que un cargador
+    pueda resolver solo. Correrlo acá adentro solo agregaría un modo de fallo
+    (metadatos caídos) a un camino que hoy no lo tiene.
+
+    Returns:
+        Los `fieldName`, que son los nombres con los que responde SODA2 y por
+        lo tanto los que `columnas.validar_cobertura()` sabe comparar. No son
+        los títulos que se ven en el portal, que están en español con tildes y
+        cambian sin aviso.
+    """
+    http = sesion or requests.Session()
+    respuesta = _pedir(
+        lambda: http.get(
+            URL_METADATOS,
+            headers={"X-App-Token": _token()},
+            timeout=tiempo_limite,
+        ),
+        que="los metadatos",
+        verboso=verboso,
+    )
+
+    ficha = respuesta.json()
+    columnas = {
+        c["fieldName"] for c in ficha.get("columns", []) if c.get("fieldName")
+    }
+    # Un conjunto vacío nunca es una respuesta legítima: el dataset existe y
+    # tiene columnas. Si llega vacío es que la ficha cambió de forma, y devolver
+    # el vacío haría que `validar_cobertura()` reportara las 85 como
+    # desaparecidas, que es un aviso espectacular y falso.
+    if not columnas:
+        raise RuntimeError(
+            f"La ficha de {DATASET} no trajo columnas: claves {sorted(ficha)!r}. "
+            f"O el endpoint de metadatos cambió de forma, o respondió otra cosa."
+        )
+    return columnas
 # y conviene que los dos se comporten igual.
