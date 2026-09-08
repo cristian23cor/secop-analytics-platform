@@ -104,6 +104,66 @@ def consultar_testigo() -> str:
         return ""
 
 
+def evaluar(
+    vivo: str, testigo: str, filas: list[dict[str, str]], fecha: str, hora: str
+) -> tuple[dict[str, str], bool, bool]:
+    """Decide que anotar, si la fuente se movio, y si vale escribir el archivo.
+
+    Es una funcion pura: no toca la red ni el disco. Se separo del resto para
+    poder probarla, y la razon esta abajo.
+
+    ## Las dos preguntas que hay que NO mezclar
+
+    **"Se movio desde la ultima vez que mire"** decide si vale escribir el
+    archivo y si hay que avisar. Se contesta contra el **ultimo corte anotado,
+    sea de hoy o de otro dia**.
+
+    **"Regenero la fuente en esta fecha"** es el campo del registro. Una vez que
+    dice `si` no vuelve atras, porque el dia ya tuvo su regeneracion aunque los
+    sondeos siguientes vean el mismo corte.
+
+    ## El defecto que esto arregla
+
+    La primera version contestaba la primera pregunta comparando contra el
+    ultimo corte de un dia **anterior**. En un dia en que la fuente si se movio,
+    ese contraste seguia siendo verdadero en los ocho sondeos, asi que cada uno
+    reescribia el archivo, commiteaba y **abria otro issue**.
+
+    Medido entre el 3 y el 8 de septiembre de 2026: **20 issues y hasta seis
+    commits en un mismo dia**, cuando lo correcto era uno por regeneracion.
+
+    > Cuando dos preguntas se parecen, comprobalas por separado. "Cambio desde
+    > ayer" y "cambio desde que mire" solo coinciden si mirás una vez por dia.
+    """
+    ultimo_anotado = next(
+        (f["corte_vivo"] for f in reversed(filas) if f["corte_vivo"]), ""
+    )
+    cambio = bool(ultimo_anotado) and vivo != ultimo_anotado
+
+    hoy = next((f for f in filas if f["fecha"] == fecha), None)
+    ya_decia_si = hoy is not None and hoy["regenero"] == "si"
+
+    linea = {
+        "fecha": fecha,
+        "hora_cot": hora,
+        "corte_vivo": vivo,
+        # Un testigo ya capturado no se pisa con uno vacio: la consulta al
+        # testigo puede fallar sin abortar el sondeo, y un fallo pasajero al
+        # mediodia borraria el dato bueno de la manana.
+        "testigo": testigo or (hoy["testigo"] if hoy else ""),
+        "regenero": "si" if (cambio or ya_decia_si) else "no",
+        "fuente": "sondeo",
+    }
+
+    # Se escribe si es la primera observacion del dia, si la fuente se movio, o
+    # si recien ahora conseguimos un testigo que antes faltaba. Ese ultimo caso
+    # exige haberlo CONSEGUIDO: sin eso, un testigo que falla siempre haria
+    # escribir en cada sondeo.
+    gano_testigo = hoy is not None and not hoy["testigo"] and bool(testigo)
+    vale_guardar = hoy is None or cambio or gano_testigo
+    return linea, cambio, vale_guardar
+
+
 def main() -> int:
     # Lo primero, ANTES de gastar una peticion de red: que el registro este.
     #
@@ -141,43 +201,18 @@ def main() -> int:
 
     comentarios, filas = leer()
 
-    # Contra el ultimo corte conocido de un dia ANTERIOR. Comparar contra la
-    # linea de hoy borraria un cambio ya detectado esta misma manana.
-    anterior = next(
-        (f["corte_vivo"] for f in reversed(filas)
-         if f["corte_vivo"] and f["fecha"] < fecha),
-        "",
-    )
-    regenero = bool(anterior) and vivo != anterior
-
-    linea = {
-        "fecha": fecha, "hora_cot": hora, "corte_vivo": vivo,
-        "testigo": consultar_testigo(),
-        "regenero": "si" if regenero else "no",
-        "fuente": "sondeo",
-    }
-    # Si el registro cambio de forma que valga la pena guardar. Los sondeos son
-    # frecuentes para DETECTAR rapido; el registro necesita una linea por dia.
-    # Sin esta distincion, sondear cada tres horas serian ocho commits diarios de
-    # ruido en un historial que alguien va a leer.
     hoy_ya_esta = next((f for f in filas if f["fecha"] == fecha), None)
-    vale_guardar = hoy_ya_esta is None or regenero or not hoy_ya_esta["testigo"]
+    anterior = next((f['corte_vivo'] for f in reversed(filas) if f['corte_vivo']), '')
+    linea, cambio, vale_guardar = evaluar(
+        vivo, consultar_testigo(), filas, fecha, hora
+    )
     if hoy_ya_esta is not None:
-        # Un `si` ya anotado hoy no se pisa: la fuente se movio, aunque la
-        # consulta siguiente vea el mismo corte que la anterior.
-        if hoy_ya_esta["regenero"] == "si":
-            linea["regenero"] = "si"
-        # Y un testigo ya capturado tampoco. La consulta al testigo puede fallar
-        # sin abortar el sondeo, y sin esto un fallo pasajero al mediodia borra
-        # el dato bueno de la manana. Vale la regla general: un sondeo posterior
-        # agrega informacion, nunca la quita.
-        if not linea["testigo"]:
-            linea["testigo"] = hoy_ya_esta["testigo"]
         filas[filas.index(hoy_ya_esta)] = linea
     else:
         filas.append(linea)
     if vale_guardar:
         escribir(comentarios, filas)
+    regenero = cambio
 
     dias = (ahora.date() - datetime.fromisoformat(vivo[:10]).date()).days
     print(f"  corte vivo:  {vivo}")
