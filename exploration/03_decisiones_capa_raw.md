@@ -1,1255 +1,793 @@
 # Decisiones de diseño de la capa raw
 
-> El razonamiento completo detrás de cada decisión, con las alternativas que se
-> descartaron y por qué. `01_modelo_dimensional.md` dice **qué** se decidió;
-> acá está el **por qué**.
->
-> **Cómo leerlo:** las decisiones tienen identificadores estables. **D1 a D8**
-> son de arquitectura (dónde vive cada cosa) y se tomaron antes de escribir
-> código. **I1 a I5** son de implementación y salieron al escribir el cargador;
-> I5 salió más tarde todavía, releyendo el código ya escrito. **D10 y D11**
-> salieron de descubrir que la fuente no se regenera a diario, con el cargador ya
-> escrito y corrido dos veces. **D9 no está acá**: es infraestructura del
-> proyecto entero, no de la capa raw, y dónde se documenta sigue abierto.
-> Cada una lleva su alternativa descartada; eso es deliberado, porque una
-> decisión sin alternativa no es una decisión.
->
-> **No re-decidir sin leer.** Si algo parece arbitrario, la razón está escrita.
-> Si encontrás una contradicción entre dos decisiones, eso sí es un problema y
-> hay que resolverlo.
->
-> Documentos hermanos: `00_inventario_fuentes.md` (la fuente, H1-H9) y
-> `02_ecosistema_secop.md` (los datasets hermanos, H17-H33).
+El razonamiento detrás de cada decisión, con las alternativas que se descartaron
+y por qué. `01_modelo_dimensional.md` dice **qué** se decidió; acá está el porqué.
+
+Los identificadores son estables. **D1 a D8** son de arquitectura y se tomaron
+antes de escribir código. **I1 a I5** son de implementación y salieron al
+escribir el cargador. **D10 y D11** salieron de descubrir que la fuente no se
+regenera a diario, con el cargador ya escrito y corrido dos veces. **D9** es
+infraestructura del proyecto entero y no de la capa raw; el identificador queda
+reservado y no se reutiliza.
+
+Cada decisión lleva su alternativa descartada. Eso es deliberado: una decisión sin
+alternativa no es una decisión. Y si algo parece arbitrario, la razón está
+escrita: no re-decidir sin leer.
+
+Documentos hermanos: `00_inventario_fuentes.md` (la fuente, H1-H9 y H34) y
+`02_ecosistema_secop.md` (los datasets hermanos, H17-H33).
 
 ---
 
 ## El problema que D1 resuelve
 
 Antes del mapa conviene entender el conflicto que originó todo. Había dos cosas
-escritas que **no se sostienen juntas**:
-
-1. Raw guarda lo crudo, y la normalización vive en `staging`, que es dbt, que
- corre **después** de raw.
-2. La detección de cambios ocurre **al cargar** raw.
+escritas que no se sostienen juntas: que raw guarda lo crudo y la normalización
+vive en `staging` (que corre *después* de raw), y que la detección de cambios
+ocurre *al cargar* raw.
 
 Si la comparación ocurre antes de la normalización, compara valores crudos. Y
 comparar crudo produce versiones falsas por tres razones distintas:
 
 | Razón | De dónde sale | Qué produce |
 |---|---|---|
-| La API omite las claves nulas | H13 | Ausencia leída como cambio de esquema |
-| Centinelas y capitalización | H5, H13 | `terminado` -> `Terminado` = versión falsa |
+| La API omite las claves nulas | H6 | Ausencia leída como cambio de esquema |
+| Centinelas y capitalización | H5, H6 | `terminado` a `Terminado` = versión falsa |
 | Los números vienen como texto | H6 | `"1000"` distinto de `"1000.0"`, mismo valor |
 
-El caso de los centinelas no es hipotético: `estado_contrato` es una columna
-material y su normalización de capitalización está asignada a `staging`. Si la
-fuente arregla la capitalización de `terminado`, son **774.500 versiones falsas
-en una noche**.
+El caso de los centinelas no es hipotético: `estado_contrato` es material y su
+normalización de capitalización está asignada a staging. Si la fuente arregla la
+capitalización de `terminado`, son **774.500 versiones falsas en una noche**.
 
-Y fijate en la asimetría: este error solo **infla**. Nunca hay un cambio real
-que se vea como no-cambio. Así que el pipeline no se rompe, ningún test falla, y
-el número está mal.
-
-**D1 es qué se mueve para resolverlo.**
-
-Sobre los tipos hay un matiz que se arrastra a D6: H6 prohíbe la **inferencia
-silenciosa** de tipos, no la conversión declarada.
+Y fijate en la asimetría: este error solo **infla**. Nunca hay un cambio real que
+se vea como no-cambio. Así que el pipeline no se rompe, ningún test falla, y el
+número está mal.
 
 ---
 
 ## Mapa de decisiones
 
-alternativas descartadas anotadas abajo.
-
 | # | Decisión | Resolución |
 |---|---|---|
-| D1 | Frontera crudo / comparable | **A**: raw fiel, normalización y comparación en dbt |
-| D2 | Formato y particionado | **JSONL + gzip**, `flujo/fecha_extraccion`, trozos numerados con manifiesto (revisada, ver abajo) |
-| D3 | Retención de raw | **(c)**: deduplicación por bytes antes de persistir; retención completa |
-| D4 | Motor de la comparación | **SQL**, por arrastre de D1 |
-| D5 | Contra qué se compara | **La observación anterior en raw**, no la tabla destino |
-| D6 | Mecánica de la clasificación | **Columna por columna** con `IS DISTINCT FROM`; produce `motivo_del_cambio` |
-| D7 | Alerta de imposibles | **Cargar, registrar y alertar**; severidad `warn` al inicio |
-| D8 | Semántica temporal | **`observado_desde` / `observado_hasta`**, intervalos semiabiertos, nulo abierto |
-| D10 | Procedencia de la observación | **En el `_manifiesto.json`** de la partición: corte anterior, al iniciar y al terminar. **Implementada el 28/08** |
-| D11 | Qué dispara el flujo 3 | **El corte de la fuente, no el calendario.** El cargador consulta y se planta si ese corte ya se ingirió completo. **Implementada el 28/08** |
+| D1 | Frontera crudo / comparable | A: raw fiel, normalización y comparación en dbt |
+| D2 | Formato y particionado | JSONL + gzip, `flujo/fecha_extraccion/particion`, trozos con manifiesto |
+| D3 | Retención de raw | (c): deduplicación por bytes antes de persistir; retención completa |
+| D4 | Motor de la comparación | SQL, por arrastre de D1 |
+| D5 | Contra qué se compara | La observación anterior en raw, no la tabla destino |
+| D6 | Mecánica de la clasificación | Columna por columna con `IS DISTINCT FROM` |
+| D7 | Alerta de imposibles | Cargar, registrar y alertar; severidad `warn` al inicio |
+| D8 | Semántica temporal | `observado_desde` / `observado_hasta`, semiabiertos, nulo abierto |
+| D10 | Procedencia de la observación | En el `_manifiesto.json` de la partición |
+| D11 | Qué dispara el flujo 3 | El corte de la fuente, no el calendario |
 
-**El hilo que las une.** Seis de las ocho se resolvieron con el mismo criterio:
+**El hilo que las une.** Seis de las diez se resolvieron con el mismo criterio:
 *entre un error que sobra y uno que falta, elegir el que sobra.* Aparece en la
 deduplicación por bytes (D3), en el orden escribir-antes-que-índice (D2), en la
-decisión de no bloquear la carga (D7) y en el rechazo del hash (D6). Es el
-mismo criterio del `$select` explícito .
-
-**Lo que queda por construir** (ya sin decisiones pendientes):
-
-1. ~~El cargador con deduplicación por bytes, trozos y manifiesto.~~ Escrito.
-2. ~~El índice de hashes en DuckDB, con su reconstrucción desde raw.~~ Escrito.
-2b. ~~La consulta del corte, los campos de procedencia y el guardarraíl.~~
- Escrito y corrido contra la fuente el 28/08, y el manifiesto del 25 anotado
- hacia atrás con `corte_al_iniciar = 2026-08-25T09:05:54.277Z`.
-3. ~~El generador `columnas.py` -> dbt, con el test de deriva.~~ Escrito. El
- 29/08 se le sumaron dos macros más:
-
- - `estados_vivos()`, que sale de `flujos.py` y no de `columnas.py`: no es una
-   propiedad del esquema sino del universo que el flujo 3 barre, y
-   `motivo_de_cierre` la necesita para que "sigue en observación" signifique
-   exactamente "la ingesta lo sigue barriendo".
- - `fuentes_de_financiacion()`, que obligó a crear la constante que faltaba.
-   **Las seis fuentes estaban escritas a mano en tres lugares** (dos veces
-   dentro de `columnas.py`, en MATERIALES y en MONETARIAS, y otra en
-   `medir_rn1.py`) y el modelo de dbt iba a ser el cuarto. Son un concepto y no
-   una coincidencia de clasificación: RN1 exige que sumen `valor_del_contrato` y
-   RN6 que eso valga en toda versión histórica. Ahora son
-   `FUENTES_DE_FINANCIACION` en `columnas.py`, y MATERIALES y MONETARIAS se
-   arman uniéndola.
-
-   Es la regla 5 en el lugar donde nadie la había buscado: el módulo que existe
-   para no duplicar la lista de las 85 columnas tenía una lista de seis
-   duplicada adentro. El refactor se comprobó **byte a byte**: el archivo
-   generado no cambió, o sea que los conjuntos son los mismos.
-
- **Falta el CI que corra el chequeo de deriva.**
-4. ~~`stg_contratos`: relleno H13, centinelas, tipos, `urlproceso`,
- `noticeUID`.~~ Escrito.
-5. ~~El modelo SCD2 propio, con `motivo_del_cambio` y `motivo_de_cierre`.~~
- Escrito el 28 y el 29/08. **`motivo_del_cambio` no quedó como columna del
- hecho**: quedó como modelo propio, `int_cambios_por_columna`, porque medido no
- cabe en una columna: solo el 39,6% de las versiones cambian una sola material
- y el resto hasta doce a la vez. Ver sección 3 de `01_modelo_dimensional.md`.
- **Falta que sea incremental**, que es lo que D5 pide: hoy se reconstruye
- entero en cada corrida.
-6. La tabla de alertas de imposibles.
-
+decisión de no bloquear la carga (D7) y en el rechazo del hash (D6). Es el mismo
+criterio del `$select` explícito.
 
 ---
 
-## Arquitectura: D1 a D8, más D10 y D11
+## D1: raw fiel, comparación en SQL después de staging
 
-###  D1 DECIDIDA: Opción A (raw fiel, comparación en SQL después de staging)
+Raw guarda lo que devolvió la API sin tocar un carácter. El relleno, los
+centinelas, los tipos y `urlproceso` se resuelven en staging. La comparación corre
+en SQL, sobre valores ya normalizados.
 
+**La razón es una sola:** la fuente se sobrescribe entera cada vez que se
+regenera, así que lo que se guarde mal no se puede volver a pedir. Y la
+probabilidad de que la primera versión de la normalización tenga un error es alta;
+H33 es la prueba, una columna tipada como fecha que parsea sin quejarse y está
+sistemáticamente corrupta. Va a aparecer otro defecto así. Con raw fiel se corrige
+el código y se reprocesa; con raw canónico queda un agujero permanente en la
+historia.
 
-Raw guarda lo que devolvió la API sin tocar un carácter. El relleno (H13), los
-centinelas, los tipos y `urlproceso` se resuelven en `staging` (dbt). La
-comparación corre en SQL, sobre valores ya normalizados.
+**Por qué no B** (raw canónico, comparación en Python): apuesta a que la limpieza
+está bien escrita hoy, y esta fuente ya demostró que no perdona esa apuesta.
 
-**Razón principal, y es una sola:** la fuente se sobrescribe entera cada vez que
-se regenera, así que lo que se guarde mal no se puede volver a pedir. Y la probabilidad de que
-la primera versión de la normalización tenga un error es alta: H33 es la
-prueba: una columna tipada como fecha, que parsea sin quejarse, y está
-sistemáticamente corrupta. Va a aparecer otro defecto así. Con raw fiel se
-corrige el código y se reprocesa; con raw canónico queda un agujero permanente
-en la historia.
-
-**Por qué no B:** apuesta a que la limpieza está bien escrita hoy, y esta
-fuente ya demostró que no perdona esa apuesta. (Los argumentos de velocidad y
-acoplamiento son secundarios.)
-
-**Por qué no C:** el `canonico` de C hace exactamente lo que hace `staging`:
-rellenar, normalizar centinelas, castear, aplanar. Escrito como modelo de dbt,
-C es A con un nombre de más. Escrito en Python, materializa millones de filas
-para hacer lo que dbt haría igual una capa más abajo, y **encima sigue pagando
-el costo de traducir la clasificación a SQL**. Tiene los dos costos y ninguna
-ventaja exclusiva.
+**Por qué no C** (dos subcapas): el `canonico` de C hace exactamente lo que hace
+staging. Escrito como modelo de dbt, C es A con un nombre de más; escrito en
+Python, materializa millones de filas para hacer lo que dbt haría igual una capa
+más abajo, y encima sigue pagando el costo de traducir la clasificación a SQL.
+Tiene los dos costos y ninguna ventaja exclusiva.
 
 **Cómo se paga el costo de A.** El único problema real es que la clasificación
-material/cosmética/imposible vive en `columnas.py` y la comparación estará en
-SQL. No se traduce: **se genera**. Un script lee `columnas.py` y escribe un
-archivo dentro del proyecto de dbt, más un test de CI que falla si el generado
-no coincide con el módulo. ~40 líneas.
+vive en `columnas.py` y la comparación está en SQL. No se traduce: **se genera**.
+Un script lee `columnas.py` y escribe un archivo dentro del proyecto de dbt, más
+un test de CI que falla si el generado no coincide con el módulo.
 
-Eso convierte la debilidad en la mejor parte, y da una frase de README:
+> `columnas.py` no es documentación que hay que mantener sincronizada con dbt. Es
+> la fuente desde la cual dbt se genera, con un test en CI que falla si alguien
+> las separa.
 
-> `columnas.py` no es documentación que hay que mantener sincronizada con dbt.
-> Es la fuente desde la cual dbt se genera, con un test en CI que falla si
-> alguien las separa.
+Lo que se resigna, sin adornos: B es más rápido de construir. Se cambia velocidad
+de construcción por capacidad de corregir el pasado, y en este proyecto la moneda
+es correcta, porque el pasado que se guarda **es el producto**.
 
-**Lo que se resigna, dicho sin adornos:** B es más rápido de construir. Se
-cambia velocidad de construcción por capacidad de corregir el pasado. En este
-proyecto la moneda es correcta, porque el pasado que se guarda **es el
-producto**.
+**Y el generador destapó una duplicación adentro del módulo que existe para
+evitarlas.** Al agregar el macro `fuentes_de_financiacion()`, las seis fuentes
+estaban escritas a mano en tres lugares: dos veces dentro de `columnas.py`, en
+MATERIALES y en MONETARIAS, y otra en `medir_rn1.py`. El modelo de dbt iba a ser
+el cuarto. Son un concepto y no una coincidencia de clasificación, porque RN1
+exige que sumen `valor_del_contrato` y RN6 que eso valga en toda versión
+histórica, así que quedaron como una constante propia de la que las otras dos
+listas se arman. El refactor se comprobó byte a byte: el archivo generado no
+cambió, o sea que los conjuntos son los mismos.
 
- **CONDICIÓN ABIERTA: revisar al decidir D3.** Todo el argumento se apoya en
-"podés reprocesar desde raw". Si el volumen obliga a una retención corta (por
-ejemplo 30 días), esa promesa vale 30 días y la ventaja de A se achica mucho.
-**Si D3 termina en retención corta, hay que volver sobre D1.** Queda anotado en
-vez de resuelto en silencio.
+D1 quedó con una condición abierta —si D3 terminaba en retención corta, la promesa
+de "podés reprocesar desde raw" valdría 30 días y la ventaja de A se achicaría—
+pero D3 terminó en retención completa y la condición se disolvió.
 
-###  D2 DECIDIDA: formato, particionado y punto de control
+---
 
-**Formato: JSONL comprimido con `zstd`.** Casi forzado por D1=A, no es
-preferencia:
+## D2: formato, particionado y punto de control
 
-- `urlproceso` es objeto anidado. Meterlo en Parquet exige struct, string JSON,
- o aplanar, y aplanar ya es normalizar.
-- La API omite claves nulas: las filas no comparten esquema. Parquet exige
- esquema fijo; materializar las 67 columnas **es** el relleno de H13.
-- La ventaja principal de Parquet, el tipado, no aplica: todo viene texto (H6).
+**Formato: JSONL comprimido.** Casi forzado por D1=A, no es preferencia.
+`urlproceso` es un objeto anidado, y meterlo en Parquet exige struct, string JSON
+o aplanar, y aplanar ya es normalizar. La API omite claves nulas, así que las
+filas no comparten esquema, y Parquet exige esquema fijo: materializar las 67
+columnas *es* el relleno que D1 prohíbe. Y la ventaja principal de Parquet, el
+tipado, no aplica porque todo viene como texto (H6).
 
-`zstd` sobre `gzip` por ratio y velocidad, soportado por DuckDB. Decisión de
-bajo riesgo, reversible recomprimiendo.
+Variante nombrada y no elegida: Parquet con una columna `payload` que contenga el
+JSON crudo más metadatos. Da particionado columnar sin tocar el contenido; más
+maquinaria de la que hace falta hoy.
 
-Variante nombrada y no elegida: Parquet con una columna `payload` que contenga
-el JSON crudo más columnas de metadatos. Da particionado columnar sin tocar el
-contenido; más maquinaria de la que hace falta hoy.
+**Particionado: por flujo, después por fecha de extracción, después por
+partición.** Flujo primero porque los tres tienen volúmenes y cadencias distintas
+y podrían necesitar políticas distintas. Fecha *de extracción*, no de negocio: raw
+responde "qué entregó la fuente ese día".
 
-**Particionado: por flujo, después por fecha de extracción.**
+**Punto de control: trozos numerados con manifiesto.** Un archivo cerrado cada N
+páginas, más un registro del último cursor de keyset confirmado. Al reiniciar se
+descarta el trozo incompleto y se retoma desde el cursor del último trozo cerrado.
 
-```
-raw/flujo=refresco_de_vivos/fecha_extraccion=2026-08-21/particion=2020-01/parte-0001.jsonl.gz
-```
+El argumento decisivo es la compresión: los límites de los trozos son los puntos
+donde el stream se cierra, así que nunca queda un archivo a medio comprimir. Eso
+es exactamente lo que descarta el apéndice con cursor, porque un archivo
+comprimido cortado a la mitad tiene la cola corrupta y el archivo entero se vuelve
+sospechoso: habría que dejar raw sin comprimir y multiplicar el volumen por diez.
 
-Flujo primero porque los tres tienen volúmenes y cadencias distintas y podrían
-necesitar políticas distintas; con la fecha primero no se pueden aplicar sin
-recorrer todos los directorios.
+La opción "todo o nada" con directorio temporal y renombrado atómico era
+perfectamente defendible, y se descarta solo porque tirar 40 minutos de descarga
+por morir en la página 550 de 560 es evitable barato.
 
-Fecha **de extracción**, no de negocio: raw responde "qué entregó la fuente ese
-día".
-
-**Punto de control: opción 3: trozos numerados con manifiesto.**
-
-Un archivo cerrado cada N páginas, más un registro de progreso con el último
-cursor de keyset confirmado. Al reiniciar se descarta el trozo incompleto y se
-retoma desde el cursor del último trozo cerrado.
-
-*Argumento decisivo: la compresión.* Los límites de los trozos son los puntos
-donde el stream de compresión se cierra, así que nunca queda un archivo a medio
-comprimir. Eso es exactamente lo que descarta la opción 2 (apéndice con
-cursor): un archivo comprimido cortado a la mitad tiene la cola corrupta y el
-archivo entero se vuelve sospechoso: habría que dejar raw sin comprimir y
-multiplicar el volumen por diez.
-
-*(Este párrafo se escribió cuando el compresor elegido era `zstd`. El argumento
-no depende del compresor y vale igual con `gzip`; ver D2 revisada.)*
-
-Opción 1 (todo o nada, con directorio temporal y renombrado atómico) era
-perfectamente defendible: más simple y ningún lector ve datos a medias. Se
-descarta solo porque tirar 40 minutos de descarga por morir en la página 550 de
-560 es evitable barato.
-
-**Detalle:** en noches tranquilas la deduplicación de D3 puede producir trozos
-vacíos (cincuenta páginas sin un solo cambio dan cero filas). No se escriben.
-
-#### Dos invariantes que valen para cualquier implementación
+### Dos invariantes que valen para cualquier implementación
 
 **1. Escribir primero, actualizar el índice de hashes después.** Si el índice se
-actualiza antes de escribir y el proceso muere en el medio, el índice dice "ya
-vi este contrato" y la fila **no está en ningún lado**: se perdió para siempre,
-porque la fuente ya se sobrescribió. Al revés, como mucho se reescribe la fila
-en el reintento: un duplicado en raw, que dbt resuelve tomando la última
-observación por contrato.
-
-Misma asimetría que decidió D3: entre un error que sobra y uno que falta, se
-elige el que sobra.
+actualiza antes y el proceso muere en el medio, el índice dice "ya vi este
+contrato" y la fila no está en ningún lado: se perdió para siempre, porque la
+fuente ya se sobrescribió. Al revés, como mucho se reescribe la fila en el
+reintento. Misma asimetría que decidió D3.
 
 **2. Una marca de completitud por partición.** Un archivo `_COMPLETO` que solo
-aparece al final. dbt lee únicamente particiones que la tengan. Sin eso, un
+aparece al final, y dbt lee únicamente particiones que lo tengan. Sin eso, un
 `dbt run` disparado mientras la ingesta corre lee media noche y produce números
 que nadie va a poder explicar.
 
-###  D2 REVISADA: el compresor pasa de `zstd` a `gzip`
+### D2 revisada: el compresor pasa de zstd a gzip
 
-D2 eligió `zstd` "por mejor ratio y velocidad". Dos cosas aparecieron después:
+D2 eligió `zstd` por mejor ratio y velocidad. Después aparecieron dos cosas:
+`zstd` no está en la biblioteca estándar de Python 3.12 (llegó en 3.14), y el
+problema de volumen que lo justificaba no existe.
 
-1. **`zstd` no está en la biblioteca estándar de Python 3.12**: llegó en 3.14.
- Usarlo significa agregar `zstandard` a `pyproject.toml`.
-2. **El problema de volumen que lo justificaba no existe.**
+Una fila pesa 2.845 bytes sin comprimir, y los nombres de columna se repiten
+idénticos en cada línea, así que comprimen extraordinariamente bien. zstd comprime
+20% mejor y es 8 veces más rápido, pero a esta escala eso son 200 MB al año y
+fracciones de segundo dentro de un proceso de 20 minutos: **el argumento técnico
+casi no existe.**
 
-#### Medición sobre filas realistas (67 columnas, textos y entidades reales)
-
-Una fila pesa **2.845 bytes** sin comprimir. Los nombres de columna se repiten
-idénticos en cada línea, así que comprimen extraordinariamente bien:
-
-| Compresor | 30.000 filas | Ratio | Tiempo | Proyección anual |
-|---|---|---|---|---|
-| gzip nivel 6 | 1,81 MB | 47 veces | 0,40 s | **~1,2 GB** | 
-| gzip nivel 9 | 1,77 MB | 48 veces | 0,74 s | ~1,2 GB |
-| zstd nivel 3 | 1,44 MB | 60 veces | 0,05 s | ~1,0 GB |
-| zstd nivel 10 | 1,30 MB | 66 veces | 0,26 s | ~0,9 GB |
-
- **Corrige la estimación de D3.** Se había escrito "~5 GB/año". El total real
-ronda **1 GB/año**, y la primera corrida completa (2.825.685 filas) son
-**~140 MB**. Pesimista por un factor de cinco.
-
- **Esta tabla no reproduce, y hay que decirlo.** El barrido completo del
-2026-08-23 midió **324 bytes por fila** comprimidos sobre 2.824.446 filas, no
-los 63 que se deducen de 1,81 MB / 30.000. Son cinco veces más, y las mediciones
-intermedias (269 y 342 bytes por fila, sobre muestras de 18.746 y 5.331 filas)
-coinciden con la grande, no con esta.
-
-La segunda corrida agregó la muestra que faltaba: **320 bytes por fila sobre
-58.971 filas**, o sea una partición de noche típica y no un barrido completo.
-Era la duda razonable (que el ratio del barrido saliera de su mezcla particular
-de filas) y queda descartada. Cuatro mediciones entre 269 y 342; una sola en 63.
-
-La hipótesis es que las 30.000 filas de esta tabla vinieron de una consulta con
-mucha más redundancia que una muestra representativa: una sola entidad, o un
-solo día. **No está confirmada**: habría que revisar qué consulta las trajo.
-
-La decisión de D2 no cambia: el argumento decisivo fue la biblioteca estándar,
-no el ratio. Pero la comparación entre compresores de esta tabla queda sin
-respaldo, y los números absolutos de la columna "al año" están mal.
-
-#### La decisión
-
-zstd comprime 20% mejor y es 8 veces más rápido. Pero a esta escala eso son 200 MB al
-año y fracciones de segundo dentro de un proceso de 20 minutos: **el argumento
-técnico casi no existe**.
-
-Se elige **gzip**, y el criterio es explícito: *una dependencia se justifica
+Se elige gzip, nivel 6, con un criterio explícito: *una dependencia se justifica
 cuando resuelve un problema que se tiene*, y el problema de volumen resultó no
 existir. Beneficio concreto: quien clone el repo abre un archivo de raw con
-`gzip.open` de la stdlib, sin instalar nada, que es el punto 7 de la definición
-de terminado.
+`gzip.open` de la stdlib, sin instalar nada.
 
-**Nivel 6**, el de por defecto. El 9 gana 2% a cambio del doble de tiempo.
+**La tabla de compresores que sostenía esto no reproduce, y hay que decirlo.** Se
+midió 1,81 MB para 30.000 filas, o sea 63 bytes por fila. El barrido completo del
+23/08 midió **324 bytes por fila** sobre 2.824.446 filas, y las mediciones
+intermedias (269, 342 y 320) coinciden con la grande, no con esa. Cuatro
+mediciones entre 269 y 342; una sola en 63. La hipótesis es que esas 30.000 filas
+vinieron de una consulta con mucha más redundancia —una sola entidad, o un solo
+día— y no está confirmada. La decisión no cambia, porque el argumento decisivo fue
+la biblioteca estándar y no el ratio, pero los números absolutos de esa tabla
+están mal.
 
-**Lo que NO cambia de D2:** JSONL como formato (las razones eran `urlproceso`
-anidado, claves ausentes y tipado inútil: ninguna depende del compresor),
-`flujo/fecha_extraccion` como particionado, y trozos numerados con manifiesto.
+### D2 corregida: la ruta necesita un nivel `particion=`
 
+Es un defecto de diseño, no de implementación. La ruta original,
+`raw/flujo=.../fecha_extraccion=...`, colisiona en dos casos reales y sin fallar
+ruidosamente.
 
-###  D2 CORREGIDA (segunda vez): la ruta necesita un nivel `particion=`
+**El flujo 3 en paralelo:** se lanzan varias particiones del universo vivo a la
+vez, las cuatro corren la misma noche con el mismo flujo, así que las cuatro
+escriben en el mismo directorio, se pisan `parte-0001.jsonl.gz` y se machacan el
+manifiesto.
 
-Es un defecto de diseño, no de implementación: la ruta que fijó D2 **colisiona en dos casos
-reales, y sin fallar ruidosamente**.
-
-#### Ruta vieja
-
-```
-raw/flujo=refresco_de_vivos/fecha_extraccion=2026-08-21/
-```
-
-**Colisión 1: el flujo 3 en paralelo.** Se lanzan varias particiones del
-universo vivo a la vez. Las cuatro corren la misma noche con el mismo flujo, así
-que **las cuatro escriben en el mismo directorio**: se pisan
-`parte-0001.jsonl.gz` y se machacan el manifiesto.
-
-**Colisión 2: el backfill.** Las ~80 particiones mensuales de los flujos 1 y 2
-se extraen todas hoy, así que todas caen en la misma `fecha_extraccion`. Peor
-que pisarse: la segunda **lee el manifiesto de la primera**, cree estar
-reanudando y saltea trozos. Produce un directorio que parece válido y está
-incompleto.
+**El backfill:** las ~80 particiones mensuales de los flujos 1 y 2 se extraen
+todas hoy, así que todas caen en la misma `fecha_extraccion`. Peor que pisarse: la
+segunda **lee el manifiesto de la primera**, cree estar reanudando y saltea
+trozos. Produce un directorio que parece válido y está incompleto.
 
 Ninguna de las dos falla: producen archivos.
 
-#### La causa
+La causa es que la ruta decía *cuándo* se extrajo, no *qué pedazo*, y la unidad de
+trabajo real no es "el flujo tal día" sino "este rango, extraído tal día". Como el
+manifiesto y `_COMPLETO` son por directorio, la ruta tiene que identificar
+unívocamente una unidad de trabajo:
 
-La ruta decía **cuándo** se extrajo, no **qué pedazo**. Y la unidad de trabajo
-real no es "el flujo tal día", es "este rango, extraído tal día". Como el
-manifiesto y `_COMPLETO` son por directorio (I3), la ruta tiene que identificar
-unívocamente una unidad de trabajo.
+> un directorio = una unidad de trabajo = un escritor = un manifiesto
 
-#### Ruta corregida
+`particion` es el día en corrida diaria de los flujos 1 y 2, el mes en backfill, y
+el rango de `fecha_de_firma` que le tocó a cada proceso del flujo 3. Beneficio
+colateral: el nombre del directorio dice qué se pidió, cosa que antes solo se
+podía reconstruir leyendo los datos.
 
-```
-raw/flujo=refresco_de_vivos/fecha_extraccion=2026-08-21/particion=2020-01/
-```
+Se agregó validación: `particion` no puede traer `/`, `\`, `=`, espacios ni estar
+vacía. Un `particion="2020/01"` crearía un nivel extra de directorio en silencio.
 
-Regla que ahora se sostiene:
+---
 
-> **un directorio = una unidad de trabajo = un escritor = un manifiesto**
+## D3: deduplicación por bytes antes de persistir
 
-`particion` es el día en corrida diaria de los flujos 1 y 2 (redundante con
-`fecha_extraccion`, pero inofensivo y consistente), el mes en backfill, y el
-rango de `fecha_de_firma` que le tocó a cada proceso del flujo 3.
+**El problema.** El flujo 3 barre los ~2,8M de contratos vivos por corrida. A ~2,5
+KB de JSON por fila son ~7 GB por corrida crudos, ~250 GB/año. Inviable en un
+portátil. Y el 99% de lo que se guardaría es idéntico a lo de ayer.
 
-**Beneficio colateral:** el nombre del directorio dice **qué se pidió**. Con la
-ruta vieja eso solo se podía reconstruir leyendo los datos.
-
-**Validación agregada:** `particion` no puede traer `/`, `\`, `=`, espacios ni
-estar vacía. Un `particion="2020/01"` crearía un nivel extra de directorio en
-silencio y rompería la regla. Falla temprano.
-
-**Lo que no cambia:** el índice de hashes sigue resuelto por I4 (leer al
-arrancar, escribir al cerrar). Cuatro directorios distintos, cuatro volcados
-serializados al final.
-
-**Tests que lo cubren:** `test_dos_particiones_de_la_misma_noche_no_se_pisan`,
-`test_el_backfill_no_reanuda_la_particion_equivocada`,
-`test_una_particion_que_rompe_la_ruta_falla_temprano`.
-
-###  D3 DECIDIDA: Opción (c): deduplicación por bytes antes de persistir
-
- Las letras (a)-(d) de D3 son un eje distinto de las A/B/C de D1. No se
-corresponden.
-
-**El problema.** El flujo 3 barre los ~2,8M de contratos vivos por corrida:
-verificado contra `flujos.py`: la partición de `refresco_de_vivos` es
-paralelismo **dentro** de una noche, no reparto entre noches. A ~2,5 KB de JSON
-por fila (los nombres de columna son larguísimos y se repiten), son ~7 GB/noche
-crudos, ~700 MB comprimidos, **~250 GB/año**. Inviable en un portátil. Y el 99%
-de lo que se guardaría es idéntico a lo de ayer.
-
-**La decisión.** El cargador compara la fila contra el último hash guardado de
-ese contrato y **solo escribe si los bytes cambiaron**.
+**La decisión.** El cargador compara la fila contra el último hash guardado de ese
+contrato y solo escribe si los bytes cambiaron.
 
 **Por qué no es circular con D1=A.** La objeción obvia es que detectar cambios
 exige normalizar. No aplica: acá no se compara para decidir si generar una
 versión, sino para decidir **qué escribir en disco**. Una comparación cruda de
-bytes solo se equivoca en una dirección: si `"1000"` pasó a `"1000.00"`, la
-lee como cambio y guarda de más. **Nunca se equivoca al revés.** Un error que
-solo puede sobrar es seguro; mismo criterio que el `$select` explícito.
-
-Tampoco pierde fidelidad: si la fila de hoy es byte por byte igual a la última
-guardada, guardarla otra vez no agrega información.
+bytes solo se equivoca en una dirección: si `"1000"` pasó a `"1000.00"`, la lee
+como cambio y guarda de más. Nunca se equivoca al revés. Tampoco pierde fidelidad:
+si la fila de hoy es byte por byte igual a la última guardada, guardarla otra vez
+no agrega información.
 
 **Volumen resultante, medido sobre dos corridas completas:**
 
-| | Barrido inicial (2026-08-23) | Corrida incremental (2026-08-25) |
+| | Barrido inicial (23/08) | Corrida incremental (25/08) |
 |---|---|---|
 | Filas recibidas | 2.835.895 | 2.840.337 |
-| Filas escritas | 2.824.446 | **58.971** |
-| Comprimido por fila | 324 bytes | **320 bytes** |
-| En disco | 916 MB | **18 MB** |
-
-La segunda corrida es la que faltaba: convierte la proyección de "si cambian
-~30.000 por corte" en una medición. **Su muestra:** corrida completa sin
-reanudar, con los flujos 1 y 2 sin correr antes, así que no contaminaron el
-índice. El intervalo **no se conoce**: nadie registró de qué corte de la fuente
-leyó el barrido del 23, y la fuente pasa días sin regenerar. Ver *La cadencia de
-la fuente no es diaria*, abajo.
-
-**El ancho del intervalo está entre 2 y 5 días y ya no se puede averiguar.**
-La versión anterior de esta sección lo anotaba como "dos regeneraciones, 23 -> 25,
-cubriendo domingo y lunes". Eso daba por sentado que la fuente había regenerado
-el domingo 23, cosa que nadie observó. El extremo izquierdo del intervalo se
-destruyó con el corte que lo contenía.
+| Filas escritas | 2.824.446 | 58.971 |
+| Comprimido por fila | 324 bytes | 320 bytes |
+| En disco | 916 MB | 18 MB |
 
 **Lo que cambió en el intervalo, separado por población:**
 
 | | Filas |
 |---|---|
-| Contratos conocidos que cambiaron | **52.954** |
+| Contratos conocidos que cambiaron | 52.954 |
 | Contratos nuevos en el universo vivo | 6.017 |
 | Descartadas por bytes idénticos | 2.781.366 |
 | Tasa de cambio sobre las conocidas | **1,87%** |
 
- **`escritas` mezcla dos poblaciones y no se puede citar como tasa de
-cambio.** De las 58.971 filas, 6.017 son contratos nuevos que se escriben por
-serlo, no por haber cambiado. Sin la separación, la tasa de cambio se citaría
-un 11% más alta de lo que es.
+`escritas` mezcla dos poblaciones y no se puede citar como tasa de cambio: de las
+58.971 filas, 6.017 son contratos nuevos que se escriben por serlo, no por haber
+cambiado. Sin la separación, la tasa se citaría un 11% más alta de lo que es.
 
- **Y no se divide por el número de días.** El índice guarda un hash por
-contrato, así que uno que cambió dos veces dentro del intervalo se escribió una
-sola vez: el delta de un intervalo largo es **menor** que la suma de los deltas
-cortos que contiene.
+Y no se divide por el número de días. El índice guarda un hash por contrato, así
+que uno que cambió dos veces dentro del intervalo se escribió una sola vez: el
+delta de un intervalo largo es *menor* que la suma de los deltas cortos que
+contiene.
 
-**RETIRADAS: dos cifras por unidad de tiempo que no se pueden sostener.**
-Esta sección decía *"al menos 26.477 contratos cambian por día"* y *"al año, a
-ese ritmo, al menos 3,4 GB"*. Las dos salían de dividir por **2**, y ese 2 era el ancho
-supuesto del intervalo, no uno medido. Con un ancho de entre 2 y 5 días, el piso
-por día cae a un rango de ~10.600 a ~26.477 y el anual a ~1,3-3,4 GB, y ninguno
-de los dos extremos es una medición.
+**Dos cifras por unidad de tiempo quedaron retiradas.** Esta sección decía "al
+menos 26.477 contratos cambian por día" y "al año, a ese ritmo, al menos 3,4 GB".
+Las dos salían de dividir por 2, y ese 2 era el ancho *supuesto* del intervalo, no
+uno medido. Con un ancho real de entre 2 y 5 días, el piso por día cae a un rango
+de ~10.600 a ~26.477, y ninguno de los dos extremos es una medición.
 
-**Lo que sí se sostiene, y es lo que hay que citar:** en ese intervalo cambiaron
-**52.954 contratos conocidos de 2.834.320**, un **1,87%**. Es una razón sobre el
+Lo que sí se sostiene, y es lo que hay que citar: en ese intervalo cambiaron
+52.954 contratos conocidos de 2.834.320, o sea 1,87%. Es una razón sobre el
 intervalo mismo y no depende de su ancho. Cualquier reexpresión por día o por año
-necesita un intervalo con **los dos extremos fechados**, que es justo lo que D10
+necesita un intervalo con los dos extremos fechados, que es justo lo que D10
 existe para garantizar de ahora en adelante.
 
-#### La reducción de almacenamiento, partida y medida
+### La reducción de almacenamiento, partida y medida
 
-Frente a guardar la foto entera sin comprimir cada vez que la fuente se
-regenera (8,08 GB por corte):
+Frente a guardar la foto entera sin comprimir en cada regeneración (8,08 GB por
+corte):
 
 | Efecto | Factor | Qué es |
 |---|---|---|
-| Compresión | **8,9 veces** | gzip haciendo su trabajo |
-| Deduplicación | **48,2 veces** | el diseño |
-| **Total** | **428 veces** | 8,08 GB contra 18 MB |
+| Compresión | 8,9 veces | gzip haciendo su trabajo |
+| Deduplicación | 48,2 veces | el diseño |
+| Total | **428 veces** | 8,08 GB contra 18 MB |
 
- **428 veces es cota inferior, y hay que decir en qué dirección se equivoca.** El
+428 veces es cota inferior, y conviene decir en qué dirección se equivoca: el
 intervalo medido abarca entre 2 y 5 días, así que cambiaron más contratos de los
-que cambian entre dos cortes consecutivos; con un intervalo más corto la
-deduplicación descarta más y el factor sube. La dirección del error no cambia
-con el ancho desconocido: solo cambia cuánto. El "~800 veces" que circulaba no era
-absurdo: era un número sin medición, y ahora hay un piso.
+que cambian entre dos cortes consecutivos, y con un intervalo más corto la
+deduplicación descarta más y el factor sube.
 
- **Este bloque reemplaza tres estimaciones anteriores, las tres equivocadas.**
-La original decía 12 MB por noche y 5 GB al año; la corrección de D2 revisada
-decía 2 MB y 1 GB; y el factor de reducción circuló como "~250 veces" y como "~800 veces"
-sin que ninguno saliera de una medición sobre el universo completo.
+Este bloque reemplaza tres estimaciones anteriores, las tres equivocadas: la
+original decía 12 MB por noche y 5 GB al año; la corrección de D2 decía 2 MB y 1
+GB; y el factor circuló como "~250 veces" y como "~800 veces" sin que ninguno
+saliera de una medición sobre el universo completo.
 
-**Consecuencia sobre D1:** la condición abierta **se disuelve**. Hay retención
-completa sin retención corta, así que "puedo reprocesar el pasado" sigue en pie
-entero. **D1 no hay que revisarla.**
+**Costos, sin adornos.** "Qué había el 21 de agosto" deja de ser un `WHERE fecha =
+...` y pasa a ser un join contra el registro de observaciones. Comparar bytes
+exige que el JSON venga siempre con las claves en el mismo orden, así que se
+ordenan antes de hashear (ordenar claves no es transformar valores, así que no
+rompe D1). Y hace falta el último hash por contrato: 2,8M hashes, **171 MB** en
+DuckDB, medido; la estimación de 90 MB no contaba el índice de la llave primaria.
 
-**Costos, sin adornos:**
+**Propiedad de diseño importante:** el índice de hashes es derivado, no
+autoritativo. Si se pierde o se corrompe, se reconstruye releyendo raw y tomando
+el último hash por contrato. Los archivos siguen siendo la fuente de verdad; el
+índice es caché.
 
-- *Ergonomía de lectura.* "Qué había el 21 de agosto" deja de ser un
- `WHERE fecha = ...` y pasa a ser un join contra el registro de observaciones.
-- *Orden de claves.* Comparar bytes exige que el JSON venga siempre con las
- claves en el mismo orden. Se ordenan antes de hashear. Ordenar claves no es
- transformar valores, así que no rompe A.
-- *Índice de estado.* Hace falta el último hash por contrato: 2,8M hashes,
- **171 MB** en DuckDB, medido: la estimación de 90 MB no contaba
- el índice de la llave primaria.
+**Opciones descartadas:** guardar todo (inviable); ventana móvil de N días (mata
+la premisa con la que se eligió D1=A); bajar el flujo 3 a semanal (queda como plan
+B: divide por siete pero le baja resolución a la serie que *es* el producto).
 
-**Propiedad de diseño importante:** el índice de hashes es **derivado, no
-autoritativo**. Si se pierde o se corrompe, se reconstruye releyendo los
-archivos de raw y tomando el último hash por contrato. Los archivos siguen
-siendo la fuente de verdad; el índice es caché.
+---
 
-**Opciones descartadas:** (a) guardar todo (inviable. (b) ventana móvil de N
-días) mata la premisa con la que se eligió A. (d) bajar el flujo 3 a semanal:
-queda en el bolsillo como plan B; divide por siete pero le baja resolución a la
-serie que **es** el producto.
+## D4: la comparación corre en SQL
 
-###  D4 CERRADA POR ARRASTRE: la comparación corre en SQL
+No fue una decisión propia: D1=A la determina. La comparación material / cosmética
+/ imposible vive en dbt, sobre staging.
 
-No fue una decisión propia: D1=A la determina. La comparación material /
-cosmética / imposible vive en dbt, sobre `staging`.
+Los dos filtros son de finura distinta y hacen falta los dos: el de bytes decide
+si la fila se guarda en disco, el de clasificación decide si la fila **merece una
+versión**. Una fila puede cambiar en bytes sin cambiar materialmente, y esa
+distinción solo la sabe `columnas.py`.
 
-Los dos filtros son de finura distinta y hacen falta los dos:
+Beneficio colateral: dbt pasa de procesar 2,8M de filas por corrida a decenas de
+miles.
 
-| Filtro | Dónde | Qué decide |
-|---|---|---|
-| Bytes | Python, antes de escribir | Si la fila se guarda en disco |
-| Clasificación | dbt, sobre staging | Si la fila **merece una versión** |
+---
 
-El segundo sigue siendo imprescindible: una fila puede cambiar en bytes sin
-cambiar materialmente (una tilde corregida en `nombre_entidad` es cosmética).
-Esa distinción solo la sabe `columnas.py`.
+## D5: se compara contra la observación anterior en raw
 
-Beneficio colateral: dbt pasa de procesar 2,8M de filas por noche a decenas de
-miles. `dbt build` corre en segundos y los tests corren sobre un volumen
-manejable en un portátil.
-
-###  D5 DECIDIDA: se compara contra la observación anterior en raw
-
-Para cada contrato, las observaciones se
-ordenan por fecha de extracción y cada una se compara con la que la precede
-(`LAG` sobre la historia de raw). **No** se compara contra la versión vigente
+Para cada contrato, las observaciones se ordenan por fecha de extracción y cada
+una se compara con la que la precede. **No** se compara contra la versión vigente
 en `fct_contratos_snapshot`.
 
-**El argumento es de coherencia con D1, no técnico.**
-
-Comparando contra raw, `fct_contratos_snapshot` es una **función de raw**: se
-borra entera, se corre `dbt build`, y se obtiene exactamente la misma tabla. La
-historia la determinan los archivos, no el orden en que se corrieron las cosas.
-
-Comparando contra la tabla destino, sería **estado acumulado**: borrarla
-significa no poder reconstruirla con un `dbt run`, porque cada comparación
+**El argumento es de coherencia con D1, no técnico.** Comparando contra raw, el
+hecho es una **función de raw**: se borra entero, se corre `dbt build`, y sale
+exactamente la misma tabla. La historia la determinan los archivos, no el orden en
+que se corrieron las cosas. Comparando contra la tabla destino sería estado
+acumulado: borrarla significaría no poder reconstruirla, porque cada comparación
 necesita el resultado de la anterior.
 
-Y eso choca de frente con D1. Se eligió raw fiel con un solo argumento: *va a
-aparecer un defecto de normalización y se va a querer corregir el pasado*. Ese
-día, comparando contra raw se arregla `staging`, se corre
-`dbt build --full-refresh` y toda la historia se recalcula. Comparando contra
-la tabla destino, las versiones ya escritas siguen calculadas con la lógica
-vieja. **Sería pagar el costo de A sin cobrar el beneficio.**
+Y eso choca de frente con D1. Se eligió raw fiel con un solo argumento: va a
+aparecer un defecto de normalización y se va a querer corregir el pasado. Ese día,
+comparando contra raw se arregla staging, se corre `dbt build --full-refresh` y
+toda la historia se recalcula. Comparando contra la tabla destino, las versiones
+ya escritas siguen calculadas con la lógica vieja. **Sería pagar el costo de A sin
+cobrar el beneficio.**
 
-**Materialización:** incremental con ventana de reproceso. La *lógica* compara
-contra la observación anterior en raw (determinista, reconstruible); la
-*materialización* no recalcula diez años en cada corrida. Patrón estándar de dbt.
+`dbt snapshot` no sirve por dos razones: compara contra la tabla destino y
+acumula, y aunque se quisiera eso, compara con `check_cols` y no tiene forma de
+expresar una clasificación de tres vías. No hay manera de decirle "estas 32
+columnas no generan versión".
 
-#### `dbt snapshot` no sirve, por dos razones
+---
 
-1. Es la opción 2: compara contra la tabla destino y acumula.
-2. Aunque se quisiera la 2, compara con `check_cols` (todas o una lista) y **no
- tiene forma de expresar una clasificación de tres vías**. No hay manera de
- decirle "estas 32 columnas pisan el valor actual sin generar versión".
- `columnas.py` no cabe en esa herramienta.
+## D6: comparación columna por columna, con `IS DISTINCT FROM`
 
-En cualquier caso hay que escribir un modelo propio. Es material de README:
+Se comparan las 28 materiales una por una y se guarda **qué** cambió, no solo que
+algo cambió. Se descarta el hash de las materiales.
 
-> `dbt snapshot` no soporta columnas cosméticas, así que el SCD2 está
-> implementado a mano, con la clasificación generada desde `columnas.py`.
+**La columna `motivo_del_cambio` no es adorno.** Responde directamente si una
+versión se generó por adición de valor, prórroga, pago o cesión; cuántas versiones
+de un contrato son avance de pagos; y qué entidades generan más eventos de
+prórroga, que es la pregunta 6.
 
-**Pregunta que D5 deja abierta (va a D6/D8):** las cosméticas "pisan el valor
-actual sin generar versión": ¿pisan **qué**? Si hoy se corrige el nombre de una
-entidad, ¿se actualiza solo la versión abierta, o las cuarenta versiones
-históricas de ese contrato? Las dos son defendibles y dicen cosas distintas:
-"así se llamaba entonces" contra "así se llama, y el nombre no es parte de la
-historia".
-
-###  D6 DECIDIDA: comparación columna por columna, con `IS DISTINCT FROM`
-
-Se comparan las 28 materiales una por
-una y se guarda **qué** cambió, no solo que algo cambió. Se descarta el hash de
-las materiales y el híbrido.
-
-**El argumento: la columna `motivo_del_cambio` no es adorno.** Responde
-directamente:
-
-- ¿Esta versión se generó por adición de valor, prórroga, pago o cesión?
-- ¿Cuántas versiones de un contrato son avance de pagos y cuántas
- modificaciones reales?
-- ¿Qué entidades generan más eventos de prórroga?: **pregunta 6**.
-
-Y conecta con H26: en el dataset oficial, `ADICION EN EL VALOR` existe pero no
-es exhaustivo: hay adiciones dentro de `MODIFICACION GENERAL`, el 75% de las
-filas. **El Estado clasifica mal sus propias modificaciones.** La comparación
-por columna produce esa clasificación derivada del **delta observado**, no de
-una etiqueta escrita a mano por cada entidad: si `valor_del_contrato` subió,
-fue una adición, sin ambigüedad.
-
-Deja de ser detalle de implementación y pasa a ser hallazgo del proyecto:
+Y conecta con H26: en el dataset oficial, `ADICION EN EL VALOR` existe pero no es
+exhaustivo, porque hay adiciones dentro de `MODIFICACION GENERAL`. **El Estado
+clasifica mal sus propias modificaciones.** La comparación por columna produce esa
+clasificación derivada del delta observado, no de una etiqueta escrita a mano por
+cada entidad: si `valor_del_contrato` subió, fue una adición, sin ambigüedad.
 
 > La clasificación oficial de modificaciones es incompleta; la plataforma la
 > reconstruye desde el delta observado.
 
-#### Cuántas columnas cambian a la vez: medido el 29/08/2026
+**Cuántas columnas cambian a la vez, medido el 29/08/2026.** De los 32.431
+contratos con dos versiones, solo 12.838 (el 39,6%) cambiaron exactamente una
+material, y el resto cambió entre 2 y 12 a la vez. Eso no toca la decisión de D6,
+pero sí dónde vive el resultado: quedó como modelo propio,
+`int_cambios_por_columna`, con grano de una fila por contrato, versión y columna.
+Y confirma el argumento contra el hash por un camino que no se había previsto: con
+un hash de las 28 se sabría que seis de cada diez versiones cambiaron "algo" y
+nunca cuántas cosas ni cuáles.
 
-D6 decidió comparar columna por columna y guardar **qué** cambió. Al implementarlo
-apareció un dato que la decisión no tenía: **el motivo casi nunca es una columna.**
+**Dos trampas técnicas, ambas golpean al hash.** `NULL != NULL` no da verdadero,
+da `NULL`, y tres materiales arrancan nulas y se llenan: el cambio que
+`columnas.py` describe como el más informativo que existe en un snapshot
+acumulativo. Un `!=` ingenuo lo pierde. Y concatenar con `NULL` da `NULL`, así que
+un contrato con una sola columna nula produciría hash nulo, y todos los hashes
+nulos se ven iguales entre sí; se arregla con `COALESCE` a un centinela, pero el
+centinela tiene que ser un valor imposible en los datos, y esta fuente usa
+`"No definido"` como texto real en el 22% de una columna (H28).
 
-De los 32.431 contratos con dos versiones, solo **12.838 (el 39,6%) cambiaron
-exactamente una** material. El resto cambió entre 2 y **12 a la vez**.
+El hash es más rápido pero tiene más formas de fallar en silencio, que es justo la
+categoría de error contra la que se viene diseñando. Y con D3 el volumen por
+corrida es de decenas de miles de filas, no millones: el argumento de rendimiento
+no aplica a este volumen.
 
-Eso no toca la decisión de D6 (comparar columna por columna sigue siendo lo
-correcto, y de hecho es lo único que puede describir esto) pero sí toca dónde vive
-el resultado: `01_modelo_dimensional.md` lo tenía escrito como una columna del
-hecho, y una columna no describe un conjunto de hasta doce elementos. Quedó como
-modelo propio con grano de una fila por contrato, versión y columna.
+---
 
-Y confirma el argumento de D6 contra el hash por un camino que no se había
-previsto: si se hubiera guardado un hash de las 28 materiales, se sabría que seis
-de cada diez versiones cambiaron "algo" y nunca cuántas cosas ni cuáles.
+## D7: cargar igual, registrar y alertar
 
-#### Dos trampas técnicas, ambas golpean al hash
+Cuando una columna imposible cambia, la fila entra normalmente, la discrepancia se
+guarda con ambos valores y la fecha en que divergieron, y un test de dbt la
+reporta.
 
-**1. `NULL != NULL` no da verdadero, da `NULL`.** Y las materiales incluyen
-`fecha_inicio_liquidacion`, `fecha_fin_liquidacion` y
-`fecha_de_notificaci_n_de_prorrogaci_n`, que **arrancan nulas y se llenan**:
-el cambio que `columnas.py` describe como el más informativo que existe en un
-snapshot acumulativo. Un `!=` ingenuo lo pierde. Se usa **`IS DISTINCT FROM`**.
-
-**2. Concatenar con `NULL` da `NULL`.** Un contrato con una sola columna nula
-produciría hash nulo, y todos los hashes nulos se ven iguales entre sí. Se
-arregla con `COALESCE` a un centinela, pero el centinela tiene que ser un
-valor imposible en los datos, y esta fuente usa `"No definido"` como texto real
-en el 22% de una columna (H28). Elegir mal el centinela crea colisiones
-silenciosas.
-
-El hash es más rápido pero tiene más formas de fallar en silencio: justo la
-categoría de error contra la que se viene diseñando. Y con D3 el volumen
-nocturno es de decenas de miles de filas, no millones: **el argumento de
-rendimiento del hash no aplica a este volumen.**
-
-**Nota de implementación:** las columnas monetarias se comparan sobre el valor
-**numérico canónico**, no sobre el texto, o `"1000"` contra `"1000.00"` genera
-un motivo falso. Lo resuelve `staging` por D1, pero hay que tenerlo presente al
-escribir el modelo.
-
-###  D7 DECIDIDA: cargar igual, registrar y alertar (severidad `warn` al inicio)
-
-Cuando una columna imposible cambia: la
-fila entra normalmente, la discrepancia se guarda en una tabla de alertas con
-ambos valores y la fecha en que divergieron, y un test de dbt la reporta.
-
-**Observación previa: las siete imposibles no son iguales.** `id_contrato` es
-la llave por la que se unen las observaciones: si "cambia", no se detecta
-comparando, sería simplemente otro contrato. Su modo de fallo no es la
-mutación sino la **duplicación**: dos filas con el mismo id en una extracción.
-Eso lo captura un test de unicidad, no la comparación de cambios. Está en
-`IMPOSIBLES` por razones correctas pero se verifica con otro mecanismo; no hay
-que buscar una alerta que estructuralmente no puede dispararse. Las otras seis
-sí pueden cambiar.
+**Las siete imposibles no son iguales.** `id_contrato` es la llave por la que se
+unen las observaciones: si "cambia", no se detecta comparando, sería simplemente
+otro contrato. Su modo de fallo no es la mutación sino la duplicación, y eso lo
+captura un test de unicidad. Las otras seis sí pueden cambiar.
 
 **Por qué no bloquear.** Una entidad puede corregir un error de tipeo en
 `fecha_de_firma`: corrección legítima, no catástrofe. Bloquear detendría la
-ingesta de 2,8M de contratos por eso. Y aplica lo ya escrito en `columnas.py`
-sobre `referencia_del_contrato` (*"una alerta ruidosa enseña a ignorarla"*)
-con un agravante: una alerta que **para el pipeline** enseña a desactivarla.
+ingesta de 2,8M de contratos por eso, y una alerta que **para el pipeline** enseña
+a desactivarla.
 
-**Por qué no cuarentena.** Rompe la coherencia con D5. Si la fila no entra a
-raw, la historia deja de ser función de raw. Si entra a raw pero se excluye del
-modelo, hay dos verdades sobre qué contratos existen y algún conteo no va a
-cuadrar sin que nadie sepa por qué.
+**Por qué no cuarentena.** Rompe la coherencia con D5. Si la fila no entra a raw,
+la historia deja de ser función de raw; si entra a raw pero se excluye del modelo,
+hay dos verdades sobre qué contratos existen y algún conteo no va a cuadrar sin
+que nadie sepa por qué.
 
-**Qué valor queda en la tabla.** Se toma el **valor nuevo**, igual que una
-cosmética. Las versiones históricas conservan lo observado entonces, la versión
-abierta refleja lo que dice la fuente hoy, y la tabla de alertas guarda ambos.
-Nada se pierde y la tabla principal no se llena de casos especiales.
-
-**Severidad: todo arranca en `warn`.** No se sabe cuántas veces se dispara:
-puede ser cero al año o cinco mil, y no hay forma de saberlo hasta correrlo. Si
-arranca en `error` y se dispara mil veces, la reacción natural es bajarlo o
-borrarlo, y ahí se perdió la alerta. Medir un mes y **subir a `error` solo las
-columnas que efectivamente no se mueven**.
+**Severidad: todo arranca en `warn`.** No se sabe cuántas veces se dispara: puede
+ser cero al año o cinco mil, y no hay forma de saberlo hasta correrlo. Si arranca
+en `error` y se dispara mil veces, la reacción natural es bajarlo o borrarlo, y
+ahí se perdió la alerta. Medir y subir a `error` solo las columnas que
+efectivamente no se mueven.
 
 Ese ejercicio tiene valor propio: contar cuántos contratos cambian de
-`nit_entidad` es en sí mismo un hallazgo. Si la entidad contratante de un
-contrato cambia, eso es una historia.
+`nit_entidad` es en sí mismo un hallazgo.
 
-###  D8 DECIDIDA: `observado_desde` / `observado_hasta`, intervalos semiabiertos
+---
 
-Cierra el mapa: las ocho resueltas.
+## D8: `observado_desde` / `observado_hasta`, intervalos semiabiertos
 
-#### Las fechas son de observación, no de vigencia
+**Las fechas son de observación, no de vigencia.** En un SCD2 de manual,
+`valido_desde` es "desde cuándo esto fue verdad en el mundo real", y acá no se
+puede saber. Si el 21 de agosto se observa que `valor_pagado` subió de 10M a 15M,
+el pago ocurrió en algún momento entre la observación anterior y esta, y ninguna
+columna dice cuándo. Es H8.
 
-En un SCD2 de manual, `valido_desde` es "desde cuándo esto fue verdad en el
-mundo real". **Acá no se puede saber.** Si el 21 de agosto se observa que
-`valor_pagado` subió de 10M a 15M, el pago ocurrió en algún momento entre la
-observación anterior y esta. Ninguna columna dice cuándo. Es H8.
+Se descarta usar fechas de negocio cuando existan, porque para los pagos no
+existen y quedaría una columna que a veces significa una cosa y a veces otra: peor
+que una columna consistentemente aproximada.
 
-Se descarta usar fechas de negocio cuando existan (`ultima_actualizacion` para
-modificaciones): para los pagos no existe, y quedaría una columna que a veces
-significa una cosa y a veces otra. **Peor que una columna consistentemente
-aproximada.**
+> La plataforma no sabe cuándo cambió el contrato; sabe cuándo el cambio se volvió
+> visible, con una resolución igual a la frecuencia del barrido.
 
-**Los nombres cambian a `observado_desde` / `observado_hasta`.** Un nombre que
-no promete lo que no puede cumplir vale más que la convención. Frase de README:
+**El borde derecho.** La versión anterior se cierra con la fecha de la observación
+nueva, no con el día anterior: intervalos semiabiertos, `>= desde AND < hasta`.
+Encajan sin huecos ni solapes, y es el mismo criterio que ya usa `_rango` en
+`flujos.py`. La versión abierta lleva `observado_hasta` nulo; se descarta el
+centinela `9999-12-31`, que haría que un contrato cerrado hace tres años parezca
+vigente hasta el año 9999 en cualquier gráfico que no filtre.
 
-> La plataforma no sabe cuándo cambió el contrato; sabe cuándo el cambio se
-> volvió visible, con una resolución igual a la frecuencia del barrido.
+**Las cosméticas pisan solo la versión abierta.** Si pisaran todas, un
+`--full-refresh` reconstruido desde raw daría un resultado distinto, porque el
+reproceso sí ve la historia de nombres, y eso rompe lo ganado en D5. Efecto que se
+acepta a conciencia: las versiones viejas muestran nombres de entidad
+desactualizados. La solución no es pisar la historia, es que el mart una contra
+`dim_entidad` por la llave y tome el nombre actual.
 
-#### El borde derecho
+**Un hueco que hay que nombrar: `motivo_de_cierre`.** Un contrato en estado
+terminal deja de ser barrido, así que su última versión queda abierta para
+siempre, aunque hace tres años que nadie lo mira. Es honesto, pero un lector puede
+interpretar el nulo como "sigue activo". La columna distingue `version_nueva`,
+`abierta` y `fuera_de_observacion`. Un nulo que significa tres cosas distintas es
+un fallo silencioso esperando.
 
-La versión anterior se cierra con **la fecha de la observación nueva**, no con
-el día anterior. Intervalos semiabiertos: `>= desde AND < hasta`. Encajan sin
-huecos ni solapes, y es el **mismo criterio que ya usa `_rango` en
-`flujos.py`**: usarlo en los dos extremos del pipeline es coherencia que se
-nota.
+---
 
-La versión abierta lleva `observado_hasta` **nulo**. Se descarta el centinela
-`9999-12-31`: haría que un contrato cerrado hace tres años parezca vigente
-hasta el año 9999 en cualquier gráfico que no filtre.
+## D9: lo que el porte a Snowflake enseñó
 
-#### Las cosméticas pisan SOLO la versión abierta
-
-Resuelve la pregunta que dejó D5. Si se pisaran todas las versiones, un
-`--full-refresh` reconstruiría la tabla desde raw y **daría un resultado
-distinto**, porque el reproceso sí ve la historia de nombres. Eso rompe lo
-ganado en D5: la tabla dejaría de ser función de raw.
-
-Efecto que se acepta a conciencia: **las versiones viejas muestran nombres de
-entidad desactualizados.** Correcto para auditar, molesto para un tablero. La
-solución no es pisar la historia: el mart une contra `dim_entidad` por la llave
-y toma el nombre actual. Ese es precisamente el trabajo de una dimensión.
-
-#### Un hueco que hay que nombrar: `motivo_de_cierre`
-
-Un contrato en estado terminal deja de ser barrido por el flujo 3, así que su
-última versión queda abierta para siempre: `observado_hasta` nulo, aunque hace
-tres años que nadie lo mira. Es honesto ("es lo último que observé") pero un
-lector puede interpretar el nulo como "sigue activo".
-
-Se agrega una columna **`motivo_de_cierre`** que distinga:
-
-| Valor | Significado |
-|---|---|
-| `version_nueva` | Se cerró porque llegó una observación distinta |
-| `abierta` | Sigue en el universo vivo y se sigue observando |
-| `fuera_de_observacion` | Pasó a estado terminal; ya no se barre |
-
-Un nulo que significa tres cosas distintas es un fallo silencioso esperando.
-
-
-###  D9, lo que el porte a Snowflake enseñó el 31/08/2026
-
-La disciplina de D9 decía: **un único modelo toca los archivos**, y por eso el
-porte iba a ser reescribir ese modelo y nada más.
-
-Se cumplió a medias, y la mitad que falló vale más que la que funcionó.
+La disciplina decía: un único modelo toca los archivos, y por eso el porte iba a
+ser reescribir ese modelo y nada más. Se cumplió a medias, y la mitad que falló
+vale más que la que funcionó.
 
 **Lo que funcionó.** El modelo frontera se ramificó por motor y el resto del
-proyecto no se enteró. Solo cambia el CTE de origen: en DuckDB `read_json()` sobre
-el disco, en Snowflake un `select` sobre un stage interno. La proyección de las 67
-columnas quedó **compartida entre las dos ramas**, así que las columnas y su orden
-coinciden por construcción y no porque alguien las mantenga a la par.
+proyecto no se enteró: solo cambia el CTE de origen, `read_json()` sobre el disco
+en DuckDB y un `select` sobre un stage interno en Snowflake. La proyección de las
+67 columnas quedó compartida entre las dos ramas, así que las columnas y su orden
+coinciden por construcción.
 
-**Lo que no.** `stg_contratos` también hablaba dialecto, y nadie lo había notado.
-Aplana `urlproceso` con `json_extract_string` y saca el `noticeUID` con
-`regexp_extract`, y las dos funciones son de DuckDB. En Snowflake se escriben
-`urlproceso:url` y `regexp_substr(..., 1, 1, 'e')`.
+**Lo que no.** `stg_contratos` también hablaba dialecto y nadie lo había notado:
+aplana `urlproceso` con `json_extract_string` y saca el `noticeUID` con
+`regexp_extract`, dos funciones de DuckDB.
 
-La lección se puede enunciar como corrección de D9: **"un único modelo toca los
-archivos" no implica "un único modelo habla dialecto".** Son dos propiedades
-distintas y solo la primera estaba vigilada. La segunda se descubrió corriendo un
-grep por funciones sospechosas sobre los once modelos, que es una comprobación de
-treinta segundos que nadie había hecho en tres días de escribir SQL.
+> "Un único modelo toca los archivos" no implica "un único modelo habla dialecto".
 
-**Cómo se resolvió.** Tres macros en `limpieza.sql`, cada uno con su rama por
-motor: `campo_json()`, `extraer_grupo()` y `campo_de_datos()`. Los modelos quedaron
-otra vez agnósticos, y el día que aparezca un tercer motor se toca un archivo.
+Son dos propiedades distintas y solo la primera estaba vigilada. La segunda se
+descubrió corriendo un grep por funciones sospechosas sobre los once modelos, que
+es una comprobación de treinta segundos que nadie había hecho en tres días de
+escribir SQL.
 
-Se comprobó que el refactor fuera **puro para DuckDB**: se reconstruyó
-`stg_contratos` y la salida es idéntica al byte, mismos conteos y mismos extremos.
-Un cambio que se justifica por otro motor y de paso mueve los números del motor que
-ya andaba es un cambio que hay que revertir.
+Se resolvió con tres macros en `limpieza.sql`, cada uno con su rama por motor:
+`campo_json()`, `extraer_grupo()` y `campo_de_datos()`. Se comprobó que el refactor
+fuera **puro para DuckDB**: se reconstruyó `stg_contratos` y la salida es idéntica
+al byte. Un cambio que se justifica por otro motor y de paso mueve los números del
+motor que ya andaba es un cambio que hay que revertir.
 
-**Un cuarto macro salió del mismo trabajo.** `campo_de_datos()` necesita saber qué
-columnas son anidadas, porque a esas no se les aplica el casteo a texto. Es una
-sola, `urlproceso`, y escribir ese nombre a mano habría creado el segundo lugar que
-lo sabe: el primero es el `STRUCT` generado, que la declara JSON. Se agregó
-`columnas_anidadas()` al generador. Es la regla de siempre, aplicada antes de que
-la lista se desincronizara en vez de después.
+Un cuarto macro salió del mismo trabajo: `campo_de_datos()` necesita saber qué
+columnas son anidadas, y escribir ese nombre a mano habría creado el segundo lugar
+que lo sabe. Se agregó `columnas_anidadas()` al generador, aplicando la regla
+antes de que la lista se desincronizara en vez de después.
 
-**Medido el 31/08/2026, sobre las tres particiones del 22 de agosto**, que son
-18.746 filas: los dos motores devuelven lo mismo. Mismo conteo, mismo mínimo y
-máximo de hash, mismo mínimo y máximo de `id_contrato`, mismo número de nulos en
-una columna que arranca vacía. Y la construcción completa en Snowflake pasa los 57
-nodos sin un solo error.
+---
 
-###  D10 IMPLEMENTADA: la procedencia se registra en el manifiesto de la partición
+## D10: la procedencia se registra en el manifiesto de la partición
 
-> **Salta de D8 a D10 a propósito.** D9: dbt sobre DuckDB local, con el porte a
-> Snowflake como trabajo posterior: es infraestructura del proyecto entero y no
-> de la capa raw, así que dónde se documenta sigue abierto. El identificador
-> queda reservado; no se reutiliza.
-
-#### El problema
-
-Raw no registra **de qué estado de la fuente vino cada observación**. La
-partición se llama por `fecha_extraccion`, que es cuándo bajamos los datos, no
+**El problema.** Raw no registra de qué estado de la fuente vino cada observación.
+La partición se llama por `fecha_extraccion`, que es cuándo bajamos los datos, no
 qué vimos. Mientras se creyó que la fuente se regeneraba a diario las dos cosas
 parecían la misma; no lo son, y el costo ya se pagó: el ancho del intervalo de la
 corrida del 25 es irrecuperable porque nadie anotó de qué corte leyó el barrido
-del 23. Si la fuente salta un día, dos particiones con fechas distintas contienen
-el **mismo** estado y nada en raw lo dice.
+del 23.
 
-#### Qué identifica a una regeneración
+**Qué identifica a una regeneración.** El valor de `min(:updated_at) =
+max(:updated_at)`, al milisegundo. No es una etiqueta nuestra: es el sello que la
+propia fuente le puso a ese estado, y por H2 es único por regeneración. Esto
+invierte a medias la conclusión de H2, que declara ese campo inútil: es inútil
+como watermark *de fila*, y la misma propiedad que lo inutiliza para eso lo
+convierte en la llave natural del corte. Dos límites: vale solo para `jbjy-vk9h`,
+porque los hermanos escriben en continuo y no tienen corte (H23); y no es
+reconstruible desde las filas, porque ninguna lo contiene.
 
-**El valor de `min(:updated_at) = max(:updated_at)`**, al milisegundo. No es una
-etiqueta nuestra: es el sello que la propia fuente le puso a ese estado, y por H2
-(confirmado cuatro veces: 18, 21, 26 y 28 de agosto) es único por regeneración.
+**Qué se registra: tres valores, no uno.**
 
-Esto **invierte a medias la conclusión de H2**, y conviene decirlo porque el
-inventario declara ese campo inútil. Es inútil como watermark *de fila*, que era
-la pregunta que se le hizo. La misma propiedad que lo inutiliza para eso (que
-min y max coincidan) lo convierte en la **llave natural del corte**. Dos
-límites: vale solo para `jbjy-vk9h`, porque los hermanos escriben en continuo y
-no tienen corte (H23); y no es reconstruible desde las filas, porque ninguna lo
-contiene.
+| Campo | Qué es |
+|---|---|
+| `corte_anterior` | el corte de la última ingesta completa; contra esto compara D11 |
+| `corte_al_iniciar` | el corte vivo al arrancar la corrida |
+| `corte_al_terminar` | el corte vivo al terminar |
 
-#### Qué se registra: tres valores, no uno
+Los dos primeros convierten cada partición en un intervalo con sus dos extremos
+fechados, que es lo que la corrida del 25 no tiene. El tercero cubre un caso hoy
+invisible: una corrida dura ~50 minutos y nada impide que la fuente regenere en el
+medio, dejando una partición **a caballo** de dos cortes. Qué se hace en ese caso
+queda sin decidir; por ahora se registra y se advierte.
 
-| Campo | Qué es | De dónde sale |
-|---|---|---|
-| `corte_anterior` | el corte de la última ingesta completa | contra esto compara el guardarraíl de D11 |
-| `corte_al_iniciar` | el corte vivo al arrancar la corrida | la consulta que D11 hace igual |
-| `corte_al_terminar` | el corte vivo al terminar | una consulta de segundos al final de ~50 minutos |
-
-Los dos primeros convierten cada partición en un **intervalo con sus dos extremos
-fechados**, que es lo que la corrida del 25 no tiene. El tercero cubre un caso
-que hoy es invisible: una corrida dura ~50 minutos y nada impide que la fuente
-regenere en el medio, dejando una partición **a caballo** de dos cortes, con las
-páginas de antes de un estado y las de después de otro. Si `corte_al_iniciar` no es igual a
-`corte_al_terminar`, la partición está a caballo. **Qué se hace en ese caso queda
-sin decidir**; por ahora se registra y se advierte, que es lo barato y no
-compromete nada.
-
-#### Dónde vive: el manifiesto (I3), no las filas
+**Dónde vive: el manifiesto, no las filas.**
 
 | | Alternativa | Por qué no |
 |---|---|---|
-| A | Bitácora aparte, fuera de raw | Crea un **segundo lugar autoritativo** que, a diferencia del índice de hashes, **no es reconstruible desde raw**: si se pierde, la procedencia se pierde con ella |
-| **B** | **En el `_manifiesto.json` de cada partición** | **Elegida** |
-| C | En los metadatos de cada fila, fuera del hash | ~30 B sobre 320, un 9% más de disco, y el raw ya escrito no los tiene: quedan **dos formas de raw para siempre** y `staging` tiene que tolerar las dos |
+| A | Bitácora aparte, fuera de raw | Crea un segundo lugar autoritativo que, a diferencia del índice de hashes, no es reconstruible desde raw |
+| B | En el `_manifiesto.json` de cada partición | **Elegida** |
+| C | En los metadatos de cada fila | ~30 B sobre 320, y el raw ya escrito no los tiene: quedan dos formas de raw para siempre |
 | D | B y C juntos | Redundancia, y con ella la posibilidad de que un día no coincidan |
-| - | En el índice DuckDB | Descartada aparte: el índice está declarado **derivado y reconstruible**, y meterle estado autoritativo rompe la propiedad que hoy hace que perderlo no sea grave |
 
-**Los tres argumentos que decidieron:**
+Tres argumentos decidieron. **No toca las líneas de datos**, así que el hash, el
+índice y las cifras medidas siguen valiendo tal cual. **El estado del guardarraíl
+deja de ser un lugar aparte**: "¿cuál fue el último corte que ingerí?" se contesta
+leyendo los manifiestos y tomando el máximo, así que D11 no necesita ninguna
+bitácora. Y **no cierra la puerta a C**: si algún día la procedencia tiene que
+vivir en la fila, las particiones nuevas la llevan y las viejas conservan su
+manifiesto.
 
-1. **No toca las líneas de datos.** El hash, el índice, los 916 MB del barrido,
-   los 18 MB de la incremental, el 98,13% y los 320 B por fila siguen valiendo
-   tal cual. Los metadatos están fuera del hash por I1, y eso está verificado:
-   11.449 filas se descartaron con otra `fecha_extraccion`.
-2. **El estado del guardarraíl deja de ser un lugar aparte.** "¿Cuál fue el
-   último corte que ingerí?" se contesta leyendo los manifiestos y tomando el
-   máximo. Son archivos diminutos, unas decenas. Así que **D11 no necesita
-   ninguna bitácora**: su estado es derivado de raw, igual que el índice.
-3. **No cierra la puerta a C.** Si algún día la procedencia tiene que vivir en la
-   fila, las particiones nuevas la llevan y las viejas conservan su manifiesto.
-   Es aditivo, no una reescritura.
-
-**El punto débil de B, y por qué deja de serlo.** La atribución es por partición,
-así que solo es verdad si una partición contiene un corte y uno solo. Con el
-guardarraíl de D11 delante (que rechaza correr contra un corte ya ingerido) y con
+El punto débil de B es que la atribución es por partición, así que solo es verdad
+si una partición contiene un corte y uno solo. Con el guardarraíl de D11 delante y
 `corte_al_iniciar`/`corte_al_terminar` detrás, esa condición deja de ser un
-supuesto y pasa a ser un **invariante comprobado en las dos puntas**.
+supuesto y pasa a ser un invariante comprobado en las dos puntas.
 
-#### Los dos costos que se aceptan
+**Migración de lo ya escrito.** Las particiones existentes no tienen estos campos.
+"Sin corte anotado" es desconocido, y se advierte sin bloquear: un guardarraíl que
+se planta ante datos viejos es el error que falta. Se recupera un valor hacia
+atrás y uno solo, el de la partición del 25, porque la fuente quedó congelada en
+ese valor desde entonces y esa corrida arrancó de día. De qué corte leyó el
+barrido del 23 no se recupera.
 
-**dbt va a leer dos formas de archivo.** La disciplina de D9 pide que un único
-modelo toque los archivos, para que el porte a Snowflake no sea una reescritura.
-Con B hay un segundo modelo que lee los `_manifiesto.json` y se une por la ruta
-de la partición. Es una excepción real, y se acepta porque son JSON minúsculos,
-la unión es por una columna, y el día del porte los dos modelos caen bajo el
-mismo problema (Snowflake no lee el disco local), así que no es un caso nuevo
-sino el mismo dos veces.
+**Tres cosas que salieron al implementarla.**
 
-**Si se pierden los manifiestos y quedan solo los `.jsonl.gz`, la procedencia se
-pierde.** Se acepta: el manifiesto vive dentro del directorio de la partición, y
-perderlo significa haber perdido también `trozos_cerrados`, el cursor y
-`_COMPLETO`. No es un escenario donde raw sobrevive a medias; es uno donde raw ya
-está roto.
-
-#### Migración de lo ya escrito
-
-Las particiones existentes no tienen estos campos. **"Sin corte anotado" es
-desconocido, y se advierte sin bloquear.** Un guardarraíl que se planta ante
-datos viejos es el error que falta, y entre un error que sobra y uno que falta ya
-está elegido cuál se prefiere.
-
-**Se recupera un valor hacia atrás, y uno solo:** la partición del 25 se anota
-con `corte_al_iniciar = 2026-08-25T09:05:54.277Z`. La fuente quedó congelada en
-ese valor desde entonces (comprobado el 26 a las 20:30 y el 28 a las ~10:00) y
-esa corrida arrancó de día, muy después de las 04:05 COT, así que no pudo haber
-leído otro. **De qué corte leyó el barrido del 23 no se recupera**: ahí no hay
-congelamiento que ayude.
-
-#### Cómo quedó implementada: 28/08/2026
-
-`paginacion.corte()` devuelve un `Corte` con los dos extremos y la propiedad
-`confiable`. `ParticionRaw` recibe `corte_al_iniciar`, `corte_anterior` y
-`corte_confiable`, y `completar()` recibe `corte_al_terminar`. Los cuatro van al
-manifiesto **siempre, incluso en nulo**: un nulo escrito dice "no se sabe", una
-clave ausente es indistinguible de un manifiesto viejo.
-
-Corrió contra la fuente real el 28. Este es el primer manifiesto con procedencia:
-
-```json
-"corte_anterior": null,
-"corte_al_iniciar": "2026-08-25T09:05:54.277Z",
-"corte_al_terminar": "2026-08-25T09:05:54.277Z",
-"corte_confiable": true
-```
-
-`corte_anterior` en nulo porque la ingesta previa (la del 25) es anterior a D10.
-El intervalo de esa partición tiene ancho cero y el manifiesto lo dice.
-
-**Tres cosas que salieron al implementarla:**
-
-1. **Reanudar puede mezclar dos cortes, y no estaba previsto.** `_retomar()`
-   sigue desde el cursor sin mirar contra qué corte se había empezado. Una
-   corrida que arranca a las 04:00 y cruza la ventana de regeneración dejaría
-   trozos de un estado y seguiría con otro en el mismo directorio, y el
-   manifiesto se reescribiría con el corte nuevo: el viejo se perdería sin
-   rastro. Ahora se descarta el progreso y se empieza de cero, avisando. Cuesta
-   hasta 50 minutos y no pierde nada, que es el error que sobra.
-2. **La procedencia se escribe en los tres flujos y se lee en uno.** La consulta
-   ya se hizo, así que anotarla es gratis, y el día que haga falta saber de qué
-   estado venía una partición del flujo 1 el dato va a estar.
-3. **Las dos consultas fallan distinto, a propósito.** Al arrancar, un fallo de
-   red aborta: reintentar cuesta volver a escribir el comando. Al terminar, se
+1. **Reanudar puede mezclar dos cortes, y no estaba previsto.** `_retomar()` seguía
+   desde el cursor sin mirar contra qué corte se había empezado. Una corrida que
+   arranca a las 04:00 y cruza la ventana de regeneración dejaría trozos de un
+   estado y seguiría con otro en el mismo directorio, y el manifiesto se
+   reescribiría con el corte nuevo: el viejo se perdería sin rastro. Ahora se
+   descarta el progreso y se empieza de cero, avisando. Cuesta hasta 50 minutos y
+   no pierde nada, que es el error que sobra.
+2. **La procedencia se escribe en los tres flujos y se lee en uno.** La consulta ya
+   se hizo, así que anotarla es gratis.
+3. **Las dos consultas fallan distinto, a propósito.** Al arrancar, un fallo de red
+   aborta, porque reintentar cuesta volver a escribir el comando. Al terminar, se
    completa igual con la marca en nulo: perder el `_COMPLETO` de un barrido de
-   cincuenta minutos por un 429 en una consulta de metadatos es el error que
-   falta.
+   cincuenta minutos por un 429 en una consulta de metadatos es el error que falta.
 
-#### Lo que queda sin decidir
+---
 
-- Qué se hace con una partición a caballo de dos cortes. Hoy se registra, se
-  advierte y **se deja legible**: negarle `_COMPLETO` sería tomar esa decisión
-  de costado.
-- Si algún día se migra a C.
+## D11: el disparador del flujo 3 es el corte de la fuente, no el calendario
 
-###  D11 IMPLEMENTADA: el disparador del flujo 3 es el corte de la fuente, no el calendario
+**El problema.** Con cadencia irregular, correr por calendario cuesta ~50 minutos
+para escribir una partición vacía, y correr tarde es lo único que pierde datos de
+verdad. Las alternativas eran sondear a mano y decidir a mano (cero código, y el
+error queda en comparar mentalmente dos valores de 24 caracteres); que el cargador
+consulte y se plante solo; o que consulte, registre y corra igual, que documenta
+el duplicado en vez de evitarlo. Se eligió la segunda.
 
-#### El problema
-
-Con cadencia irregular, correr por calendario cuesta ~50 minutos para escribir
-una partición vacía, y correr tarde es lo único que pierde datos de verdad. Las
-alternativas eran: **(a)** sondear a mano y decidir a mano (cero código, y el
-error queda en comparar mentalmente dos valores de 24 caracteres); **(b)** el
-cargador consulta y se planta solo; **(c)** el cargador consulta, registra y
-corre igual, que documenta el duplicado en vez de evitarlo. **Se eligió (b).**
-
-La consulta vive en `paginacion.py`, que es el único módulo que puede conocer una
-URL. Es la misma grieta que tiene abierta la pregunta de `validar_cobertura()`:
-hoy no hay forma de preguntarle nada a la fuente que no sean filas.
-
-#### El guardarraíl va en la dirección permisiva, y eso es deliberado
-
-Los dos errores posibles no valen lo mismo:
+**El guardarraíl va en la dirección permisiva, y eso es deliberado.** Los dos
+errores posibles no valen lo mismo:
 
 | Error | Costo |
 |---|---|
-| Deja pasar una corrida contra un corte ya visto | ~50 minutos y una partición vacía. Recuperable, y el descarte del 100% lo grita en pantalla |
-| Bloquea una corrida legítima | Si la fuente regenera otra vez antes de que alguien lo note, **esa observación no existe más** |
+| Deja pasar una corrida contra un corte ya visto | ~50 minutos y una partición vacía. Recuperable |
+| Bloquea una corrida legítima | Si la fuente regenera antes de que alguien lo note, **esa observación no existe más** |
 
-Es el criterio de siempre (entre un error que sobra y uno que falta, el que
-sobra) y el escarmiento concreto es R2: el guardarraíl de `fecha_extraccion` con
-dos definiciones de "hoy" habría rechazado cargas legítimas cinco horas al día.
-De ahí dos exigencias:
+Es el criterio de siempre, y el escarmiento concreto es R2: el guardarraíl de
+`fecha_extraccion` con dos definiciones de "hoy" habría rechazado cargas legítimas
+cinco horas al día. De ahí dos exigencias. La condición de aborto es "existe una
+partición **completa** para este corte", no "vi este corte": una muerte dura deja
+una partición incompleta contra el mismo corte, y reanudarla es exactamente lo que
+I5 permite. Y hay una bandera de forzado, nombrada en el propio mensaje de aborto,
+porque un guardarraíl que no se puede saltar a mano, en un pipeline que corre a
+mano, es un pipeline que un día no corre.
 
-1. **La condición de aborto es "existe una partición COMPLETA para este corte"**,
-   no "vi este corte". Una muerte dura deja una partición incompleta contra el
-   mismo corte, y reanudarla es exactamente lo que I5 permite; con la condición
-   ingenua, la reanudación quedaría bloqueada. `_COMPLETO` ya distingue los dos
-   casos.
-2. **Una bandera de forzado**, nombrada en el propio mensaje de aborto. Un
-   guardarraíl que no se puede saltar a mano, en un pipeline que corre a mano, es
-   un pipeline que un día no corre.
+`CorteYaIngerido` devuelve **código 4**, distinto del 1 y del 2, porque un
+orquestador tiene que separar "no había nada nuevo" de "algo se rompió". Y corta
+antes de bajar una sola página: es la diferencia entre cincuenta minutos y
+ninguno.
 
-#### Qué implica para Airflow
+**D11 solo agrega valor entre días distintos.** Salió al escribir los tests, que
+fallaron los primeros cuatro por reusar la `fecha_extraccion`: dentro del mismo
+día el directorio es el mismo y el `_solo_lectura` de `escritura.py` ya bloqueaba.
+Lo que no estaba cubierto es correr hoy y mañana contra el mismo estado de la
+fuente.
 
-Tres cosas, y las tres son consecuencia de que el calendario no manda:
+### Qué implica para Airflow
 
-- **El DAG es un sensor sobre el corte más un corte-circuito, no un `schedule` a
-  una hora.** Como la lógica vive en el cargador, el DAG la hereda; si viviera
-  solo en el DAG, correr a mano la perdería.
-- **`catchup` tiene que ser `False`, y no es una preferencia.** Airflow rellena
-  por defecto las corridas que cree que faltaron, y contra el flujo 3 eso es
-  exactamente lo que R1 prohíbe: escribiría el hoy con fecha vieja. Con cadencia
-  irregular, esa lista va a ser larga.
-- **`logical_date` no sirve como identidad de la corrida.** Airflow nombra cada
-  ejecución por un intervalo de calendario; acá la identidad es el corte de la
-  fuente, que no tiene relación con el calendario.
+Tres cosas, y las tres son consecuencia de que el calendario no manda. **El DAG es
+un sensor sobre el corte más un cortocircuito, no un `schedule` a una hora**, y
+como la lógica vive en el cargador, el DAG la hereda; si viviera solo en el DAG,
+correr a mano la perdería. **`catchup` tiene que ser `False`**, y no es una
+preferencia: Airflow rellena por defecto las corridas que cree que faltaron, y
+contra el flujo 3 eso es exactamente lo que R1 prohíbe. Y **`logical_date` no
+sirve como identidad de la corrida**, porque acá la identidad es el corte de la
+fuente, que no tiene relación con el calendario.
 
-**El DAG se escribió el 31/08/2026**, en `dags/secop_ingesta.py`, y las tres cosas
-de arriba quedaron como estaban escritas.
-
-Tiene **una sola tarea**, y eso salió de aplicar el primer punto al pie de la
-letra. La tentación era partirlo en "preguntar por el corte" y "cargar si cambió",
-pero eso duplica la pregunta y abre una ventana entre las dos en la que la fuente
-puede regenerar. El DAG llama al cargador y lee su código de salida: el 4 se
-traduce a *saltar* y no a *fallar*, porque con cadencia irregular esa es la
-respuesta correcta la mayoría de los días, y una alerta que suena todos los días
-deja de mirarse en dos semanas.
+El DAG tiene **una sola tarea**. La tentación era partirlo en "preguntar por el
+corte" y "cargar si cambió", pero eso duplica la pregunta y abre una ventana entre
+las dos en la que la fuente puede regenerar. El DAG llama al cargador y lee su
+código de salida: el 4 se traduce a *saltar* y no a *fallar*, porque con cadencia
+irregular esa es la respuesta correcta la mayoría de los días, y una alerta que
+suena todos los días deja de mirarse en dos semanas.
 
 Corre cada tres horas. No es un horario: es cada cuánto se hace una pregunta que
 cuesta dos segundos.
 
 **El límite de tiempo se puso contra el peor caso y no contra el promedio.** Hay
 tres barridos medidos entre 4,20 y 5,22 segundos por página, y una página suelta
-que tardó 28 sin explicación (pregunta abierta 2). Sobre 570 páginas eso es la
-diferencia entre cincuenta minutos y cuatro horas, y el límite está en cuatro. Con
-el promedio, una corrida sana moriría el día que la API vaya lenta, y con la fuente
-regenerando dos veces por semana, perder una corrida cuesta una observación que no
-vuelve.
+que tardó 28 sin explicación. Sobre 570 páginas eso es la diferencia entre
+cincuenta minutos y cuatro horas, y el límite está en cuatro.
 
-**Cinco tests lo cuidan**, y cuatro de ellos no comprueban que funcione sino que
-las decisiones sigan tomadas: `catchup`, una sola corrida a la vez, el código 4
+Cinco tests lo cuidan, y cuatro de ellos no comprueban que funcione sino que las
+decisiones sigan tomadas: `catchup`, una sola corrida a la vez, el código 4
 mapeado y el límite de tiempo. El quinto simplemente lo importa, que es el fallo
-más común de un DAG y el más invisible. Se rompieron las seis a propósito y las
-seis fueron detectadas.
-
-Airflow vive en su propio grupo de dependencias: son 127 paquetes, y quien clone
-el repositorio para leer el código no tiene por qué bajarlos. Los tests del DAG se
-saltan solos si no está.
-
-#### Cómo quedó implementada: 28/08/2026
-
-Vive en `cargar_vivos`, junto al guardarraíl de R1, y **corta antes de bajar una
-sola página**: es la diferencia entre cincuenta minutos y ninguno, y hay una
-aserción dedicada a eso. La bandera es `--forzar-corte-repetido`, larga a
-propósito. `CorteYaIngerido` devuelve **código 4**, distinto del 1 y del 2,
-porque un DAG tiene que separar "no había nada nuevo" de "algo se rompió".
-
-**D11 solo agrega valor entre días distintos.** Salió al escribir los tests,
-que fallaron los primeros cuatro por reusar la `fecha_extraccion`: dentro del
-mismo día el directorio es el mismo y el `_solo_lectura` de `escritura.py` ya
-bloqueaba. Lo que no estaba cubierto es correr hoy y mañana contra el mismo
-estado de la fuente, que es exactamente el caso del 26 de agosto.
-
-**Y necesita que los manifiestos tengan el corte.** El 28 avisó de dos
-particiones sin anotar (el barrido del 23 y la incremental del 25) y dejó
-correr, que es la regla de migración: desconocido no bloquea. Desde la corrida
-del 28, que sí lo anota, el agujero está cerrado.
-
-#### Lo que queda sin decidir
-
-Si el guardarraíl aplica solo al flujo 3 o a los tres. El flujo 3 pregunta por el
-estado vivo, así que contra el mismo corte no aporta nada. Los flujos 1 y 2
-preguntan por ventanas de fecha de negocio y son reproducibles hacia atrás por
-R1, así que ahí un corte repetido no es el mismo tipo de error. La lectura
-provisional es que el guardarraíl es del flujo 3.
-
+más común de un DAG y el más invisible.
 
 ---
 
 ## Implementación: I1 a I5
 
-Las ocho decisiones de diseño (D1-D8) no cubren estas. Se numeran I1-I5.
+| # | Decisión |
+|---|---|
+| I1 | JSON canónico, y esos mismos bytes se escriben |
+| I2 | BLAKE2b truncado a 128 bits |
+| I3 | Manifiesto como JSON dentro de cada partición |
+| I4 | Tres módulos; el índice completo en memoria |
+| I5 | El trozo se cierra por líneas o por páginas; el cursor solo si el buffer está vacío |
 
-| # | Decisión | Estado |
-|---|---|---|
-| I1 | Cómo se representa la fila para hashear |  **JSON canónico, los mismos bytes que se escriben** |
-| I2 | Qué algoritmo de hash |  **BLAKE2b truncado a 128 bits** |
-| I3 | Dónde vive el manifiesto |  **JSON dentro de cada partición** |
-| I4 | Cómo se estructura el módulo |  **Tres módulos; el índice completo en memoria** |
-| I5 | Cuándo se cierra el trozo y cuándo avanza el cursor |  **Por líneas o por páginas; el cursor solo si el buffer está vacío** |
+I1 e I2 juntas definen el contrato del índice de hashes. Si cambian después de la
+primera corrida, todos los hashes guardados quedan inservibles. No es catastrófico
+—el índice es derivado y se reconstruye desde raw— pero conviene fijarlas antes de
+la primera corrida.
 
- **I1 e I2 juntas definen el contrato del índice de hashes.** Si cambian
-después de la primera corrida, todos los hashes guardados quedan inservibles.
-No es catastrófico (el índice es derivado y se reconstruye desde raw (D3)) pero
-conviene fijarlas antes de la primera corrida y no descubrirlo en tres meses.
+### I1: JSON canónico, y esos mismos bytes se escriben
 
-###  I1 DECIDIDA: JSON canónico, y esos mismos bytes se escriben
-
-**La propiedad que se busca:** que el hash sea el hash de los bytes que quedan
-en disco. Se serializa **una sola vez**; esa cadena se hashea y esa misma cadena
-se escribe. Así "los bytes cambiaron" y "el archivo habría sido distinto" son la
+La propiedad que se busca es que el hash sea el hash de los bytes que quedan en
+disco. Se serializa **una sola vez**; esa cadena se hashea y esa misma cadena se
+escribe, así que "los bytes cambiaron" y "el archivo habría sido distinto" son la
 misma afirmación. Serializar dos veces crearía dos rutas que pueden divergir en
 silencio.
 
 ```python
 linea = json.dumps(fila, sort_keys=True, ensure_ascii=False,
- separators=(",", ":")).encode("utf-8")
+                   separators=(",", ":")).encode("utf-8")
 ```
 
-- `sort_keys=True`: ordena alfabéticamente, también dentro de `urlproceso`, el
- único objeto anidado. **Ordenar claves no es normalizar**: el orden no es
- información (`{"a":1,"b":2}` y `{"b":2,"a":1}` son el mismo objeto JSON), así
- que no rompe D1. Beneficio colateral: los archivos quedan deterministas y
- comparables con `diff`.
-- `separators=(",", ":")` (sin esto, `json.dumps` mete un espacio tras cada
- coma y cada dos puntos. Sobre 2,8M de filas es volumen que no dice nada.
-- `ensure_ascii=False`) archivo más chico y legible. Con H22 en mente
- (`\u0093`, `\u0092` son comillas de Windows-1252 mal decodificadas), esos
- caracteres quedan visibles en vez de escapados. Cualquiera de las dos sirve
- mientras sea **consistente**; cambiarla después invalida todos los hashes.
+`sort_keys=True` ordena alfabéticamente, también dentro de `urlproceso`. Ordenar
+claves no es normalizar: el orden no es información, así que no rompe D1. Los
+separadores sin espacios ahorran volumen que no dice nada sobre 2,8M de filas. Y
+`ensure_ascii=False` deja el archivo más chico y legible, con los caracteres rotos
+de H22 visibles en vez de escapados. Cualquiera de las dos opciones sirve mientras
+sea consistente; cambiarla después invalida todos los hashes.
 
 **Opciones descartadas:** concatenar campos con separador (más rápido, pero esta
 fuente tiene saltos de línea embebidos, comillas rotas y punto y coma en los
-textos: elegir mal el separador da colisiones silenciosas); msgpack u otro
-binario (rompe D1: raw dejaría de ser inspeccionable a ojo, que es media razón
-por la que se eligió JSONL en D2).
+textos: elegir mal el separador da colisiones silenciosas); y msgpack u otro
+binario, que rompe D1 porque raw dejaría de ser inspeccionable a ojo.
 
-#### Reglas que no se tocan
+**Tres reglas que no se tocan.**
 
-**1. Los metadatos se agregan DESPUÉS de hashear.** `fecha_extraccion` y `flujo`
-cambian todas las noches por definición; si entran al hash, nada se deduplica
-jamás. Van como envoltorio alrededor de la carga útil:
+1. **Los metadatos se agregan DESPUÉS de hashear.** `fecha_extraccion` y `flujo`
+   cambian en cada corrida por definición; si entran al hash, nada se deduplica
+   jamás. Van como envoltorio: `{"fecha_extraccion": ..., "flujo": ..., "hash":
+   ..., "datos": {...}}`.
+2. **Las claves ausentes se dejan ausentes.** D1 prohíbe rellenar en raw. Si una
+   vez la API omite `ultima_actualizacion` y a la siguiente la manda como `null`
+   sin que nada haya cambiado, el hash cambia y se guarda una fila de más: el error
+   que sobra. Esto va como comentario en el código, porque el instinto de
+   cualquiera que lo lea después va a ser "arreglarlo" rellenando antes de hashear,
+   y eso sí rompería D1.
+3. **Si `json.dumps` falla, falla ruidosamente**, con el `id_contrato` en el
+   mensaje. No se salta la fila.
 
-```json
-{"fecha_extraccion": "...", "flujo": "...", "hash": "...", "datos": {...}}
-```
+### I2: BLAKE2b truncado a 128 bits
 
-El archivo se autodocumenta y el hash sigue siendo solo de `datos`.
+`hashlib.blake2b(linea, digest_size=16)`, de la biblioteca estándar. Se guarda en
+hexadecimal, no en bytes crudos: legible al depurar, y la diferencia es 90 MB
+contra 45 para 2,8M de contratos.
 
-**2. Las claves ausentes se dejan ausentes.** D1 prohíbe rellenar en raw. Si una
-noche la API omite `ultima_actualizacion` y a la siguiente la manda como `null`
-sin que nada haya cambiado, el hash cambia y se guarda una fila de más. Es el
-error que sobra, o sea el aceptable.
+**Por qué 128 bits.** Una colisión significa que dos filas distintas dan el mismo
+hash, el cargador concluye "no cambió nada", no guarda la fila nueva, y esa
+observación se pierde para siempre. Es el error caro, y **el único punto de todo
+el diseño donde el error puede ir en la dirección equivocada**: la deduplicación
+por bytes solo puede sobrar, salvo por esto.
 
- **Esto va como comentario en el código.** El instinto de cualquiera que lo lea
-después va a ser "arreglarlo" rellenando antes de hashear, y eso **sí** rompería
-D1.
+Con ~20M de observaciones guardadas en un año, 64 bits dan ~1 en 100.000, que es
+bajo pero no despreciable a diez años; 128 dan ~1 en 10^24; 256 no aporta nada a
+cambio del doble de índice. Un matiz reduce aún más el riesgo real: la colisión
+tendría que ocurrir entre dos versiones **del mismo contrato**, porque el índice es
+por `id_contrato`, así que el espacio efectivo son decenas de versiones y no 20
+millones.
 
-**3. Si `json.dumps` falla, falla ruidosamente** con el `id_contrato` en el
-mensaje. No se salta la fila.
-
-###  I2 DECIDIDA: BLAKE2b truncado a 128 bits
-
-`hashlib.blake2b(linea, digest_size=16)`, de la biblioteca estándar. Se guarda
-en **hexadecimal** (32 caracteres), no en bytes crudos: legible al depurar en
-DuckDB, y la diferencia es 90 MB contra 45 MB para 2.825.685 contratos.
-
-#### Por qué 128 bits, y no 64 ni 256
-
-Una colisión significa que dos filas distintas dan el mismo hash, el cargador
-concluye "no cambió nada", **no guarda la fila nueva**, y esa observación se
-pierde para siempre porque la fuente ya se sobrescribió.
-
-Es el **error caro**, y el único punto de todo el diseño donde el error puede ir
-en la dirección equivocada: la deduplicación por bytes solo puede sobrar, salvo
-por esto.
-
-Probabilidad de al menos una colisión entre *n* elementos con *b* bits es aproximadamente
-**n^2 / 2^(b+1)**. Con ~20M de observaciones guardadas en un año:
-
-| Bits | Colisión en 20M | Lectura |
-|---|---|---|
-| 64 | ~1 en 100.000 | Bajo, pero no despreciable a diez años |
-| 128 | ~1 en 10^24 | No va a pasar |
-| 256 | Absurdamente menor | No va a pasar, con el doble de índice |
-
-Matiz que reduce aún más el riesgo real: la colisión tendría que ocurrir entre
-dos versiones **del mismo contrato**, porque el índice es por `id_contrato`. El
-espacio efectivo son decenas de versiones, no 20 millones.
-
-#### Medición real, sobre una fila de ejemplo
-
- **Corrige una suposición previa.** Se había dicho que BLAKE2b se elegía en
-parte por ser más rápido que MD5. Medido, la diferencia es del 5%: irrelevante.
+**Corrige una suposición previa.** Se había dicho que BLAKE2b se elegía en parte
+por ser más rápido que MD5. Medido, la diferencia es del 5%: irrelevante.
 
 | Operación | Velocidad | 2.825.685 filas |
 |---|---|---|
-| `blake2b(digest_size=16)` | 1.036.096/s | **2,7 s** |
+| `blake2b(digest_size=16)` | 1.036.096/s | 2,7 s |
 | `md5` | 1.052.565/s | 2,7 s |
 | `json.dumps` canónico | 184.449/s | **15,3 s** |
 
-**El hash no es el costo: serializar lo es**, y es cinco veces más caro. Pero
-como I1 decidió que se serializa una sola vez y esa misma cadena se escribe,
-esos 15 s no son overhead de la deduplicación: se pagarían igual para escribir
-el archivo. **La deduplicación sale prácticamente gratis.**
+**El hash no es el costo: serializar lo es**, y es cinco veces más caro. Pero como
+I1 decidió que se serializa una sola vez y esa misma cadena se escribe, esos 15 s
+se pagarían igual: la deduplicación sale prácticamente gratis. Y los dos números
+se pierden dentro de los ~20 minutos que tarda la API. **El cuello de botella es
+la red, no el CPU**, y queda escrito para que nadie optimice el lugar equivocado.
 
-Los dos números se pierden dentro de los ~20 minutos que tarda la API. **El
-cuello de botella es la red, no el CPU.** Queda escrito para que nadie optimice
-el lugar equivocado.
+Entonces la razón para elegir BLAKE2b sobre MD5 es una sola: no arrastrar la
+conversación sobre criptografía rota en un repo de portafolio. La respuesta
+correcta sería "sí, MD5 está roto, y acá no hay adversario", pero es una defensa
+que no hace falta tener que dar.
 
-Entonces la razón para elegir BLAKE2b sobre MD5 es una sola y hay que decirla
-sin adornos: **no arrastrar la conversación sobre criptografía rota** en un repo
-de portafolio. La respuesta correcta sería "sí, MD5 está roto, y acá no hay
-adversario", pero es una defensa que no hace falta tener que dar.
+El algoritmo se escribe en el manifiesto como `algoritmo_hash: "blake2b-128"`. Si
+algún día hay que cambiarlo, hay que poder distinguir hashes viejos de nuevos sin
+adivinar.
 
-**Descartados:** xxhash y BLAKE3: dependencias externas para ahorrar segundos
-en un proceso limitado por la red.
+### I3: manifiesto como archivo JSON dentro de cada partición
 
-#### El algoritmo se escribe en el manifiesto
+Guarda el último cursor de keyset confirmado, cuántos trozos se cerraron, el
+algoritmo de hash y marcas de tiempo.
 
-Campo `algoritmo_hash: "blake2b-128"` junto al cursor. Si algún día hay que
-cambiarlo, hay que poder distinguir hashes viejos de nuevos sin adivinar.
+**`_COMPLETO` y el manifiesto no duplican información.** Son la misma pregunta con
+dos respuestas posibles, y dos verdades sobre si una partición terminó van a
+discrepar algún día. Se separan por responsabilidad: el manifiesto lleva el
+progreso, para reanudar, y `_COMPLETO` es la única señal de terminado, para que
+dbt sepa qué leer. Un archivo vacío es más barato de comprobar desde dbt que
+parsear un JSON.
 
-#### Verificado
+**Dos argumentos decidieron.** Primero, la coherencia con el invariante de orden
+de D2: con el manifiesto en DuckDB, cada punto de control tendría que escribir en
+dos sistemas distintos, y eso no se puede hacer atómicamente; con el manifiesto en
+la partición, el trozo y el manifiesto viven en el mismo directorio y el orden es
+local. Segundo, **DuckDB no admite dos escritores simultáneos**, y el flujo 3 se
+paraleliza lanzando varias particiones a la vez: con manifiestos por partición,
+cada proceso escribe en su propio directorio y no hay contención.
 
-- Un mismo objeto con las claves en distinto orden produce, con
- `sort_keys=True`, la **cadena idéntica**. La canonicalización de I1 funciona.
-- Salida de ejemplo: `20c3a9e4fe5f274b53317978e305d840` (32 caracteres hex).
+Beneficio colateral: la partición queda autocontenida. Se copia, se inspecciona o
+se borra entera sin abrir nada.
 
-###  I3 DECIDIDA: manifiesto como archivo JSON dentro de cada partición
+El índice de hashes sí va en DuckDB, porque son cosas distintas: el índice es
+global por `id_contrato` y el manifiesto es local a una partición.
 
-```
-raw/flujo=refresco_de_vivos/fecha_extraccion=2026-08-21/particion=2020-01/
- _manifiesto.json <- progreso: cursor, trozos cerrados, algoritmo
- parte-0001.jsonl.gz
- parte-0002.jsonl.gz
- _COMPLETO <- única señal de "terminado"
-```
-
-**Qué guarda:** último cursor de keyset confirmado, cuántos trozos se cerraron,
-`algoritmo_hash`, y marcas de tiempo de inicio y última escritura.
-
-#### `_COMPLETO` y el manifiesto no duplican información
-
-Son la misma pregunta con dos respuestas posibles, y dos verdades sobre si una
-partición terminó **van a discrepar algún día**. Se separan por
-responsabilidad: el **manifiesto lleva el progreso** (para reanudar), y
-**`_COMPLETO` es la única señal de terminado** (para que dbt sepa qué leer).
-Un archivo vacío es más barato de comprobar desde dbt que parsear un JSON.
-
-#### Los dos argumentos que decidieron
-
-**1. Coherencia con el invariante de orden de D2.** El invariante *escribir el
-archivo antes de tocar el índice* existe porque, si el proceso muere en el
-medio, se prefiere un duplicado en disco antes que una fila perdida. Con el
-manifiesto en DuckDB, cada punto de control tendría que escribir en **dos
-sistemas distintos**, y eso no se puede hacer atómicamente. Con el manifiesto en
-la partición, el trozo y el manifiesto viven en el mismo directorio y el orden
-es local: cerrar el trozo -> actualizar el manifiesto -> recién ahí tocar el
-índice.
-
-**2. DuckDB no admite dos escritores simultáneos.**  *Este punto apareció al
-discutir I3 y no se había visto antes.* El flujo 3 se paraleliza lanzando varias
-particiones a la vez: para eso existen los parámetros de fecha de
-`refresco_de_vivos`. Con el manifiesto en DuckDB, cada partición paralela
-pelearía por el mismo archivo de base de datos. Con manifiestos por partición,
-cada proceso escribe en su propio directorio y **no hay contención**.
-
-**Beneficio colateral:** la partición queda autocontenida. Se copia, se
-inspecciona o se borra entera sin abrir nada, y si DuckDB se corrompe el
-progreso sigue en disco.
-
-#### El índice de hashes SÍ va en DuckDB: son cosas distintas
-
-| | Alcance | Dónde |
-|---|---|---|
-| Índice de hashes | Global, por `id_contrato` | DuckDB, uno solo |
-| Manifiesto | Local a una partición | JSON en el directorio |
-
- **PREGUNTA QUE ESTO DEJA ABIERTA.** Si varias particiones del flujo 3 corren
-en paralelo y todas necesitan **escribir** en el índice de hashes, vuelve el
-problema del escritor único de DuckDB. No se resuelve acá: depende de I4 (la
-estructura del módulo), que podría cambiar la respuesta. Queda señalado en vez
-de resuelto en silencio.
-
-###  I4 DECIDIDA: tres módulos, y el índice completo en memoria
-
-#### Estructura
+### I4: tres módulos, y el índice completo en memoria
 
 | Módulo | Responsabilidad | Toca I/O |
 |---|---|---|
@@ -1257,846 +795,240 @@ de resuelto en silencio.
 | `indice.py` | Leer el índice, acumular, escribir la tanda | DuckDB |
 | `escritura.py` | Trozos, compresión, manifiesto, `_COMPLETO` | Disco |
 
-El orquestador vive en `scripts/`, no en `src/`.
+`indice` y `escritura` van separados, y no es estética: son los dos lados del
+invariante *escribir el archivo antes de tocar el índice*. En un mismo archivo,
+nada impide que alguien invierta el orden en un refactor; separados, el orden es
+visible en el orquestador y se puede testear.
 
-**Por qué `indice` y `escritura` van separados, y no es estética:** son los dos
-lados del invariante *escribir el archivo antes de tocar el índice* (D2). En un
-mismo archivo, nada impide que alguien invierta el orden en un refactor.
-Separados, el orden es visible en el orquestador y se puede testear.
+**El problema del escritor único de DuckDB**, que dejó abierto I3. Tres salidas se
+evaluaron: serializar el flujo 3 (pierde el paralelismo, 20 minutos se vuelven
+80); un índice por partición fusionado al final (no funciona, porque el índice es
+global por contrato y uno parcial no puede responder cuál fue el último hash); y
+separar lectura de escritura, que es la elegida. Cada proceso lee al arrancar
+—DuckDB admite muchos lectores—, acumula en memoria, y escribe su tanda al cerrar.
 
-#### El problema del escritor único de DuckDB
+Funciona por una razón concreta de este caso: un contrato pertenece a una sola
+partición del flujo 3, porque las particiones son rangos disjuntos de
+`fecha_de_firma`. Dos procesos nunca compiten por el mismo `id_contrato`.
 
-Lo dejó abierto I3: si varias particiones del flujo 3 corren en paralelo y todas
-escriben en el índice, pelean por el mismo archivo. Tres salidas evaluadas:
+El costo es que si el proceso muere antes de escribir su tanda, esos hashes se
+pierden y la próxima corrida ve esas filas como nuevas. Duplicados en raw, que dbt
+resuelve tomando la última observación por contrato: otra vez el error que sobra.
 
-1. **Serializar el flujo 3.** Pierde el paralelismo para el que
- `refresco_de_vivos` fue diseñado: 20 minutos se vuelven 80.
-2. **Un índice por partición, fusionado al final.** No funciona: el índice es
- **global por contrato**, y uno parcial no puede responder "¿cuál fue el
- último hash de este contrato?". Rompe la deduplicación.
-3. **Separar lectura de escritura.**  Cada proceso **lee** al arrancar (DuckDB
- admite muchos lectores), acumula en memoria, y **escribe su tanda al
- cerrar**. La escritura se serializa; la lectura no.
+**La medición salió al revés de lo esperado y cambió la recomendación.** Se iba a
+proponer consulta por lotes por prudencia de memoria:
 
-La 3 funciona por una razón concreta de este caso: un contrato pertenece a **una
-sola partición** del flujo 3, porque las particiones son rangos disjuntos de
-`fecha_de_firma`. Dos procesos nunca compiten por el mismo `id_contrato`, así
-que una foto del índice tomada al arrancar alcanza.
-
-**Costo:** si el proceso muere antes de escribir su tanda, esos hashes se
-pierden y la próxima corrida ve esas filas como nuevas y las guarda de nuevo.
-Duplicados en raw, que dbt resuelve tomando la última observación por contrato.
-Otra vez el error que sobra.
-
-#### Medición: cargar todo en memoria contra consultar por lotes
-
- **El resultado salió al revés de lo esperado y cambió la recomendación.**
-Se iba a proponer consulta por lotes por prudencia de memoria.
-
-| Estrategia | Memoria | Tiempo (flujo 3, 566 páginas) |
+| Estrategia | Memoria | Tiempo (566 páginas) |
 |---|---|---|
-| **Índice completo en un dict** | **185 MB** | **2,1 s** / 4,2 s el 28 (una vez) |
-| Consulta por lotes de 5.000 | Constante | **95,4 s** (169 ms por 566) |
+| Índice completo en un dict | 185 MB | **2,1 s** (4,2 s en otra corrida) |
+| Consulta por lotes de 5.000 | Constante | **95,4 s** |
 
-La opción "prudente" es **47 veces más lenta** y protege 185 MB que no hacía falta
+La opción "prudente" es 23 veces más lenta y protege 185 MB que no hacía falta
 proteger. Proponerla por instinto habría metido minuto y medio de latencia por
-noche a cambio de nada.
-
-**Decisión:** cargar el índice completo al arrancar la partición, acumular los
-hashes nuevos en un dict aparte, escribir la tanda al cerrar.
-
-**Escritura final medida:** 0,2 s para los ~30.000 que cambian en una noche
-típica. Los 13,9 s del caso extremo (cambia todo) solo ocurren la primera vez.
-
- **El caso extremo real fue 55,7 s, no 13,9.** Medido en el primer barrido
-completo: 2.824.446 hashes volcados. Eso rompe el presupuesto de reintentos de
-`_abrir()`, que suma 15,5 s de espera: no los ~30 que dice su docstring, porque
-el último intento no duerme. Con particiones en paralelo, la que llegue mientras
-otra vuelca **no alcanza a esperar y muere con `RuntimeError`**.
-
-Hoy no muerde porque las particiones se corren en serie. Hay que rehacer el
-cálculo antes de paralelizar.
-
- **Pero el caso extremo es más raro de lo que parecía.** La corrida
-incremental del 2026-08-25 volcó 58.971 hashes en **4,0 s**, y los cargó en
-4,2 s. O sea que los 55,7 s ocurren en la primera corrida y en un re-barrido
-completo, no en una noche típica: en operación normal el volcado entra cómodo
-en el presupuesto de 15,5 s.
-
-Eso baja la prioridad del arreglo, **no lo cancela**. El día que exista el DAG,
-la primera corrida sigue siendo una corrida, y es justo la que más tarda en
-volcar.
-
- **Vigilar si el dataset crece.** Cuatro particiones en paralelo son cuatro
-copias del índice: **740 MB**. Manejable hoy; si el dataset se duplica, hay que
-volver a mirar los lotes.
-
-#### Dos cosas que la medición dejó ver
-
-**La inserción inicial tarda 20,6 s** y ocurre en la primera corrida, con el
-índice vacío. El mensaje de progreso tiene que anunciarlo o va a parecer
-colgado: lección .
-
-**La carga tiene dos muestras y difieren al doble.** 2,1 s con 2.825.685
-contratos el 23, y **4,2 s con 2.849.209** el 28: un 0,8% más de filas y el
-doble de tiempo. Una lectura de disco no es determinista y la máquina no estaba
-en las mismas condiciones, así que no hay nada roto; lo que hay que retirar es
-la idea de que 2,1 s sea *el* número. La conclusión de I4 no se mueve: contra
-los 95,4 s de consultar por lotes, 4,2 sigue siendo 23 veces más rápido.
-
-**El archivo del índice pesa 171 MB, no 90.** La estimación de I2 no contaba el
-índice de la llave primaria. Sigue siendo chico frente al crecimiento anual de
-raw (cuya cifra quedó retirada por depender de un intervalo de ancho supuesto,
-ver D3) pero el número correcto es 171.
-
-
-###  La paridad entre motores, y lo que destapo: 01/09/2026
-
-La cuenta de Snowflake es de prueba y vence el 12/09/2026. Lo que sobrevive al
-vencimiento no es la cuenta sino la **medicion fechada**, si se captura antes. De
-ahi `scripts/verificar_paridad_de_motores.py` y su informe en
-`exploration/paridad_de_motores.md`: **38 comprobaciones, las 38 coinciden.**
-
-Contar filas no alcanza, porque dos tablas del mismo tamano pueden tener
-contenidos distintos. Las comprobaciones apuntan a donde los motores hablan
-dialectos distintos: las huellas blake2b de la ingesta (cuantas, cuantas
-distintas, la minima y la maxima sobre 2,9 millones), los castings, las ventanas
-del SCD2, los `datediff` de la capa intermedia, la jerarquia UNSPSC derivada con
-`substr`, y los cuatro contadores de signo del mart.
-
-#### Lo que destapo, que vale mas que el informe
-
-**El cambio a incremental habia roto Snowflake, y nadie lo sabia.** El modelo
-frontera referenciaba el stage sin calificar, `@secop_raw`, y Snowflake lo
-resuelve contra el esquema de la SESION. Funcionaba mientras el modelo se
-materializaba como `table` y dejo de funcionar al pasar a incremental, porque dbt
-cambia ese contexto. El stage estaba intacto, con sus 602 archivos en su lugar.
-
-El mismo defecto tenia el formato de archivo, un nivel mas abajo. Los dos se
-arreglaron calificando con `target.schema`, que sale del mismo `SNOWFLAKE_SCHEMA`
-que lee el script de subida: asi los dos lados coinciden por construccion y no
-porque alguien los mantenga a la par.
-
-**Fue invisible por dos razones y las dos importan.** CI no toca Snowflake, a
-proposito y con razon. Y nadie reconstruyo alla despues del cambio: el codigo se
-modifico por la manana y el motor conservaba las tablas del 31/08, correctas
-porque se habian construido con el codigo viejo.
-
-> Un porte no esta verificado por haber corrido una vez. Cada cambio en un modelo
-> compartido lo pone en duda otra vez, y si el otro motor no se reconstruye, sus
-> tablas viejas siguen dando la respuesta correcta a una pregunta que ya nadie
-> hizo.
-
-#### Y el informe mentia, por la misma razon
-
-La primera version de este script dijo **"38 de 38 coinciden" con la construccion
-de Snowflake rota.** Comparaba una tabla local recien hecha contra una de
-Snowflake de dos dias antes, y no decia de cuando era ninguna de las dos.
-
-El informe ahora **fecha los dos lados** y lo pone arriba de todo. Las dos fechas
-se normalizan a hora colombiana antes de mostrarlas: vienen de relojes distintos
-(el del sistema y el de la cuenta de Snowflake) y sin normalizar daban una
-diferencia de dos horas que parecia real. Con la correccion, tres minutos.
-
-> Una comparacion entre dos sistemas tiene que decir de cuando es cada lado. Sin
-> eso no compara el codigo de hoy: compara dos fotos, y una puede ser vieja.
-
-#### Quien vigila al que compara
-
-Se probo el verificador rompiendolo. Detecto que un lado midiera sobre un
-subconjunto, y **no detecto** que la funcion que compara dijera "igual" siempre:
-no puede, es la pieza con la que verifica. Se prueba desde afuera, con 14 tests.
-
-Escribirlos destapo otro defecto: **si una comprobacion fallaba en los dos
-motores, contaba como acuerdo.** Dos errores no son una coincidencia, son dos
-comprobaciones que no se hicieron, y sumarlas inflaba justo el numero que el
-informe existe para sostener.
-
-#### Una cifra documentada que estaba mal
-
-Los documentos decian "402 familias y 57 segmentos UNSPSC". Son **401 y 56**: el
-conteo viejo incluia el nulo de `UNSPECIFIED` como si fuera una familia. No lo
-es, es el centinela sin jerarquia, y el modelo lo deja nulo a proposito. Lo
-destapo esta comparacion, porque `count(distinct)` excluye el nulo.
-
-#### El jinja se comio los saltos de linea por cuarta vez
-
-Al calificar el stage se agrego un comentario `{#- ... -#}` entre la ultima
-columna y el `from`, y el SQL compilado dijo `as datosfrom @RAW.secop_raw`. Ya
-estaba documentado que iba a volver a pasar, y volvio.
-
-CI no puede atraparlo compilando: el modelo frontera tiene una rama que exige
-credenciales de Snowflake, y CI no las tiene ni debe tenerlas. Pero **el defecto
-es estatico**, se ve en el archivo. `tests/test_jinja_no_se_come_el_sql.py` marca
-un comentario que cierre con `-#}` cuando arriba queda un identificador y abajo
-empieza una clausula.
-
-Las dos mitades hacen falta. Con solo la de abajo, la regla marcaba tres modelos
-sanos donde arriba quedaba un `(` o un `{{ config() }}` que renderiza vacio, y
-**una regla que marca de mas se termina desactivando entera**. Con las dos, marca
-el caso real y ninguno mas: comprobado reintroduciendo el defecto.
-
-###  Airflow, instalado y probado en local: 01/09/2026
-
-El DAG existia y estaba probado; faltaba un scheduler que lo leyera. Se instalo
-en local y **no en Docker**, y la razon es una medicion y no una preferencia: el
-`docker-compose` oficial de Airflow levanta siete contenedores y su propia
-documentacion pide al menos 4 GB de RAM asignados a Docker. La maquina tiene 3,8
-GB en total.
-
-Hay una segunda razon, mas de fondo. El DAG ejecuta `cd RAIZ && uv run python
-scripts/cargar_raw.py`. Meterlo en un contenedor exigiria empaquetar adentro el
-proyecto, uv, el entorno virtual, el `.env` con el token, y montar `datos/raw`
-para que escriba afuera: seria empaquetar el proyecto entero para ejecutar un
-comando que ya funciona en la maquina donde vive.
-
-#### Donde vive su estado
-
-En `.airflow/` dentro del proyecto, ignorado por git. Por defecto seria
-`~/airflow`, fuera. Se elige adentro para que todo lo del proyecto este en un
-lugar y para que borrar ese directorio reinicie Airflow por completo sin tocar
-nada mas. El DAG **si** va a git, en `dags/`, que es lo que permite que CI lo
-pruebe.
-
-`scripts/airflow.sh` fija las cuatro variables y es tambien la documentacion de
-cual es cual: `AIRFLOW_HOME`, la carpeta de DAGs apuntando al repositorio, y los
-ejemplos apagados, que son varias decenas y esconden el unico que importa.
-
-SQLite y LocalExecutor, que es lo que trae `standalone`. Para un DAG con una
-tarea cada tres horas sobra: postgres y Celery existen para un paralelismo que
-aca no hay, y el DAG ya declara `max_active_runs=1` porque dos corridas
-pelearian por el indice de hashes.
-
-#### Lo que la prueba de punta a punta demostro
-
-Se corrio `airflow dags test secop_ingesta`, y salio barato por una circunstancia
-util: el corte vivo ya estaba ingerido, asi que el guardarrail de D11 corta antes
-de bajar una sola pagina.
-
-    Running command: cd ... && uv run python scripts/cargar_raw.py --flujo vivos
-      corte de la fuente: 2026-08-25T09:05:54.277Z
-    Este corte de la fuente ya se ingirio entero.
-    El corte ya estaba ingerido: no hay nada nuevo.
-    Skipping task. reason='Bash command returned exit code 99. Skipping.'
-    DagRun Finished: state=success, run_duration=7.13
-
-**Siete segundos, la tarea en `skipped` y la corrida en `success`.** Esa
-distincion es la que se diseno: con cadencia irregular ese va a ser el resultado
-la mayoria de los dias, y marcarlo como fallo haria sonar la alerta a diario
-hasta que nadie la mire.
-
-Y se comprobo contra lo que el scheduler realmente lee, que no es el archivo sino
-el DAG serializado en su base: `catchup: False`, `max_active_runs: 1`, cada tres
-horas.
-
-#### El limite que hay que decir, porque es el que decide todo
-
-**Airflow local no corre con la maquina apagada.** Da la interfaz, el historial y
-la demostracion de que el pipeline esta orquestado, pero no da operacion
-desatendida.
-
-Por eso la vigilancia de la fuente NO vive aca sino en GitHub Actions (ver la
-seccion del registro de cadencia): la pregunta de dos segundos corre de noche y
-los fines de semana, y avisa. El barrido de cincuenta minutos se lanza a mano
-cuando llega el aviso, y para eso hay entre dos y siete dias de margen, que es el
-salto observado entre regeneraciones.
-
-Hacer que el barrido tambien corra solo exigiria mudar la capa cruda y el indice
-de 354 MB a un bucket, y con ellos el modelo frontera. Es un proyecto aparte y
-esta anotado como tal, no como pendiente.
-
-###  El registro de cadencia, y quien lo escribe: 01/09/2026
-
-Cierra la pregunta abierta de donde vive el registro de sondeo, y la cierra de
-una forma que no estaba entre las opciones que se habian pensado.
-
-#### El registro vive en `exploration/cadencia.csv`
-
-Una linea por dia, versionada. No en `datos/`, que no va a git: esto es una
-medicion y no datos crudos, pesa unos bytes por dia, y es **lo unico del proyecto
-que no se recupera hacia atras**. Un dia que nadie miro es un dia perdido, porque
-la fuente ya sobrescribio.
-
-No crea un segundo lugar autoritativo, que era el reparo: los manifiestos guardan
-los cortes **ingeridos**, y este archivo los **vistos**. Son conjuntos distintos y
-los vistos-y-no-cargados son justamente los que miden la cadencia.
-
-El tablero lo lee en vez de tener su propia copia. Antes tenia la lista escrita a
-mano en una constante de Python, y eso ya se habia separado: **el tablero
-publicado mostraba el 30 de agosto como "nadie miro" cuando se puede deducir que
-no regenero.**
-
-#### La deduccion, escrita
-
-El corte solo avanza. Si dos observaciones que rodean un dia muestran **el mismo**
-corte, ese dia no regenero: una regeneracion lo habria movido y no puede volver
-atras. Si los cortes difieren, los dias del medio son genuinamente desconocidos,
-porque pudieron regenerar y quedar pisados.
-
-Aplicada de forma pareja, la regla convierte dos dias de "no se sabe" en "no
-regenero" (el 27 y el 30 de agosto) y deja cuatro genuinamente desconocidos. El
-tablero deducia uno de los dos y el otro no, sin motivo.
-
-#### Quien lo escribe, y por que no es Airflow
-
-**Lo escribe GitHub Actions con un cron, no el DAG.** El motivo es que Airflow
-corre en una maquina que se apaga, y la fuente no espera a que la enciendan. La
-pregunta cuesta dos segundos y el repositorio ya tiene Actions montado.
-
-Y hay una segunda razon: el DAG corre el cargador, que sale por codigo 4 cuando
-el corte ya se ingirio, **sin dejar rastro de haber preguntado**. Un sondeo que no
-carga no es lo mismo que una carga que no hizo falta.
-
-`scripts/sondear.py` devuelve codigo 5 cuando la fuente regenero, distinto de 0 y
-de los errores. Es el mismo criterio del 4 del cargador: quien orqueste tiene que
-poder separar "hay trabajo" de "algo se rompio".
-
-#### Dos decisiones que salieron de imaginarlo corriendo
-
-**Sondea cada tres horas pero escribe una vez al dia.** Si commiteara en cada
-sondeo serian ocho commits diarios de ruido en un historial que alguien va a
-leer. Los sondeos frecuentes existen para **detectar rapido**; el registro
-necesita una linea por dia. Se escribe en el primer sondeo del dia, y despues
-solo si el corte cambio.
-
-**Un sondeo posterior agrega informacion, nunca la quita.** Salio de ver la
-salida: la consulta al testigo puede fallar sin abortar el sondeo, y sin cuidado
-un fallo pasajero al mediodia borraba el testigo bueno de la manana. Lo mismo con
-la bandera de regeneracion: una vez que el dia se marco como `si`, un sondeo
-posterior que vea el mismo corte no lo baja.
-
-#### Lo que queda cojo, y conviene decirlo
-
-El tablero lee el registro, pero solo se regenera a mano. Asi que entre una
-ingesta y la siguiente su tira de cadencia va a ir quedando atras respecto del
-CSV. No es grave (la pagina dice con que fecha se genero) y el desfase esta
-acotado por la cadencia de ingesta, que es cuando la tira importa. Regenerarlo
-desde Actions exigiria la base DuckDB, que no esta ahi.
-
-###  Materializacion incremental: la mitad segura, el 01/09/2026
-
-Los once modelos se reconstruian enteros en cada corrida. Dos pasaron a
-incrementales y el resto no, y esa division no es de rendimiento sino
-estructural.
-
-#### Que se puede y que no
-
-`raw_observaciones` y `stg_contratos` son transformaciones **fila a fila** sobre
-particiones que no cambian: una particion se escribe una vez, se marca con
-`_COMPLETO` y no se toca mas. Incremental ahi solo agrega filas, asi que la
-propiedad de D5 (borrar y reconstruir da lo mismo) se conserva **por
-construccion**.
-
-El SCD2 y las dos dimensiones con historia no. Ahi una observacion nueva tiene
-que **cerrar la version que estaba abierta**, o sea modificar una fila que ya
-existe. Eso necesita `merge` con una ventana de retroceso y la equivalencia hay
-que demostrarla en serio. Se dejaron como tabla, y esa decision queda abierta.
-
-#### La clave de una particion es el triple, no la fecha
-
-El filtro natural, `where fecha > (select max(fecha) from this)`, esta mal, y el
-motivo esta en la capa cruda real: el 22/08 hay dos particiones con la **misma
-`fecha_extraccion` y el mismo nombre de particion**, una de cada flujo, porque
-los flujos 1 y 2 corren juntos sobre la misma ventana. Un filtro por fecha las
-trata como una y pierde la segunda sin fallar.
-
-La clave es `flujo/fecha/particion`, concatenada. Va concatenada y no como tupla
-porque `(a,b,c) in (select ...)` no se escribe igual en los dos motores, y D9
-pide que el dialecto viva en un macro.
-
-La estrategia es `append` y no `merge`: las particiones son disjuntas, asi que no
-hay nada que actualizar y un `merge` costaria un anti-join sobre 2,9 millones de
-filas para protegerse de algo que no puede pasar.
-
-#### Lo que se midio, y lo que se esperaba de mas
-
-| | |
-|---|---|
-| Construccion completa de los dos modelos y sus tests | 252 s |
-| Segunda pasada incremental, sin nada nuevo | **88 s** |
-
-Las dos tablas quedan con las mismas 2.902.163 filas.
-
-La estimacion previa era mas optimista, unos 10 segundos, y estaba mal por una
-razon que se midio antes de escribir el codigo: **el filtro no evita abrir los
-archivos.** Un `where` sobre la columna que sale del nombre del archivo poda el
-parseo, no la apertura. Contra los 898 MB reales, una consulta que no devuelve
-ni una fila igual tarda casi seis segundos, y con las 67 columnas del modelo
-pesa mas. Donde esta el ahorro grande es en `stg_contratos`, que lee una tabla y
-no archivos.
-
-#### El modo de fallo que queda, escrito
-
-Una particion reescrita con `--forzar-corte-repetido` **no se vuelve a leer**: su
-clave ya esta en la tabla. Hay que reconstruir con `--full-refresh`. No se
-intento resolverlo automaticamente porque cualquier deteccion (comparar conteos,
-mirar marcas de tiempo) seria una segunda respuesta a una pregunta que el
-manifiesto ya contesta, y hoy no hay modelo que lo lea.
-
-#### Y se demuestra, no se supone
-
-`scripts/verificar_incremental.py` construye la capa sintetica en **seis etapas**,
-agregando una particion por vez, y compara el resultado contra una construccion
-de cero con `--full-refresh`, fila por fila y en los dos sentidos. Corre en 39
-segundos y esta en CI.
-
-Las seis etapas no son decorativas: se probo el verificador rompiendo el filtro a
-proposito seis veces y **la primera version solo detectaba tres**. Cargaba varias
-particiones juntas, asi que el filtro por fecha sola las dejaba pasar y la prueba
-daba verde con el filtro roto.
-
-Arreglarlo obligo a sembrar dos casos nuevos en el generador sintetico: dos
-flujos escribiendo la misma fecha y la misma ventana (que existe en la capa cruda
-real) y un mismo flujo con dos particiones el mismo dia (que el diseno soporta
-para un barrido partido, aunque hoy no haya ninguno). Con esos dos casos, las
-seis mutaciones se detectan.
-
-> Un dato de prueba en el que todo sale bien prueba que el codigo corre, no que
-> decida bien. Y un verificador que solo se vio dar verde tampoco esta probado.
-
-#### El caso nuevo destapo un defecto en el generador
-
-Al sembrar el barrido partido, los dos rangos recibieron su desplazamiento de
-contratos con `hash(rango) % 50`. El hash de las cadenas de Python **cambia en
-cada proceso**, asi que el generador dejo de ser reproducible pese a tener un
-parametro `--semilla`, y de tanto en tanto los dos rangos se solapaban y metian
-el mismo contrato dos veces bajo la misma `fecha_extraccion`.
-
-Lo atrapo `fct_una_observacion_por_contrato_y_fecha`, el test que vigila el
-supuesto no escrito del SCD2. Un test del modelo encontrando un defecto en los
-datos de prueba es exactamente para lo que estaba puesto, y es la segunda vez que
-un arnes de este proyecto encuentra un error en su propia fixture.
-
-> Una semilla que no reproduce no es una semilla. Si el generador acepta
-> `--semilla`, dos corridas tienen que dar los mismos bytes, y eso se comprueba
-> comparandolos.
-
-###  Los reintentos ante 429 y 5xx, escritos el 31/08/2026
-
-El TODO más viejo del módulo. Cada barrido son unas 570 peticiones y cincuenta
-minutos contra una API que H32 mostró que se cae bajo carga, y hasta acá una sola
-respuesta 429 abortaba la corrida entera.
-
-#### Qué se reintenta, y qué no
-
-Se reintentan 429, 500, 502, 503, 504, los timeouts y los fallos de conexión: todos
-se arreglan solos. **No** se reintenta ningún otro 4xx, y eso es la mitad de la
-política. Un 400 por un `$where` mal armado o un 403 por token inválido no se van a
-ir esperando; reintentarlos cinco veces es tardar medio minuto en dar el mismo
-mensaje y encima gastar cupo de la API en peticiones que ya se sabían perdidas.
-
-#### El presupuesto
-
-Cinco intentos con espera creciente de 2, 4, 8 y 16 segundos: **30 segundos de
-espera acumulada por petición**. Es el punto medio entre dos filos.
-
-Más corto, unos siete segundos, no aguanta un pico de rate limit, que suele durar
-del orden de diez. Más largo, dos minutos, sería lo correcto si el barrido corriera
-desatendido de madrugada, pero con la consola delante dos minutos por página se
-sienten como un cuelgue, y hoy el pipeline corre a mano.
-
-El peor caso teórico, con las 570 páginas agotando el presupuesto, son unas cinco
-horas. No preocupa: eso ya no es un pico sino una caída, y abortar es lo correcto.
-
-#### `Retry-After` se respeta, con tope
-
-Si el servidor manda la cabecera, se espera lo que pide. La espera creciente queda
-como **piso** (volver antes de lo que el servidor pidió es gastar un intento en una
-petición que va a ser rechazada otra vez) y el presupuesto restante como **techo**.
-
-El techo importa: una cabecera de una hora dejaría la corrida en silencio y no
-habría forma de distinguir eso de un cuelgue. Si el servidor pide más de lo que
-queda, se espera lo que queda y se abandona.
-
-El presupuesto es de espera **acumulada** y no por intento, justamente para que
-respetar la cabecera no pueda estirar el total sin que nadie lo note.
-
-#### Cuando se agotan, se relanza el error original
-
-No uno propio. Los dos lugares que hoy manejan estos fallos —el guardarraíl del
-corte y la relectura al terminar— capturan `Exception` y muestran el tipo.
-Envolverlo en un `RuntimeError` los dejaría diciendo "RuntimeError" donde antes
-decían "HTTPError 503", que es peor mensaje para quien lo lee a las tres de la
-mañana.
-
-Eso además deja intacto el contrato de D10: el fallo al arrancar sigue abortando y
-el fallo al terminar sigue completando la partición con la marca en nulo. Lo único
-que cambia es cuánto se aguanta antes de rendirse.
-
-#### Y el módulo tiene sus primeros tests
-
-`paginacion.py` no tenía ninguno. Estaba anotado como decisión y no como olvido,
-con la nota de que se pagaría cuando llegaran los reintentos. Son 21, y hubo que
-resolver un obstáculo: `conftest.py` instala un doble de este módulo en
-`sys.modules` por asignación, así que eclipsa al real toda la sesión. Los tests
-cargan el archivo real por ruta, bajo un nombre que declara el paquete pero que no
-pisa la entrada del doble, así que los otros 177 siguen viendo su doble sin
-enterarse.
-
-Se comprobó que midan algo rompiendo la política a propósito, seis veces: sin
-reintentar el 429, reintentando también los 4xx, sin tope para `Retry-After`,
-ignorando la cabecera, con espera constante en vez de creciente, y envolviendo el
-error. **Las seis mutaciones fueron detectadas.**
-
-Ninguno de los 21 duerme: `time.sleep` se reemplaza por una función que anota
-cuánto le pidieron, lo que además vuelve la espera observable y permite afirmar
-que crece en vez de suponerlo.
-
-###  I5 DECIDIDA: el trozo se cierra por líneas o por páginas; el cursor solo avanza si el buffer está vacío
-
-**Encontrado leyendo el código, no corriéndolo.** Es un defecto de la
-interacción entre dos piezas que por separado están bien.
-
-#### El defecto
-
-El punto de control y el cierre del trozo iban a ritmos distintos: el cursor se
-guardaba en el manifiesto **en cada página**, y el trozo se escribía a disco
-**cada 5.000 líneas**. En el flujo 3, de cada página de 5.000 filas cambian
-unas 50, así que llenar un trozo lleva ~100 páginas, y durante esas cien
-páginas el manifiesto ya anunciaba el avance mientras las líneas seguían en
-memoria.
-
-Una muerte **dura**: `SIGKILL`, corte de luz, OOM; no una excepción, que el
-`with` sí alcanza a cubrir: dejaba el manifiesto diciendo "ya pasé por acá" con
-las filas evaporadas. La reanudación arrancaba después de ellas y **no las
-volvía a pedir nunca.** La fuente ya se había sobrescrito.
-
-Invierte la asimetría sobre la que está construido todo el diseño: de los tres
-lugares donde vivía una fila (buffer, índice y cursor) el único que sobrevivía
-al fallo era el que no debía.
-
-#### La decisión
-
-Dos cotas para cerrar el trozo, la que ocurra primero: **líneas acumuladas**
-(5.000) y **páginas desde el último cierre** (20). Y una regla para el cursor:
-**solo pasa al manifiesto si el buffer está vacío.**
-
-La regla vive en `_guardar_manifiesto()`, que es el único punto donde el cursor
-llega al disco. Así el manifiesto no puede anunciar un avance mayor que lo
-escrito, por construcción y en un solo lugar.
-
- **La condición es "el buffer está vacío", no "se acaba de cerrar un trozo".**
-Parece lo mismo y no lo es: en la segunda corrida de una misma ventana el
-descarte es del 100%, no se escribe ni una línea y nunca se cierra un trozo. Con
-la regla del trozo el cursor no avanzaría jamás y cualquier interrupción
-reiniciaría desde cero.
-
-#### Por qué no cerrar el trozo en cada página
-
-Era la opción más simple y elimina el riesgo por construcción, sin tener que
-razonar sobre cuándo muere el proceso. Se midió su costo sobre filas
-sintéticas con la redundancia de las reales:
+corrida a cambio de nada.
+
+**El caso extremo real fue 55,7 s de volcado, no los 13,9 estimados.** Eso rompe
+el presupuesto de reintentos de `_abrir()`, que suma 15,5 s de espera: con
+particiones en paralelo, la que llegue mientras otra vuelca no alcanza a esperar y
+muere. Hoy no muerde porque las particiones se corren en serie, y hay que rehacer
+el cálculo antes de paralelizar. Pero el caso extremo es más raro de lo que
+parecía: la corrida incremental volcó 58.971 hashes en 4,0 s, así que los 55,7 s
+ocurren en la primera corrida y en un re-barrido completo, no en una corrida
+típica.
+
+Y hay que vigilar si el dataset crece: cuatro particiones en paralelo son cuatro
+copias del índice, o sea 740 MB.
+
+**Dos cosas que la medición dejó ver.** La inserción inicial tarda 20,6 s y ocurre
+en la primera corrida con el índice vacío, así que el mensaje de progreso tiene
+que anunciarlo o va a parecer colgado. Y la carga tiene dos muestras que difieren
+al doble (2,1 s y 4,2 s con un 0,8% más de filas): una lectura de disco no es
+determinista, así que lo que hay que retirar es la idea de que 2,1 s sea *el*
+número. La conclusión no se mueve.
+
+### I5: cuándo se cierra el trozo y cuándo avanza el cursor
+
+**Encontrado leyendo el código, no corriéndolo.** Es un defecto de la interacción
+entre dos piezas que por separado están bien.
+
+**El defecto.** El punto de control y el cierre del trozo iban a ritmos distintos:
+el cursor se guardaba en el manifiesto en cada página, y el trozo se escribía a
+disco cada 5.000 líneas. En el flujo 3, de cada página de 5.000 filas cambian unas
+50, así que llenar un trozo lleva ~100 páginas, y durante esas cien páginas el
+manifiesto ya anunciaba el avance mientras las líneas seguían en memoria.
+
+Una muerte dura —SIGKILL, corte de luz, OOM; no una excepción, que el `with` sí
+alcanza a cubrir— dejaba el manifiesto diciendo "ya pasé por acá" con las filas
+evaporadas. La reanudación arrancaba después de ellas y **no las volvía a pedir
+nunca**, con la fuente ya sobrescrita. Invierte la asimetría sobre la que está
+construido todo el diseño: de los tres lugares donde vivía una fila (buffer,
+índice y cursor) el único que sobrevivía al fallo era el que no debía.
+
+**La decisión.** Dos cotas para cerrar el trozo, la que ocurra primero: líneas
+acumuladas (5.000) y páginas desde el último cierre (20). Y una regla para el
+cursor: **solo pasa al manifiesto si el buffer está vacío.** La regla vive en
+`_guardar_manifiesto()`, que es el único punto donde el cursor llega al disco, así
+que el manifiesto no puede anunciar un avance mayor que lo escrito, por
+construcción y en un solo lugar.
+
+La condición es "el buffer está vacío", no "se acaba de cerrar un trozo". Parece
+lo mismo y no lo es: en la segunda corrida de una misma ventana el descarte es del
+100%, no se escribe ni una línea y nunca se cierra un trozo, así que con la regla
+del trozo el cursor no avanzaría jamás y cualquier interrupción reiniciaría desde
+cero.
+
+**Por qué no cerrar el trozo en cada página.** Era la opción más simple y elimina
+el riesgo por construcción. Se midió su costo:
 
 | líneas por trozo | archivos | penalización de tamaño |
 |---|---|---|
 | 5.000 | 1 | - |
 | 500 | 10 | +1,8% |
 | 100 | 50 | +9,3% |
-| **50** (una página del flujo 3) | 100 | **+18,1%** |
-| 25 | 200 | +34,5% |
+| 50 (una página del flujo 3) | 100 | +18,1% |
 
-El espacio no es el problema: 18% sobre 2 MB por noche son 360 KB. Lo que cuesta
-son **~200.000 archivos al año** entre las cuatro particiones, de forma
-permanente, a cambio de un riesgo ocasional.
+El espacio no es el problema. Lo que cuesta son **~200.000 archivos al año** entre
+las cuatro particiones, de forma permanente, a cambio de un riesgo ocasional.
 
-#### Por qué no solo la cota de páginas sin número
+**La cota de páginas se revisó el 31/08/2026 y se deja como está.** Estaba anotado
+que se revisaría cuando existieran los reintentos, porque ahí la interrupción
+volvería a ser rara. La premisa resultó falsa a medias: los reintentos cubren las
+interrupciones de red, y la cota protege contra la muerte dura, contra la que los
+reintentos no hacen nada. O sea que las interrupciones que la cota protege son
+exactamente las que no se volvieron raras.
 
-La alternativa era que el cursor apuntara al último trozo cerrado y nada más:
-igual de segura, más simple, sin parámetro nuevo. Deja el peor caso en ~100
-páginas rebajadas.
+**El número de páginas era una estimación, y ya está medido.** 20 suponía ~50
+líneas escritas por página. Medido: **103,6 líneas por página**, el doble. Llenar
+un trozo toma 48 páginas, así que la cota que manda sigue siendo la de páginas,
+pero por un margen menor que el previsto.
 
-Se eligió acotarlo **porque en ese momento la interrupción no era el caso raro**:
-`paginacion.py` no tenía reintentos ante 429 y 5xx, y H32 ya había demostrado que
-esta fuente se cae bajo carga, así que un solo error en la página 300 abortaba el
-barrido. Los reintentos se escribieron el 31/08/2026; la revisión que eso
-habilitaba está resuelta más abajo.
-
- **Esta decisión se revisa cuando existan los reintentos.** Ahí la
-interrupción vuelve a ser rara y la versión sin cota es preferible por simple.
-
-**Revisada el 31/08/2026, y se deja como está.** La premisa de esta revisión
-resultó falsa a medias: los reintentos cubren las interrupciones de red (429, 5xx,
-timeouts), y la cota de páginas protege contra la **muerte dura**, que es un
-SIGKILL, un OOM o un corte de luz. Contra eso los reintentos no hacen nada.
-
-O sea que las interrupciones que la cota protege son exactamente las que no se
-volvieron raras. Sacarla subiría el costo de una muerte dura de 20 a 48 páginas
-—medido: un trozo de 5.000 líneas se llena en 48 páginas a 103,6 líneas por
-página— sin ningún beneficio a cambio salvo un parámetro menos. Y sería en un
-camino que nadie probó nunca de verdad: matar un proceso a mitad de barrido sigue
-en la lista de lo no ejercitado.
-
-
-#### El número de páginas era una estimación. Ya está medido
-
-20 suponía ~50 líneas escritas por página, que a su vez suponía el 1% de cambio.
-
-**Medido en la corrida incremental del 2026-08-25: 103,6 líneas por página**
-(58.971 líneas en 569 páginas). El doble de lo supuesto. Llenar un trozo de
-5.000 líneas toma **48 páginas**, así que la cota que manda sigue siendo la de
-páginas, pero por un margen bastante menor que el previsto.
-
-Esa corrida cerró **31 trozos**, no los 29 que dan 569 páginas divididas por 20.
-Los dos extra salen de la cota de líneas, y el porqué importa más que el número:
-
- **La escritura no está repartida a lo largo del recorrido: está apilada al
-final.** La página 1 escribió 0 filas de 5.000; la 568 escribió **2.413**, o sea
-el 48%. Un factor de 600 veces entre el arranque y la cola, contra un promedio de
-104. En la cola, veinte páginas superan las 5.000 líneas y el trozo cierra por
-líneas antes de llegar a la cota de páginas.
+Esa corrida cerró 31 trozos y no los 29 que dan 569 páginas divididas por 20, y el
+porqué importa más que el número: **la escritura no está repartida a lo largo del
+recorrido, está apilada al final.** La página 1 escribió 0 filas de 5.000; la 568
+escribió 2.413, o sea el 48%. Un factor de 600 veces entre el arranque y la cola.
 
 No se sabe por qué se apila. La explicación tentadora ("los contratos nuevos
-cambian más") **no se sostiene**: el keyset ordena `id_contrato` como texto, así
-que `CO1.PCCNTR.1735835` va antes que `CO1.PCCNTR.285227`, y la cola del
-recorrido son los ids de seis dígitos que empiezan por 9. Ni los más nuevos ni
-los más viejos. Es una observación, no un hallazgo.
+cambian más") no se sostiene: el keyset ordena `id_contrato` como texto, así que
+la cola del recorrido son los ids de seis dígitos que empiezan por 9, ni los más
+nuevos ni los más viejos. Es una observación, no un hallazgo. Consecuencia
+práctica para el día que se paralelice: las particiones no van a tener carga de
+escritura pareja.
 
-**Consecuencia práctica para el día que se paralelice:** las particiones por
-rango de `fecha_de_firma` no van a tener carga de escritura pareja. El tiempo lo
-domina la red, así que probablemente no importe, pero conviene no descubrirlo
-con el DAG andando.
-
-#### Lo que esto dejó ver sobre los tests
-
-El test `test_el_punto_de_control_guarda_el_cursor` **pasaba, y afirmaba el
-defecto**: escribía una línea, llamaba al punto de control y exigía que el
-manifiesto ya tuviera el cursor, con la línea todavía en el buffer.
-
-O sea que el defecto estaba **cubierto** por un test, no descubierto por falta
-de cobertura. Es la advertencia de `conftest.py` en su forma más pura (los
-tests se escriben desde la expectativa) aplicada esta vez no a los dobles de la
-fuente sino a los del propio diseño. Conviene releer los demás con esa sospecha
-puesta, y no solo con la de "¿falta cobertura?".
-
-Lo reemplazan seis tests que fallan contra el código viejo y pasan contra el
-nuevo, incluido el de la muerte dura.
-
+**Lo que esto dejó ver sobre los tests.** El test
+`test_el_punto_de_control_guarda_el_cursor` pasaba, y **afirmaba el defecto**:
+escribía una línea, llamaba al punto de control y exigía que el manifiesto ya
+tuviera el cursor, con la línea todavía en el buffer. O sea que el defecto estaba
+*cubierto* por un test, no descubierto por falta de cobertura. Conviene releer los
+demás con esa sospecha puesta, y no solo con la de "¿falta cobertura?".
 
 ---
 
-## El primer barrido completo: 23 de agosto de 2026
+## Las tres corridas contra la fuente real
 
-Lo que se midió la primera vez que el flujo 3 corrió entero contra la fuente.
-Reemplaza estimaciones, así que conviene tenerlo junto.
+### El primer barrido completo: 23 de agosto de 2026
 
-| | Estimado | **Medido** |
+| | Estimado | Medido |
 |---|---|---|
-| Contratos vivos | 2.825.685 | **2.835.895** |
-| Páginas de 5.000 | ~566 | **568** |
+| Contratos vivos | 2.825.685 | 2.835.895 |
+| Páginas de 5.000 | ~566 | 568 |
 | Tiempo del barrido | ~20 min | **39 min 46 s** |
-| Segundos por página | - | **~4,1** |
-| Volcado del índice | 13,9 s | **55,7 s** |
-| Comprimido por fila | 63 B | **324 B** |
-| La partición en disco | ~140 MB | **916 MB** |
+| Volcado del índice | 13,9 s | 55,7 s |
+| Comprimido por fila | 63 B | 324 B |
+| La partición en disco | ~140 MB | 916 MB |
 
-### Lo que esto confirma
+**D3 funciona entre días distintos, no solo dentro de una corrida.** De las 11.449
+filas que ya estaban en el índice del día anterior, se descartaron las 11.449:
+bytes idénticos con otra `fecha_extraccion`, o sea que los metadatos están
+efectivamente fuera del hash y la canonicalización es estable en el tiempo.
 
-**D3 funciona entre días distintos, no solo dentro de una corrida.** De las
-11.449 filas que ya estaban en el índice del día anterior, se descartaron las
-11.449. Bytes idénticos con otra `fecha_extraccion`, o sea que los metadatos
-están efectivamente fuera del hash (I1) y la canonicalización es estable en el
-tiempo. Es una comprobación que la fase 3 de `verificar_carga_raw.py` no puede
-hacer, porque corre las dos veces el mismo día.
+### La segunda corrida: 25 de agosto de 2026
 
-**El barrido dura cuarenta minutos.** Se dijo que "entra en la ventana nocturna,
-arrancando después de las 04:41 COT (H24)". **Esa frase no se sostiene: 04:41
-no es un horario.** Son tres regeneraciones fechadas (04:22, 04:41 y 04:06 COT)
-moviéndose en una ventana de 35 minutos, y 04:41 es la más tardía de las tres, no
-un horario publicado. Nada se puede programar contra ese número. Lo que la
-medición dice es cuánto dura el barrido, no cuándo cabe.
+La primera vez que el flujo 3 corrió sobre un índice ya poblado, y la que convierte
+la deduplicación de una propiedad demostrada en una propiedad medida.
 
----
+**Los dos extremos del intervalo, con lo que se sabe de cada uno.** El derecho está
+fechado al milisegundo, recuperado hacia atrás porque la fuente quedó congelada en
+ese valor. El izquierdo es **desconocido**: nadie consultó el `:updated_at` el 23, y
+ese corte ya no existe.
 
-## La segunda corrida: 25 de agosto de 2026
-
-La primera vez que el flujo 3 corrió sobre un índice ya poblado. Es la corrida
-que convierte la deduplicación de una propiedad demostrada en una propiedad
-medida.
-
-**Su muestra, que es parte de la medición:** corrida completa sin reanudar, con
-los flujos 1 y 2 sin correr antes para no contaminar el índice.
-
-**Los dos extremos del intervalo, con lo que se sabe de cada uno:**
-
-| Extremo | Corte de la fuente | Cómo se sabe |
-|---|---|---|
-| Derecho | `2026-08-25T09:05:54.277Z` | **Fechado al milisegundo.** Recuperado hacia atrás: la fuente quedó congelada en ese valor desde entonces, comprobado el 26 y el 28, y la corrida arrancó de día, muy después de las 04:05 COT |
-| Izquierdo | **desconocido** | Nadie consultó el `:updated_at` el 23. Ese corte ya no existe |
-
-**Esta corrida estaba anotada como "intervalo de dos regeneraciones, 23 -> 25,
-cubriendo domingo y lunes". Esa anotación se retira.** Daba por sentado que la
-fuente había regenerado el domingo 23, y no hay ninguna observación que lo
-respalde; sí hay dos observaciones de días sin regeneración (ver *La cadencia de
-la fuente no es diaria*). Si tampoco regeneró el 22 ni el 23, el barrido leyó el
-corte del jueves 20 y el intervalo fue de cinco días.
-
-**El ancho está entre 2 y 5 días y es irrecuperable.** Todo lo que se exprese
-*por unidad de tiempo* a partir de esta corrida hereda esa indeterminación; lo
-que se exprese *como razón sobre el intervalo* no.
-
-| | Barrido inicial (23) | Segunda corrida (25) |
-|---|---|---|
-| Índice al arrancar | 18.746 | 2.843.192 |
-| Recibidas | 2.835.895 en 568 págs | 2.840.337 en 569 págs |
-| Conocidas | 11.449 | 2.834.320 |
-| Escritas | 2.824.446 | **58.971** |
-| Descarte global | 0,4% | **97,9%** |
-| Descarte sobre las conocidas | 100,00% | **98,13%** |
-| Tiempo | 39 min 46 s | **49 min 31 s** |
-| Segundos por página | 4,20 | **5,22** / 5,00 el 28 |
-| Volcado del índice | 55,7 s | **4,0 s** |
-| En disco | 916 MB | **18 MB** |
-
-Las dos tasas de descarte están juntas a propósito: la corrida del 23 muestra
-por qué la global no sirve como señal (0,4% y 100% describen la misma corrida) y
-es el argumento del arreglo del canario.
-
-### Lo que confirma
-
-**El índice cierra sin resto.** Al arrancar tenía 2.843.192, que se descompone
-exacto en las 2.824.446 escritas el 23 más las 18.746 anteriores de los flujos 1
-y 2 y de la partición de prueba `2020-01`. De esas 18.746, solo 11.449 estaban
-en el universo vivo el 23.
+Esta corrida estaba anotada como "intervalo de dos regeneraciones, 23 a 25". Esa
+anotación se retira: daba por sentado que la fuente había regenerado el domingo 23,
+y no hay ninguna observación que lo respalde. El ancho está entre 2 y 5 días y es
+irrecuperable. Todo lo que se exprese *por unidad de tiempo* a partir de esta
+corrida hereda esa indeterminación; lo que se exprese *como razón sobre el
+intervalo* no.
 
 **Existe un flujo de salida del universo vivo, y es de miles.** Se puede acotar
-pero no fijar: **entre 1.575 y 8.872 contratos** dejaron de estar vivos en el
-intervalo, que abarca entre 2 y 5 días. El rango es ancho porque
-`conocidos_al_inicio` es global y no se sabe
-cuántos de esos 7.297 no-vivos entraron al universo a la vez. Es el primer dato
-empírico sobre la pregunta abierta de si los estados terminales cambian, y no la
-cierra.
+pero no fijar: entre 1.575 y 8.872 contratos dejaron de estar vivos en el
+intervalo. Es el primer dato empírico sobre la pregunta abierta de si los estados
+terminales cambian, y no la cierra.
 
-**RETIRADO: el calce de los contratos nuevos con H3.** Esta sección decía:
-*"6.017 en dos días son ~3.000 por día, contra los ~2.900 que H3 obtuvo de un
-`GROUP BY` sobre `fecha_de_firma`. Dos caminos independientes al mismo número."*
-Se cae por dos razones independientes, y conviene ver las dos porque son errores
-distintos:
+**Retirado: el calce de los contratos nuevos con H3.** Esta sección decía que
+6.017 en dos días son ~3.000 por día, contra los ~2.900 que H3 obtuvo, y que eran
+"dos caminos independientes al mismo número". Se cae por dos razones distintas. El
+divisor no se conoce: sobre un intervalo de 2 a 5 días da entre ~1.200 y ~3.000, y
+el calce solo aparece si se elige el divisor 2, que era el supuesto. Y no son la
+misma población: "nuevo en el universo vivo" es *no estaba en el índice*, y un
+contrato puede entrar por cambio de estado sin haberse firmado ese día, mientras
+que H3 cuenta firmas. Es un caso de libro: **un calce demasiado bueno es
+sospechoso.**
 
-1. **El divisor no se conoce.** 6.017 sobre un intervalo de entre 2 y 5 días da
-   entre ~1.200 y ~3.000 por día. El calce con 2.900 solo aparece si se elige el
-   divisor 2, que era el supuesto.
-2. **No son la misma población.** "Nuevo en el universo vivo" es *no estaba en el
-   índice*, y un contrato puede entrar por cambio de estado sin haberse firmado
-   ese día. H3 cuenta firmas. Los dos caminos no miden lo mismo, así que su
-   coincidencia no confirma nada.
+**Lo que empeoró.** El ritmo de la API: 5,22 s por página contra 4,20, y 5,00 en
+la corrida del 28. Con tres muestras el rango es 4,20-5,22.
 
-Es un caso de libro de la tercera regla: **un calce demasiado bueno es
-sospechoso.** Se puede cerrar barato con un `GROUP BY` sobre `fecha_de_firma`
-aplicado a lo que se escribió el 25, que además responde la pregunta abierta
-sobre la distribución de la escritura.
-
-**El ratio de compresión se sostiene fuera del barrido.** 320 bytes por fila en
-una partición incremental, contra 324 en el barrido completo. Era una duda
-razonable: que el ratio saliera de la mezcla particular de filas del barrido.
-
-### Lo que empeoró, y hay que anotarlo
-
-**El ritmo de la API: 5,22 s por página contra 4,20**, y 5,00 en la corrida del
-28. Con tres muestras el rango es 4,20-5,22 y el promedio ~4,8. Un 24% más
-lento, sobre
-569 páginas. Con dos muestras, el margen del `schedule` del DAG no se puede
-calcular con 4,1.
-
-### Lo que sigue sin medirse
-
-**El delta de veinticuatro horas, que puede no ser observable.** Lo de arriba
-abarca entre 2 y 5 días, y no se divide por el ancho: el índice guarda un hash
-por contrato, así que lo que cambió varias veces se escribió una. Todo lo que
-sale de esta corrida (la tasa de cambio por día, el volumen anual, el factor de
-deduplicación) son **cotas inferiores**.
-
-Hasta acá se decía que el número limpio salía de "dos corridas en días
-consecutivos hábiles". **Eso presupone que la fuente produce cortes en días
-consecutivos, y no hay una sola observación de que lo haga.** Los tres cortes
-conocidos están separados por dos y por cinco días. Conviene separar dos cosas
-que hasta ahora se usaban como sinónimos:
+**Lo que sigue sin medirse: el delta de veinticuatro horas.** Conviene separar dos
+cosas que hasta ahora se usaban como sinónimos:
 
 | | Qué mide | Para qué sirve |
 |---|---|---|
-| **Delta de una regeneración** | cuánto cambia entre dos cortes consecutivos de la fuente, sean del día que sean | el umbral del canario; es lo que el pipeline ve realmente |
-| **Delta de veinticuatro horas** | cuánta actividad de negocio se acumula en un día | la proyección anual y el factor de deduplicación por día |
+| Delta de una regeneración | cuánto cambia entre dos cortes consecutivos, sean del día que sean | el umbral del canario; es lo que el pipeline ve |
+| Delta de veinticuatro horas | cuánta actividad de negocio se acumula en un día | la proyección anual |
 
 El primero se obtiene siempre que se corra en cada corte, y D10 garantiza que
-venga con sus dos extremos fechados. El segundo exige que exista un par de
-cortes separados por exactamente un día, cosa que no depende de nosotros.
-**Mientras no exista ese par, las cifras por día y por año se enuncian como
-rangos o no se enuncian.**
+venga con sus dos extremos fechados. El segundo exige que exista un par de cortes
+separados por exactamente un día, cosa que no depende de nosotros. Mientras no
+exista ese par, las cifras por día y por año se enuncian como rangos o no se
+enuncian.
 
-**Por qué una página tardó 28 segundos.** El 2026-08-22 una partición de dos
-páginas tardó 55,6 s, y la repetición de esa misma partición 6,4 s. Los dos
-barridos completos promediaron 4,20, 5,22 y 5,00 s. Se dijo "arranque en frío de
-Socrata" y sigue siendo una hipótesis sin respaldo. Importa para el margen del
-`schedule`: si el rango real va de 3 a 28 segundos por página, el peor caso son
-cuatro horas.
+### La tercera corrida: 28 de agosto, contra una fuente congelada
 
-**La distribución de la escritura a lo largo del recorrido.** Va de 0% en la
-primera página a 48% en la 568. Documentado en I5; sin explicación.
-
-
----
-
-## La tercera corrida: 28 de agosto de 2026, contra una fuente congelada
-
-La fuente llevaba tres días sin regenerar (H34), así que se corrió el flujo 3
-contra el **mismo corte que ya estaba en el índice**: `2026-08-25T09:05:54.277Z`,
-idéntico al milisegundo. No es un delta. Es una prueba de determinismo con
-intervalo cero, y es la primera corrida del proyecto donde **todo se anotó antes
-de verlo**.
-
-**Su muestra:** intervalo de ancho **cero** (mismo corte en los dos extremos,
-fechado al milisegundo), corrida completa sin reanudar, con los flujos 1 y 2 sin
-correr antes.
+La fuente llevaba tres días sin regenerar, así que se corrió el flujo 3 contra el
+mismo corte que ya estaba en el índice, idéntico al milisegundo. No es un delta:
+es una prueba de determinismo con intervalo cero, y es la primera corrida del
+proyecto donde **todo se anotó antes de verlo**.
 
 | | Predicho | Real |
 |---|---|---|
-| recibidas / páginas | 2.840.337 / 569 | **idéntico** |
-| escritas | 0 | **0** |
-| descarte global / sobre conocidas | 100,0% / 100,00% | **idéntico** |
-| trozos cerrados | 0 | **0** |
-| `corte_al_terminar` | igual al inicial | **igual** |
-| el canario | callado | **callado** |
-
-Tiempo: **47 min 27 s**, o sea 5,00 s por página.
-
-### Qué demuestra
+| recibidas / páginas | 2.840.337 / 569 | idéntico |
+| escritas | 0 | 0 |
+| descarte sobre conocidas | 100,00% | idéntico |
+| trozos cerrados | 0 | 0 |
+| el canario | callado | callado |
 
 **La canonicalización es determinista a tres días de distancia, sobre 2,84
-millones de filas.** Es la confirmación más fuerte que tiene D3. Lo anterior eran
-11.449 filas en el barrido del 23 y el 98,13% de la incremental; esto es el
-universo entero, con la fuente byte a byte igual, y no se escribió ni una línea
-de más. Cualquier dependencia del reloj, del orden de las claves o del entorno
-se habría visto acá.
-
-**El índice cerró exacto: 2.849.209.** Era la predicción documentada (2.843.192
-al arrancar el 25, más 6.017 contratos nuevos) y confirma que nada lo tocó entre
-las dos corridas. Era uno de los pendientes de antes de correr.
+millones de filas.** Es la confirmación más fuerte que tiene D3: lo anterior eran
+11.449 filas y una incremental; esto es el universo entero, con la fuente byte a
+byte igual, y no se escribió ni una línea de más. Cualquier dependencia del reloj,
+del orden de las claves o del entorno se habría visto acá.
 
 **El camino "cero cambios" de I5 corrió a escala real por primera vez.** El
-manifiesto quedó con `trozos_cerrados: 0`, `lineas_totales: 0` y el cursor en
-`CO1.PCCNTR.999803`: el cursor avanzó las 569 páginas **sin cerrar un solo
-trozo**. Es exactamente la regla del buffer vacío. Con la otra regla ("se cerró
-un trozo") el cursor no habría avanzado nunca y la corrida habría quedado sin
-punto de reanudación.
+manifiesto quedó con cero trozos y cero líneas, y el cursor avanzó las 569
+páginas: exactamente la regla del buffer vacío. Con la otra regla el cursor no
+habría avanzado nunca y la corrida habría quedado sin punto de reanudación.
 
-**Y da la cota superior que al canario le faltaba.** Con el 98,13% de un
-intervalo de entre 2 y 5 días y el 100,00% de un intervalo nulo, el paso 1.7
-tiene los dos extremos del rango en que se mueve una corrida sana.
+---
 
-### El canario callado es el defecto, no el alivio
+## El canario del descarte
 
-Con descarte del 100% no llega al umbral de 0,5, así que no cantó. Estaba
-anotado antes de correr y salió así. **Un canario que no puede cantar en la
-dirección que importa es el defecto 4.1 mostrándose entero**: con cadencia
-irregular, el 100,00% dejó de ser el caso perfecto y pasó a ser también la señal
-de haber corrido contra un corte ya visto.
-
-### El canario, arreglado el 31/08/2026
+**El canario callado fue el defecto, no el alivio.** Con descarte del 100% no
+llegaba al umbral, así que no cantó. Con cadencia irregular, el 100,00% dejó de
+ser el caso perfecto y pasó a ser también la señal de haber corrido contra un
+corte ya visto.
 
 Tenía dos cosas mal y solo una estaba anotada.
 
 **El denominador.** Decidía sobre descartadas / recibidas, que se diluye cuando
-casi todas las filas son nuevas. Medido contra las tres corridas reales, con las
-dos tasas al lado:
+casi todas las filas son nuevas:
 
 | corrida | sobre recibidas | sobre las conocidas | el canario viejo |
 |---|---|---|---|
@@ -2104,418 +1036,470 @@ dos tasas al lado:
 | incremental 25/08 | 97,9% | 98,13% | callaba |
 | intervalo nulo 28/08 | 100,0% | 100,00% | callaba |
 
-Las tres son sanas y en la primera cantaba. El barrido descartó el 0,4% de lo
-recibido porque casi todo era nuevo y había que escribirlo; de las 11.449 filas
-que el índice ya conocía descartó las 11.449. **La misma corrida se leía como
-catástrofe o como éxito según el denominador.**
+Las tres son sanas y en la primera cantaba: el barrido descartó el 0,4% de lo
+recibido porque casi todo era nuevo. **La misma corrida se leía como catástrofe o
+como éxito según el denominador.**
 
-El arreglo no necesitó ningún contador nuevo: toda fila descartada es
-necesariamente conocida, porque `cambio()` solo devuelve falso si el contrato
-está en `_conocidos` o en `_pendientes`. La tasa vive ahora en una propiedad,
-`tasa_sobre_conocidas`, que devuelve `None` y no cero cuando no hay ninguna
-conocida. Cero significaría "todo lo conocido cambió"; `None` es "no hay nada
-contra qué comparar", y confundirlas es el mismo error por otro lado.
+El arreglo no necesitó ningún contador nuevo, porque toda fila descartada es
+necesariamente conocida. La tasa vive en `tasa_sobre_conocidas`, que devuelve
+`None` y no cero cuando no hay ninguna conocida: cero significaría "todo lo
+conocido cambió", `None` es "no hay nada contra qué comparar", y confundirlas es
+el mismo error por otro lado.
 
-**El umbral, que no estaba en la ficha.** Con 0,5 el canario solo atrapa la
-rotura total: con la mitad de los hashes invalidados el descarte cae al 50% y se
-queda callado. Y una rotura parcial es realista, porque la API omite las claves
-nulas, así que una columna nueva poblada en parte del universo invalida solo
-esos hashes.
+**El umbral, que no estaba en la ficha.** Con 0,5 el canario solo atrapa la rotura
+total: con la mitad de los hashes invalidados el descarte cae al 50% y se queda
+callado. Y una rotura parcial es realista, porque la API omite las claves nulas,
+así que una columna nueva poblada en parte del universo invalida solo esos hashes.
 
-Se subió a **0,90**, que deja ocho puntos de margen contra el ancla más baja
-(98,13%). Medido, atrapa toda rotura de más del 10% de los hashes:
+Se subió a 0,90, que deja ocho puntos de margen contra el ancla más baja (98,13%),
+y medido atrapa toda rotura de más del 10% de los hashes. Una rotura del 5% da
+95,20% y no la ve: ese es el límite del umbral elegido y está escrito en un test
+para que no se descubra el día que haga falta.
 
-| rotura | tasa resultante | el canario |
-|---|---|---|
-| total | 0,00% | canta |
-| 50% de los hashes | 50,11% | canta |
-| 15% | 85,18% | canta |
-| 5% | 95,20% | **no la ve** |
-
-Esa última fila es el límite del umbral elegido y está escrita en un test para
-que no se descubra el día que haga falta. Apretarlo más atraparía roturas más
-chicas, y a cambio cantaría el día que el intervalo entre cortes se alargue,
-porque entonces cambian más contratos de verdad y la tasa baja sin que nada esté
-roto. **Al 31/08 la fuente lleva seis días congelada, así que la próxima corrida
-sana va a tener el intervalo más largo observado y la tasa más baja.** Si canta
-ahí, el umbral se baja con esa cuarta ancla en la mano y no antes.
-
-**Lo que sigue sin resolver es el techo.** Un descarte del 100,00% dejó de ser el
-caso perfecto y pasó a ser también la señal de haber corrido contra un corte ya
-visto. No se agregó porque D11 ya lo cubre antes y más barato: el guardarraíl se
-planta antes de bajar una sola página. Mirarlo también acá sería una segunda
-respuesta a la misma pregunta.
-
-Doce tests nuevos, y las seis mutaciones que se le probaron encima fueron
-detectadas: con el denominador viejo, con la tasa devolviendo cero en vez de
-`None`, con el umbral de vuelta en 0,5, sin excluir los flujos 1 y 2, sin el
-piso de muestra chica, y con el mensaje mostrando la tasa que no decidió.
+**Y después el umbral se partió en dos, porque no puede servir para dos
+regímenes.** Con un intervalo largo cambian más contratos de verdad y la tasa baja
+sin que nada esté roto. La carga del 08/09/2026, con catorce días de intervalo,
+descartó el 83,02% sobre las conocidas: una corrida perfectamente sana que hizo
+cantar al canario. Ahora el umbral depende del ancho del intervalo, que D10 ya
+registra: 0,90 para intervalos de hasta siete días, respaldado por tres anclas
+entre 0 y 5 días, y 0,50 para intervalos largos, respaldado por una sola. Ese
+segundo número es débil a propósito y está anotado como tal.
 
 ---
 
-## La cadencia de la fuente no es diaria: comprobado el 28 de agosto de 2026
+## La paridad entre motores, y lo que destapó
 
-> **Pendiente de numerar como hallazgo en `00_inventario_fuentes.md`.** Se
-> documenta acá porque D10 y D11 cuelgan de él, pero el identificador estable le
-> corresponde al inventario y los identificadores no se inventan de a dos.
+La cuenta de Snowflake es de prueba y vence el 12/09/2026. Lo que sobrevive al
+vencimiento no es la cuenta sino la **medición fechada**, si se captura antes. De
+ahí `scripts/verificar_paridad_de_motores.py` y su informe: **38 comprobaciones,
+las 38 coinciden.**
+
+Contar filas no alcanza, porque dos tablas del mismo tamaño pueden tener
+contenidos distintos. Las comprobaciones apuntan a donde los motores hablan
+dialectos distintos: las huellas blake2b de la ingesta, los castings, las ventanas
+del SCD2, los `datediff` de la capa intermedia, la jerarquía UNSPSC derivada con
+`substr`, y los cuatro contadores de signo del mart.
+
+### Lo que destapó, que vale más que el informe
+
+**El cambio a incremental había roto Snowflake, y nadie lo sabía.** El modelo
+frontera referenciaba el stage sin calificar, `@secop_raw`, y Snowflake lo resuelve
+contra el esquema de la *sesión*. Funcionaba mientras el modelo se materializaba
+como `table` y dejó de funcionar al pasar a incremental, porque dbt cambia ese
+contexto. El mismo defecto tenía el formato de archivo, un nivel más abajo; los dos
+se arreglaron calificando con `target.schema`, que sale del mismo
+`SNOWFLAKE_SCHEMA` que lee el script de subida, así que los dos lados coinciden por
+construcción.
+
+Fue invisible por dos razones y las dos importan. CI no toca Snowflake, a propósito
+y con razón. Y nadie reconstruyó allá después del cambio: el código se modificó por
+la mañana y el motor conservaba las tablas de días antes, correctas porque se
+habían construido con el código viejo.
+
+> Un porte no está verificado por haber corrido una vez. Cada cambio en un modelo
+> compartido lo pone en duda otra vez, y si el otro motor no se reconstruye, sus
+> tablas viejas siguen dando la respuesta correcta a una pregunta que ya nadie hizo.
+
+**Y el informe mentía, por la misma razón.** La primera versión de este script dijo
+"38 de 38 coinciden" con la construcción de Snowflake rota: comparaba una tabla
+local recién hecha contra una de Snowflake de dos días antes, y no decía de cuándo
+era ninguna de las dos. El informe ahora fecha los dos lados y lo pone arriba de
+todo, normalizados a hora colombiana porque vienen de relojes distintos.
+
+> Una comparación entre dos sistemas tiene que decir de cuándo es cada lado. Sin
+> eso no compara el código de hoy: compara dos fotos, y una puede ser vieja.
+
+**Quién vigila al que compara.** Se probó el verificador rompiéndolo. Detectó que
+un lado midiera sobre un subconjunto, y **no detectó** que la función que compara
+dijera "igual" siempre: no puede, es la pieza con la que verifica. Se prueba desde
+afuera, con 14 tests.
+
+Escribirlos destapó otro defecto: **si una comprobación fallaba en los dos motores,
+contaba como acuerdo.** Dos errores no son una coincidencia, son dos comprobaciones
+que no se hicieron, y sumarlas inflaba justo el número que el informe existe para
+sostener.
+
+**Una cifra documentada que estaba mal.** Los documentos decían "402 familias y 57
+segmentos UNSPSC". Son 401 y 56: el conteo viejo incluía el nulo de `UNSPECIFIED`
+como si fuera una familia, y no lo es. Lo destapó esta comparación, porque
+`count(distinct)` excluye el nulo.
+
+**El jinja se comió los saltos de línea por cuarta vez.** Al calificar el stage se
+agregó un comentario `{#- ... -#}` entre la última columna y el `from`, y el SQL
+compilado dijo `as datosfrom @RAW.secop_raw`. Ya estaba documentado que iba a
+volver a pasar, y volvió. CI no puede atraparlo compilando, porque el modelo
+frontera tiene una rama que exige credenciales de Snowflake. Pero el defecto es
+estático y se ve en el archivo: `tests/test_jinja_no_se_come_el_sql.py` marca un
+comentario que cierre con `-#}` cuando arriba queda un identificador y abajo
+empieza una cláusula. Las dos mitades hacen falta: con solo la de abajo, la regla
+marcaba tres modelos sanos, y **una regla que marca de más se termina desactivando
+entera**.
+
+---
+
+## Airflow, instalado y probado en local
+
+El DAG existía y estaba probado; faltaba un scheduler que lo leyera. Se instaló en
+local y **no en Docker**, y la razón es una medición: el `docker-compose` oficial
+de Airflow levanta siete contenedores y su propia documentación pide al menos 4 GB
+de RAM asignados a Docker. La máquina tiene 3,8 GB en total.
+
+Hay una segunda razón, más de fondo. El DAG ejecuta `uv run python
+scripts/cargar_raw.py`. Meterlo en un contenedor exigiría empaquetar adentro el
+proyecto, uv, el entorno virtual, el `.env` con el token, y montar `datos/raw`
+para que escriba afuera: sería empaquetar el proyecto entero para ejecutar un
+comando que ya funciona en la máquina donde vive.
+
+Su estado vive en `.airflow/` dentro del proyecto, ignorado por git, para que
+borrar ese directorio reinicie Airflow por completo sin tocar nada más. El DAG sí
+va a git, en `dags/`, que es lo que permite que CI lo pruebe. SQLite y
+LocalExecutor: para un DAG con una tarea cada tres horas sobra, porque postgres y
+Celery existen para un paralelismo que acá no hay.
+
+**Lo que la prueba de punta a punta demostró.** Se corrió `airflow dags test`, y
+salió barato por una circunstancia útil: el corte vivo ya estaba ingerido, así que
+el guardarraíl de D11 corta antes de bajar una sola página. Siete segundos, la
+tarea en `skipped` y la corrida en `success`. Esa distinción es la que se diseñó:
+con cadencia irregular ese va a ser el resultado la mayoría de los días, y marcarlo
+como fallo haría sonar la alerta a diario hasta que nadie la mire.
+
+**El límite que hay que decir, porque es el que decide todo: Airflow local no corre
+con la máquina apagada.** Da la interfaz, el historial y la demostración de que el
+pipeline está orquestado, pero no da operación desatendida. Por eso la vigilancia
+de la fuente no vive acá sino en GitHub Actions: la pregunta de dos segundos corre
+de noche y los fines de semana, y avisa. El barrido de cincuenta minutos se lanza a
+mano cuando llega el aviso.
+
+Hacer que el barrido también corra solo exigiría mudar la capa cruda y el índice a
+un bucket, y con ellos el modelo frontera. Es un proyecto aparte y está anotado
+como tal, no como pendiente.
+
+---
+
+## El registro de cadencia, y quién lo escribe
+
+Cierra la pregunta abierta de dónde vive el registro de sondeo, y la cierra de una
+forma que no estaba entre las opciones pensadas.
+
+**Vive en `exploration/cadencia.csv`**, una línea por día, versionada. No en
+`datos/`, que no va a git: esto es una medición y no datos crudos, pesa unos bytes
+por día, y es **lo único del proyecto que no se recupera hacia atrás**. Un día que
+nadie miró es un día perdido.
+
+No crea un segundo lugar autoritativo, que era el reparo: los manifiestos guardan
+los cortes *ingeridos* y este archivo los *vistos*. Son conjuntos distintos, y los
+vistos-y-no-cargados son justamente los que miden la cadencia.
+
+**La deducción, escrita.** El corte solo avanza. Si dos observaciones que rodean un
+día muestran el mismo corte, ese día no regeneró: una regeneración lo habría movido
+y no puede volver atrás. Si los cortes difieren, los días del medio son
+genuinamente desconocidos. Aplicada de forma pareja, la regla convierte dos días de
+"no se sabe" en "no regeneró" y deja cuatro genuinamente desconocidos. El tablero
+deducía uno de los dos y el otro no, sin motivo.
+
+**Lo escribe GitHub Actions con un cron, no el DAG.** Airflow corre en una máquina
+que se apaga, y la fuente no espera a que la enciendan. Y hay una segunda razón: el
+DAG corre el cargador, que sale por código 4 cuando el corte ya se ingirió, **sin
+dejar rastro de haber preguntado**. Un sondeo que no carga no es lo mismo que una
+carga que no hizo falta.
+
+`scripts/sondear.py` devuelve código 5 cuando la fuente regeneró, distinto de 0 y
+de los errores. Es el mismo criterio del 4 del cargador.
+
+**Dos decisiones que salieron de imaginarlo corriendo.** Sondea cada tres horas
+pero escribe una vez al día: si commiteara en cada sondeo serían ocho commits
+diarios de ruido en un historial que alguien va a leer. Y un sondeo posterior
+agrega información, nunca la quita: la consulta al testigo puede fallar sin abortar
+el sondeo, y sin cuidado un fallo pasajero al mediodía borraba el testigo bueno de
+la mañana.
+
+**El defecto que esto tuvo, y su costo medido.** La primera versión decidía si la
+fuente se había movido comparando contra el último corte de un día *anterior*. En
+un día en que la fuente sí se movió, ese contraste seguía siendo verdadero en los
+ocho sondeos, así que cada uno reescribía el archivo, commiteaba y abría otro
+issue: **20 issues y hasta seis commits en un mismo día**, entre el 3 y el 8 de
+septiembre de 2026.
+
+> Cuando dos preguntas se parecen, comprobalas por separado. "Cambió desde ayer" y
+> "cambió desde que miré" solo coinciden si mirás una vez por día.
+
+---
+
+## Materialización incremental: la mitad segura
+
+Los once modelos se reconstruían enteros en cada corrida. Dos pasaron a
+incrementales y el resto no, y esa división no es de rendimiento sino estructural.
+
+`raw_observaciones` y `stg_contratos` son transformaciones fila a fila sobre
+particiones que no cambian: una partición se escribe una vez, se marca con
+`_COMPLETO` y no se toca más. Incremental ahí solo agrega filas, así que la
+propiedad de D5 se conserva **por construcción**.
+
+El SCD2 y las dos dimensiones con historia no. Ahí una observación nueva tiene que
+cerrar la versión que estaba abierta, o sea modificar una fila que ya existe, y eso
+necesita `merge` con una ventana de retroceso y la equivalencia hay que demostrarla
+en serio.
+
+**La clave de una partición es el triple, no la fecha.** El filtro natural,
+`where fecha > (select max(fecha) from this)`, está mal, y el motivo está en la
+capa cruda real: el 22/08 hay dos particiones con la misma `fecha_extraccion` y el
+mismo nombre de partición, una de cada flujo. Un filtro por fecha las trata como
+una y pierde la segunda sin fallar. La clave es `flujo/fecha/particion`,
+concatenada porque `(a,b,c) in (select ...)` no se escribe igual en los dos motores
+y D9 pide que el dialecto viva en un macro.
+
+La estrategia es `append` y no `merge`: las particiones son disjuntas, así que no
+hay nada que actualizar y un `merge` costaría un anti-join sobre 2,9 millones de
+filas para protegerse de algo que no puede pasar.
+
+**Lo que se midió, y lo que se esperaba de más.** La construcción completa de los
+dos modelos y sus tests son 252 s; la segunda pasada incremental, sin nada nuevo,
+88 s. La estimación previa era de unos 10 segundos y estaba mal por una razón que
+se midió antes de escribir el código: **el filtro no evita abrir los archivos.** Un
+`where` sobre la columna que sale del nombre del archivo poda el parseo, no la
+apertura.
+
+**El modo de fallo que queda, escrito.** Una partición reescrita con
+`--forzar-corte-repetido` no se vuelve a leer, porque su clave ya está en la tabla:
+hay que reconstruir con `--full-refresh`. No se intentó resolverlo automáticamente
+porque cualquier detección sería una segunda respuesta a una pregunta que el
+manifiesto ya contesta.
+
+**Y se demuestra, no se supone.** `scripts/verificar_incremental.py` construye la
+capa sintética en seis etapas, agregando una partición por vez, y compara contra
+una construcción de cero con `--full-refresh`, fila por fila y en los dos sentidos.
+
+Las seis etapas no son decorativas: se probó el verificador rompiendo el filtro a
+propósito seis veces y **la primera versión solo detectaba tres**. Cargaba varias
+particiones juntas, así que el filtro por fecha sola las dejaba pasar y la prueba
+daba verde con el filtro roto. Arreglarlo obligó a sembrar dos casos nuevos en el
+generador sintético: dos flujos escribiendo la misma fecha y la misma ventana, y un
+mismo flujo con dos particiones el mismo día.
+
+> Un dato de prueba en el que todo sale bien prueba que el código corre, no que
+> decida bien. Y un verificador que solo se vio dar verde tampoco está probado.
+
+**El caso nuevo destapó un defecto en el generador.** Al sembrar el barrido
+partido, los dos rangos recibieron su desplazamiento con `hash(rango) % 50`. El
+hash de las cadenas de Python cambia en cada proceso, así que el generador dejó de
+ser reproducible pese a tener un parámetro `--semilla`, y de tanto en tanto los dos
+rangos se solapaban y metían el mismo contrato dos veces bajo la misma
+`fecha_extraccion`. Lo atrapó `fct_una_observacion_por_contrato_y_fecha`, el test
+que vigila el supuesto no escrito del SCD2.
+
+> Una semilla que no reproduce no es una semilla.
+
+---
+
+## Los reintentos ante 429 y 5xx
+
+El TODO más viejo del módulo. Cada barrido son unas 570 peticiones y cincuenta
+minutos contra una API que H32 mostró que se cae bajo carga, y hasta acá una sola
+respuesta 429 abortaba la corrida entera.
+
+**Qué se reintenta, y qué no.** Se reintentan 429, 500, 502, 503, 504, los timeouts
+y los fallos de conexión: todos se arreglan solos. **No** se reintenta ningún otro
+4xx, y eso es la mitad de la política: un 400 por un `$where` mal armado o un 403
+por token inválido no se van a ir esperando, y reintentarlos cinco veces es tardar
+medio minuto en dar el mismo mensaje y encima gastar cupo en peticiones que ya se
+sabían perdidas.
+
+**El presupuesto.** Cinco intentos con espera creciente de 2, 4, 8 y 16 segundos:
+30 segundos de espera acumulada por petición. Es el punto medio entre dos filos.
+Más corto no aguanta un pico de rate limit, que suele durar del orden de diez
+segundos. Más largo sería lo correcto si el barrido corriera desatendido de
+madrugada, pero con la consola delante dos minutos por página se sienten como un
+cuelgue.
+
+**`Retry-After` se respeta, con tope.** La espera creciente queda como piso —volver
+antes de lo que el servidor pidió es gastar un intento en una petición que va a ser
+rechazada otra vez— y el presupuesto restante como techo. El techo importa: una
+cabecera de una hora dejaría la corrida en silencio y no habría forma de
+distinguir eso de un cuelgue. El presupuesto es de espera **acumulada** y no por
+intento, justamente para que respetar la cabecera no pueda estirar el total sin que
+nadie lo note.
+
+**Cuando se agotan, se relanza el error original**, no uno propio. Los dos lugares
+que hoy manejan estos fallos capturan `Exception` y muestran el tipo; envolverlo en
+un `RuntimeError` los dejaría diciendo "RuntimeError" donde antes decían "HTTPError
+503", que es peor mensaje para quien lo lee a las tres de la mañana.
+
+Se comprobó que los tests midan algo rompiendo la política a propósito, seis veces:
+sin reintentar el 429, reintentando también los 4xx, sin tope para `Retry-After`,
+ignorando la cabecera, con espera constante en vez de creciente, y envolviendo el
+error. Las seis mutaciones fueron detectadas. Y ninguno de los tests duerme:
+`time.sleep` se reemplaza por una función que anota cuánto le pidieron, lo que
+además vuelve la espera observable y permite afirmar que crece en vez de suponerlo.
+
+---
+
+## La cadencia de la fuente no es diaria
 
 Todo el proyecto se escribió sobre la frase "la fuente se regenera cada noche".
-Nadie la comprobó nunca. **Es falsa.**
+Nadie la comprobó nunca, y es falsa. El registro completo, el testigo que descarta
+la caída de plataforma y el supuesto retirado están en H34, en
+`00_inventario_fuentes.md`; acá va solo lo que D10 y D11 necesitan.
 
-| Día | Evidencia | Lectura |
-|---|---|---|
-| mar 18 | corte fechado `09:22:15.735Z` | regeneró |
-| mié 19 | - | sin observación |
-| jue 20 | corte fechado `09:41:20.358Z` | regeneró |
-| **vie 21** | a las ~09:37 COT el corte vivo era el del 20 | **no regeneró** |
-| sáb 22 - lun 24 | - | sin observación |
-| mar 25 | corte fechado `09:05:54.277Z` | regeneró |
-| **mié 26** | a las 20:30 COT el corte vivo era el del 25 | **no regeneró** |
-| **jue 27** | deducido: si hubiera regenerado, el corte vivo del 28 sería suyo | **no regeneró** |
-| **vie 28** | a las ~10:00 COT el corte vivo sigue siendo el del 25 | **no regeneró** |
+Tres regeneraciones observadas (18, 20 y 25 de agosto) y siete días comprobados sin
+regenerar. Saltos de dos días, de cinco, y uno de siete que retiró el supuesto de
+planificación. **Ningún par de cortes separados por exactamente un día**, en todo
+el registro.
 
-Tres regeneraciones y cuatro días sin regenerar, tres de ellos consecutivos.
-Saltos observados entre cortes: **dos días** (18->20) y **cinco días** (20->25).
-**Ningún par de cortes consecutivos separados por un día**, en todo el registro.
-Ninguna regeneración observada en fin de semana.
+**Qué se cae:** la palabra "noche" en todas las frases del proyecto, el delta de
+veinticuatro horas como objetivo alcanzable a voluntad, y la resolución temporal
+que el producto final puede prometer, que es la de la fuente y no la diaria.
 
-**Dos aclaraciones sobre la evidencia**, porque la calidad de cada fila es
-distinta:
-
-- La del **21** estaba en el registro desde el principio, en el inventario y en
-  la FASE 3 de H23, leída como confirmación de H2 (que lo es) y nunca como
-  evidencia sobre la cadencia. No es un dato nuevo: es un dato que estaba mal
-  leído.
-- La del **27** es deducción, no observación: como el corte vivo el 28 es el del
-  25, no pudo haber habido uno del 27.
-
-**No es una caída de la plataforma.** El control es el dataset hermano de
-Adiciones (`cb9c-h8sn`), que escribe en continuo: el 26 tenía escrituras de esa
-misma mañana, y el 28 a las 09:51:29Z también. La plataforma transaccional está
-viva; lo que no corre es el ETL que regenera la vista publicada.
-
-**H2 sale reforzado, no tocado.** `min = max` al milisegundo sobre 5,96M de
-filas se observó el 18, el 21, el 26 y el 28. El reemplazo total no está en
-discusión; lo que cambia es cada cuánto ocurre.
-
-### Qué se cae y qué no
-
-**No se toca:** la premisa del proyecto (cada regeneración destruye el estado
-anterior, y que ocurra dos veces por semana en vez de siete no la debilita), H2 y
-los tres flujos, los datos ya escritos en raw, y **D8**. Esto último merece
-subrayarse: `observado_desde` / `observado_hasta` ya había decidido no prometer
-resolución diaria, y ya estaba escrito que la serie iba a tener huecos. La
-cadencia irregular no rompe ese diseño; lo confirma por un camino que no se había
-previsto.
-
-**Se cae:** la palabra "noche" en todas las frases del proyecto (lo correcto es
-"cada vez que se regenera"), el delta de veinticuatro horas como objetivo
-alcanzable a voluntad, y la resolución temporal que el producto final puede
-prometer, que es la de la fuente y no la diaria.
-
-### El supuesto de planificación que se adopta
-
-**Se supone que hay al menos una regeneración por semana.** Es un supuesto para
-poder avanzar, **no un dato**: el salto máximo observado es de cinco días y el
-salto en curso es de tres. Se verifica con el registro de sondeo. Si un intervalo
-pasa de siete días, hay que volver acá.
-
-#### Comprobado el 01/09/2026: el supuesto no se sostiene
-
-**El intervalo llegó a siete días sin regenerar y el supuesto se retira.** El
-corte vivo sigue siendo el del 25 de agosto (`2026-08-25T09:05:54.277Z`)
-comprobado el 1 de septiembre, o sea una semana entera, que es justo el umbral
-que esta nota se puso a sí misma para volver acá.
-
-Y no es la plataforma: el testigo escribió ese mismo día a las 10:21 COT. Lo
-detenido es el proceso que rehace la vista publicada, no Socrata.
-
-La cadencia observada, sobre quince días de calendario y diez de observación:
-
-| | |
-|---|---|
-| Regeneraciones | 3 (18, 20 y 25 de agosto) |
-| Días comprobados sin regenerar | 7 |
-| Saltos entre regeneraciones | 2 días, 5 días, y uno en curso de 7 o más |
-
-**Lo que reemplaza al supuesto es no tener ninguno.** No hay cota superior
-establecida para el intervalo, y con tres regeneraciones no se puede estimar una:
-lo único que se sabe es que el máximo observado crece cada vez que se mira.
-
-Eso no obliga a rediseñar nada, y conviene decir por qué: el diseño ya estaba
-escrito para no depender de la cadencia. El disparador es el corte y no el
-calendario (D11), el DAG no lleva horario, y las columnas se llaman
-`observado_desde` y `observado_hasta` justamente porque un intervalo largo
-significa que no miramos, no que nada cambió. Lo que se cae es la
-**planificación**, no la arquitectura.
-
-De las tres cosas que dependían del supuesto: el umbral de `freshness` no se
-puede fijar sin una cota superior, así que sigue abierto; el margen del DAG no
-dependía de la cadencia sino de cuánto dura un barrido, y ya está puesto contra
-el peor caso; y del patrón de días hábiles no hay evidencia, salvo que las tres
-regeneraciones cayeron en día hábil y ninguna en fin de semana.
-
-**La consecuencia que sí duele es de producto y no de código.** La población
-medible del mart crece solo cuando la fuente regenera y se ingiere. Sigue en 39
-contratos para la pregunta del valor, y va a seguir ahí hasta que la fuente se
-mueva.
-
-
-### El registro de sondeo
-
-Una línea por día: fecha, hora COT y el valor de `max(:updated_at)`. Es lo único
-que puede convertir el supuesto de arriba en un dato, y de él salen tres cosas
-que hoy no se pueden fijar:
-
-- El umbral de `freshness` de dbt. Los 48 h planeados **fallarían hoy sobre una
-  fuente sana**.
-- El margen del DAG, que además no se puede calcular con 4,1 s por página: hay
-  tres muestras: 4,20 / 5,22 / 5,00.
-- Si hay patrón de días hábiles, que las tres regeneraciones conocidas (martes,
-  jueves, martes) insinúan y no alcanzan para afirmar.
+**Qué no se toca:** la premisa del proyecto, H2 y los tres flujos, los datos ya
+escritos en raw, y **D8**. Esto último merece subrayarse: `observado_desde` /
+`observado_hasta` ya había decidido no prometer resolución diaria, y ya estaba
+escrito que la serie iba a tener huecos. La cadencia irregular no rompe ese diseño;
+lo confirma por un camino que no se había previsto.
 
 ---
 
 ## Restricciones que no se negocian
 
-Salieron de las decisiones pero valen por sí solas: son las cuatro cosas que, si
-alguien las invierte en un refactor, rompen el diseño en silencio.
+Salieron de las decisiones pero valen por sí solas: son las cosas que, si alguien
+las invierte en un refactor, rompen el diseño en silencio.
 
 ### R1: El flujo 3 no se puede reejecutar hacia atrás
 
-*Corrige el punto 2 de la definición de terminado.*
-
-Descubierto al decidir D2. Los flujos 1 y 2 preguntan por rangos de fechas de
-negocio (`fecha_de_firma`, `ultima_actualizacion`): la fuente devuelve lo mismo
-hoy que dentro de un mes, así que reprocesar una fecha pasada reconstruye esa
-fecha.
-
-**El flujo 3 no.** Pregunta "¿cómo están AHORA los contratos vivos?". Correrlo
-hoy para la partición del 15 de agosto devuelve el estado de hoy, no el del 15.
-Ese estado se destruyó: es la premisa entera del proyecto.
-
-Entonces su idempotencia significa algo más chico, y hay que enunciarlo así:
+Los flujos 1 y 2 preguntan por rangos de fechas de negocio, así que la fuente
+devuelve lo mismo hoy que dentro de un mes y reprocesar una fecha pasada
+reconstruye esa fecha. El flujo 3 no: pregunta "¿cómo están AHORA los contratos
+vivos?", y correrlo hoy para la partición del 15 de agosto devuelve el estado de
+hoy. Ese estado se destruyó, y es la premisa entera del proyecto.
 
 > Reejecutar el flujo 3 **dentro de la misma ventana de estado de la fuente**
-> produce el mismo resultado. Reejecutarlo sobre una fecha pasada no
-> reconstruye esa fecha: produce una observación nueva con fecha vieja, que es
-> **peor que no hacer nada** porque mete una mentira en raw.
+> produce el mismo resultado. Reejecutarlo sobre una fecha pasada no reconstruye
+> esa fecha: produce una observación nueva con fecha vieja, que es **peor que no
+> hacer nada** porque mete una mentira en raw.
 
-**"La misma ventana de estado" dejó de ser una noción vaga.** Es exactamente
-*el mismo valor de `min(:updated_at)`*, y desde D10 queda anotado en el
-manifiesto. D11 es esa restricción hecha guardarraíl: el cargador se planta
-antes de gastar cincuenta minutos en reescribir un corte ya ingerido.
+"La misma ventana de estado" dejó de ser una noción vaga: es exactamente el mismo
+valor de `min(:updated_at)`, y desde D10 queda anotado en el manifiesto. D11 es
+esa restricción hecha guardarraíl.
 
-**Consecuencias:**
-
-- El reintento de Airflow para el flujo 3 tiene sentido dentro de la misma
- noche y no lo tiene tres días después.
-- **Un `backfill` del flujo 3 sobre fechas pasadas no debe existir.** Es un
- `raise`, no una opción.
-- El punto 2 de la definición de terminado ("puedo reprocesar cualquier rango
- histórico con un comando") **aplica a los flujos 1 y 2, no al 3**. Hay que
- corregir esa redacción.
+Consecuencias: el reintento de Airflow para el flujo 3 tiene sentido dentro de la
+misma corrida y no tres días después; un `backfill` del flujo 3 sobre fechas
+pasadas no debe existir, y es un `raise` y no una opción; y "puedo reprocesar
+cualquier rango histórico con un comando" aplica a los flujos 1 y 2, no al 3.
 
 No es una limitación del diseño: es una propiedad de la fuente. Decirla
 explícitamente es mejor que un backfill que parece funcionar y contamina.
 
 ### R2: `fecha_extraccion` es el día COLOMBIANO, no el del reloj del sistema
 
-**Encontrado al probar el orquestador, con el reloj puesto.**
+Encontrado al probar el orquestador, con el reloj puesto. `date.today()` devuelve
+la fecha del sistema, y en un contenedor o en Airflow eso suele ser UTC. Colombia
+es UTC-5, así que entre las 19:00 y la medianoche hora local, UTC ya está en el día
+siguiente. Verificado en vivo: `ahora UTC: 2026-08-22 01:10 | Bogotá: 2026-08-21
+20:10`.
 
-`date.today` devuelve la fecha del sistema, y en un contenedor o en Airflow eso
-suele ser UTC. Colombia es **UTC-5**, así que entre las 19:00 y la medianoche
-hora local, UTC ya está en el día siguiente.
+Con `date.today()`, esa misma corrida habría escrito en
+`fecha_extraccion=2026-08-22`, partiendo el día de negocio en dos particiones, y el
+guardarraíl habría **rechazado una carga legítima** diciendo que era backfill.
 
-**Verificado en vivo, con el reloj puesto:**
+**Por qué la fecha de Colombia y no UTC.** UTC es la convención estándar y no está
+mal, pero acá produce el error justo cuando alguien corre el cargador a mano por la
+tarde-noche —depurando, rehaciendo algo, probando—, que es cuando menos va a
+sospechar de la fecha. Con el DAG corriendo poco después de la regeneración, las
+dos convenciones coinciden y la diferencia no se ve nunca, hasta que se ve. Y el
+día colombiano es además el que coincide con lo que un analista llamaría "el corte
+del 21".
 
-```
-ahora UTC: 2026-08-22 01:10 | Bogotá: 2026-08-21 20:10
-```
+**La regla es una sola definición de "hoy"**, en una función, y no dos llamadas
+sueltas en lugares distintos, que es lo que había. El orquestador la usa para
+nombrar la partición y el guardarraíl para decidir si una corrida es backfill; si
+se calcularan con criterios distintos, el guardarraíl rechazaría corridas legítimas
+**cinco horas al día**.
 
-Con `date.today`, esa misma corrida habría escrito en
-`fecha_extraccion=2026-08-22` (partiendo el día de negocio en dos particiones)
-y el guardarraíl de C5 habría **rechazado una carga legítima** diciendo que era
-backfill.
-
-#### Por qué la fecha de Colombia y no UTC
-
-UTC es la convención estándar y no está mal. Pero acá produce el error **justo
-cuando alguien corre el cargador a mano por la tarde-noche** (depurando,
-rehaciendo algo, probando), que es cuando menos va a sospechar de la fecha. Con
-el DAG corriendo poco después de la regeneración de la madrugada (H24), las dos
-convenciones coinciden y la diferencia no se ve nunca... hasta que se ve.
-
-Y el día colombiano es además el que coincide con lo que un analista llamaría
-"el corte del 21".
-
-`ZoneInfo("America/Bogota")` está en la biblioteca estándar desde 3.9: cero
-dependencias nuevas.
-
-#### La regla: una sola definición de "hoy"
-
-```python
-ZONA = ZoneInfo("America/Bogota")
-
-def hoy -> date:
- return datetime.now(ZONA).date
-```
-
-**No dos llamadas sueltas a `date.today` en lugares distintos**, que es lo que
-había. El orquestador la usa para nombrar la partición y el guardarraíl de C5
-para decidir si una corrida es backfill; si se calcularan con criterios
-distintos, el guardarraíl rechazaría corridas legítimas **cinco horas al día**.
-
-**Pendiente:** revisar si `flujos.py` o `paginacion.py` usan `date.today` o
-`datetime.now` en algún lado. Si lo hacen, tienen que pasar a `hoy`.
-
-### Observación sobre `flujos.py`
-
-El docstring de `Flujo` dice que la etiqueta *"viaja con cada fila hasta la capa
-raw"*, pero **el código no la agrega**: los tres flujos hacen
-`yield from paginar(...)` y devuelven las filas tal como llegaron de la API.
-
-No es un bug (es coherente con que el extractor no transforme nada) pero
-define el punto de partida del cargador: **etiquetar es trabajo del cargador**.
-Cuando la fila llega, es exactamente lo que devolvió Socrata, sin metadatos.
-
-
----
+Casi vuelve a pasar tres veces, y las tres las atrapó `ruff`, no una revisión.
 
 ### R3: El pipeline entero corre en ~3 GB de memoria
 
-> La máquina de desarrollo es WSL2 con **3,8 GB** de RAM y 8 núcleos, y DuckDB
-> se pone un techo de 3 GB sobre eso. Cualquier diseño que no quepa ahí no es
-> un diseño para este proyecto.
+La máquina de desarrollo es WSL2 con 3,8 GB de RAM, y DuckDB se pone un techo de 3
+GB sobre eso. **No es una anécdota del entorno: ya descartó tres enfoques.**
 
-**No es una anécdota del entorno: ya descartó un enfoque.** Al escribir el modelo
-frontera de dbt, abrir las 67 columnas con `json_extract_string` (una llamada por
-columna) agota la memoria y muere, porque parsea el mismo documento 67 veces por
-fila. Declarar el `STRUCT` explícito desde `columnas.py` hace lo mismo sin
-parsear, y pasa.
-
-Medido el 28/08/2026, con 2,2 millones de filas y el límite escalado:
+**El modelo frontera.** Abrir las 67 columnas con `json_extract_string` (una
+llamada por columna) agota la memoria y muere, porque parsea el mismo documento 67
+veces por fila. Declarar el `STRUCT` explícito desde `columnas.py` hace lo mismo
+sin parsear:
 
 | Enfoque | Tiempo | Tabla | Memoria |
 |---|---|---|---|
 | `datos` como JSON, sin abrir | 46,6 s | 2.090 MB | pasa |
-| 67 llamadas a `json_extract_string` | - |: | **muere** |
-| **STRUCT explícito** | **42,3 s** | **224 MB** | **pasa** |
+| 67 llamadas a `json_extract_string` | - | - | **muere** |
+| STRUCT explícito | 42,3 s | 224 MB | pasa |
 
-Confirmado después contra los datos reales: **1,2 GB en 57 s**, contra 4,3 GB en
-154 s del primer intento. Tres veces y media más chico y casi tres veces más
-rápido.
-
-**Dónde vuelve a aparecer.** El SCD2 une 2,9 millones de filas contra sí mismas;
-es la operación más pesada que le queda al proyecto y hay que diseñarla sabiendo
-esto. Las palancas conocidas, en el orden en que conviene usarlas: declarar los
-esquemas en vez de dejarlos inferir, bajar los hilos (cada uno mantiene su propio
-juego de vectores), `preserve_insertion_order=false` cuando el orden no signifique
-nada, y `temp_directory` para volcar a disco antes de morir.
-
-#### Segunda vez que R3 decide, y la más cara: el SCD2 pasó de 734 s a 52
-
-`fct_contratos_snapshot` hacía `select *` y arrastraba las 73 columnas de
-staging. Tardaba **734 segundos**, cinco veces más que `stg_contratos`.
-
-El desglose, medido el 28/08/2026 sobre 2,9 millones de filas:
+**El SCD2 pasó de 734 s a 52.** `fct_contratos_snapshot` hacía `select *` y
+arrastraba las 73 columnas de staging:
 
 | Etapa | Costo |
 |---|---|
 | Construir la huella de 28 columnas | 3,6 s |
 | Las dos ventanas (`lag` y `lead`) | 5,1 s |
-| Escribir **11** columnas con ventana | 8,9 s |
-| Escribir **73** columnas sin ventana | 109 s |
-| El modelo completo | **734 s** |
+| Escribir 11 columnas con ventana | 8,9 s |
+| Escribir 73 columnas sin ventana | 109 s |
+| El modelo completo | 734 s |
 
-**Toda la lógica sospechada suma nueve segundos: el 98,8% del tiempo era
-escribir columnas anchas después de ordenar.** Y la relación no es lineal (seis
-veces más columnas costaban ochenta veces más tiempo), que es la firma del
-volcado a disco cuando el ancho deja de entrar en memoria.
+**Toda la lógica sospechada suma nueve segundos: el 98,8% del tiempo era escribir
+columnas anchas después de ordenar.** Y la relación no es lineal —seis veces más
+columnas costaban ochenta veces más tiempo—, que es la firma del volcado a disco.
+El arreglo fue dejar en el hecho solo las 28 materiales más las llaves.
 
-El arreglo fue dejar en el hecho solo las 28 columnas materiales más las llaves.
-Resultado: **52 s**, catorce veces más rápido, y el snapshot pasó a tardar menos
-que `stg_contratos`.
+**El problema de rendimiento y el de modelado eran el mismo.** Una tabla de hechos
+lleva llaves, fechas y medidas; los atributos descriptivos van en las dimensiones.
+Eso ya estaba escrito en el modelo dimensional, y el `select *` lo violaba
+duplicando 1,2 GB en disco sin agregar información. **R3 empujó hacia el diseño
+correcto en vez de alejar de él.**
 
-**El problema de rendimiento y el de modelado eran el mismo.** Una tabla de
-hechos lleva llaves, fechas y medidas; los atributos descriptivos van en las
-dimensiones. Eso ya estaba escrito en el modelo dimensional, y el `select *` lo
-violaba duplicando 1,2 GB en disco sin agregar información. **R3 empujó hacia el
-diseño correcto en vez de alejar de él**, igual que había hecho con el modelo
-frontera.
-
-#### Tercera vez que R3 decide, y la más contraintuitiva: menos hilos, más rápido
-
-Con siete modelos, la construcción de dbt tardaba 432 s con los 4 hilos por
-defecto. Medido el 28/08/2026:
+**Menos hilos, más rápido.** Con siete modelos, la construcción tardaba 432 s con
+los 4 hilos por defecto:
 
 | Hilos | Construcción completa | `dim_proveedor` | `fct_contratos_snapshot` |
 |---|---|---|---|
 | 4 | 432 s | 152 s | 207 s |
-| 2 | **458 s** | 160 s | 236 s |
-| **1** | **326 s** | **6,4 s** | **100 s** |
+| 2 | 458 s | 160 s | 236 s |
+| 1 | **326 s** | **6,4 s** | **100 s** |
 
-**`dim_proveedor` es 24 veces más rápido con un solo hilo**, y 2 hilos salió
-peor que 4. La curva no es monótona en el número: lo que importa es que los dos
-modelos que ordenan millones de filas (el snapshot y los proveedores) **no
-coincidan en el tiempo**. Con cualquier valor mayor que 1, coinciden, se pelean
-por los 3 GB y los dos vuelcan a disco.
+`dim_proveedor` es 24 veces más rápido con un solo hilo, y 2 hilos salió peor que
+4. La curva no es monótona en el número: lo que importa es que los dos modelos que
+ordenan millones de filas no coincidan en el tiempo. Con cualquier valor mayor que
+1, coinciden, se pelean por los 3 GB y los dos vuelcan a disco. `threads: 1` quedó
+fijado con la tabla al lado, porque es justo el tipo de valor que alguien sube
+"para mejorarlo". Y no se hereda al objetivo de Snowflake, donde esa restricción no
+existe.
 
-`threads: 1` quedó fijado en `profiles.yml` con la tabla al lado, porque es
-justo el tipo de valor que alguien sube "para mejorarlo".
-
-**Y no se hereda al objetivo de Snowflake.** Ese 1 resuelve una restricción de
-memoria local que allá no existe; el valor correcto se mide en Snowflake.
-
-**El techo está en otro lado.** De los ~330 s, unos 200 son
-`raw_observaciones` y `stg_contratos`, que corren solos en cualquier
-configuración: **el 58% del tiempo no depende de la concurrencia**. Bajarlo pide
-materialización incremental, no más hilos. Las cuatro dimensiones juntas cuestan
-6,5 s.
-
-**Y no se negocia subiendo la memoria.** Un proyecto que necesita 16 GB para
-procesar 916 MB tiene un problema de diseño, y se nota. Que quepa en 3 GB es una
-propiedad del trabajo, no una limitación heredada: esta restricción ya produjo un
-modelo nueve veces más chico que el que se iba a escribir sin ella.
+**No se negocia subiendo la memoria.** Un proyecto que necesita 16 GB para procesar
+916 MB tiene un problema de diseño. Que quepa en 3 GB es una propiedad del trabajo,
+no una limitación heredada: esta restricción ya produjo un modelo nueve veces más
+chico que el que se iba a escribir sin ella.
 
 ---
 
 ## Alternativas descartadas, para no reabrirlas
 
-### Opciones que estaban sobre la mesa para D1 (histórico de la decisión)
+**Las tres opciones de D1.** (A) Raw fiel, comparación en SQL después de staging:
+raw auditable de verdad, y un bug de normalización se arregla con `dbt run`; el
+costo es que la clasificación de `columnas.py` hay que expresarla en SQL, o
+generarla. (B) Raw canónico, comparación en Python: `columnas.py` sigue siendo la
+única fuente de verdad y se testea con pytest; el costo es que raw deja de ser
+fiel, un bug de casteo obliga a re-descargar, y comparar 2,8M de filas por corrida
+en Python es lento. (C) Dos subcapas: el relleno tiene lugar propio y testeable; el
+costo son dos escrituras y el doble de disco.
 
-- **A (Raw fiel, comparación en SQL después de staging.** Raw auditable de
- verdad; un bug de normalización se arregla con `dbt run`. Costo: la
- clasificación de `columnas.py` hay que expresarla en SQL, o generarla.
-- **B) Raw canónico, comparación en Python.** `columnas.py` sigue siendo la
- única fuente de verdad y se testea con pytest. Costo: raw deja de ser
- fiel; un bug de casteo obliga a re-descargar, y comparar 2,8M filas por
- noche en Python es lento.
-- **C: Dos subcapas, `raw` fiel y `canonico` comparable.** El relleno H13
- tiene lugar propio y testeable. Costo: dos escrituras y el doble de disco.
+El eje real no es el disco: es **dónde vive `columnas.py` en el linaje**. En A y C
+es un documento que hay que traducir; en B es código ejecutable en el camino
+crítico.
 
-El eje real no es el disco: es **dónde vive `columnas.py` en el linaje**. En
-A y C es un documento que hay que traducir; en B es código ejecutable en el
-camino crítico.
+**La cuarta opción no apareció.** Los hermanos sí tienen watermark propio (H23),
+pero eso no abre una opción de arquitectura nueva: abre una restricción sobre las
+tres existentes. La capa raw tendría que alojar dos patrones de ingesta
+incompatibles, y eso mueve peso en contra de B, no a favor de una D.
 
-**La cuarta opción no apareció.** La FASE 3 corrió (H23): los hermanos sí
-tienen watermark propio, pero eso **no abre una opción de arquitectura nueva**
-(abre una restricción sobre las tres existentes). La capa raw tendría que
-alojar dos patrones de ingesta incompatibles, y eso mueve peso en contra de B,
-no a favor de una D. Ver H23 en `02_ecosistema_secop.md`.
-
-### Restricciones ya identificadas para D2 y D3
-
-- **Volumen.** El flujo 3 barre ~2,8M contratos vivos por noche. Raw
- append-only con foto completa son ~1.000M filas/año: el mismo orden que
- sección 4 del modelo dimensional descartó para el snapshot denso diario. Los
- flujos 1 y 2 son ~5.000 filas/día, irrelevantes. **El problema es todo del
- flujo 3.**
-- **`urlproceso` es un objeto anidado** y rompe la conversión a Parquet
- (H6). "Raw fiel" y "raw en Parquet" no conviven gratis: o struct, o JSON
- como string, o aplanar, y aplanar ya es normalizar. El raw fiel más
- barato probablemente sea **JSONL comprimido**, no Parquet.
-- **Raw no se filtra por negocio.** H3 ya dejó los años previos a 2020 en
- raw. Coherente con la decisión del extractor.
-
----
+**Restricciones ya identificadas para D2 y D3.** El volumen es todo del flujo 3:
+raw append-only con foto completa serían ~1.000M de filas al año, mientras que los
+flujos 1 y 2 son ~5.000 filas por día. `urlproceso` es un objeto anidado y rompe la
+conversión a Parquet, así que "raw fiel" y "raw en Parquet" no conviven gratis. Y
+raw no se filtra por negocio: H3 ya dejó los años previos a 2020 adentro, coherente
+con la decisión del extractor.
