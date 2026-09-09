@@ -507,6 +507,61 @@ def pagina(d: dict) -> str:
 """
 
 
+def particiones_con_datos(raiz: Path) -> set[str]:
+    """Las particiones de raw que el modelo TIENE que contener.
+
+    Una particion cuenta solo si cumple **las dos** condiciones: estar completa y
+    haber escrito algo.
+
+    La segunda no es un detalle. La corrida del 28/08/2026 corrio contra una
+    fuente congelada, descarto el 100% por bytes identicos y escribio **cero
+    filas**: la particion tiene `_COMPLETO` y su manifiesto dice
+    `lineas_totales: 0`, pero no tiene un solo `.jsonl.gz`. Esta legitimamente
+    ausente del modelo, y no hay nada que reconstruir.
+
+    Sin esa condicion, el guardarrail marcaria esa particion en cada corrida,
+    para siempre, sobre un modelo sano. Y una regla que marca de mas se termina
+    desactivando entera.
+    """
+    encontradas: set[str] = set()
+    for completo in raiz.rglob("_COMPLETO"):
+        directorio = completo.parent
+        if not any(directorio.glob("*.jsonl.gz")):
+            continue
+        # `flujo=x/fecha_extraccion=y/particion=z` -> `x/y/z`, la misma clave
+        # que arma `clave_de_particion()` para el filtro incremental de dbt.
+        encontradas.add(
+            "/".join(p.split("=", 1)[-1]
+                     for p in directorio.relative_to(raiz).parts)
+        )
+    return encontradas
+
+
+def particiones_del_modelo(con: duckdb.DuckDBPyConnection) -> set[str]:
+    """Lo que el modelo ya ingirio, por la misma clave."""
+    return {
+        "/".join(fila) for fila in con.execute(
+            "select distinct ruta_flujo, ruta_fecha_extraccion, ruta_particion "
+            "from main_staging.raw_observaciones"
+        ).fetchall()
+    }
+
+
+def sin_ingerir(en_disco: set[str], en_el_modelo: set[str]) -> set[str]:
+    """Particiones que estan en raw y no en el modelo. Funcion pura.
+
+    La comparacion es de **contenido y no de fechas de archivo**. Un `mtime` se
+    mueve al copiar, al clonar el repositorio o con un `touch`, y ademas no
+    distingue "el modelo es viejo" de "alguien abrio el archivo". Preguntar que
+    particiones tiene cada lado contesta exactamente la pregunta que importa.
+
+    Es la misma leccion que dejo el informe de paridad: una comparacion entre dos
+    sistemas tiene que decir de cuando es cada lado, y la forma robusta de
+    decirlo es comparar lo que contienen.
+    """
+    return en_disco - en_el_modelo
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -516,6 +571,11 @@ def main() -> int:
         help="Emite solo el contenido, sin las etiquetas html/head/body. Sirve "
              "para publicar la pagina dentro de un contenedor que ya las aporta.")
     p.add_argument("--base", type=Path, default=DUCKDB)
+    p.add_argument(
+        "--aunque-el-modelo-este-viejo", action="store_true",
+        help="Genera el tablero aunque haya particiones de raw sin ingerir. El "
+             "nombre es largo a proposito: publica cifras que no son las "
+             "ultimas.")
     args = p.parse_args()
 
     if not args.base.is_file():
@@ -527,6 +587,28 @@ def main() -> int:
     # el pipeline que lo alimenta.
     con.execute("set memory_limit='2GB'")
     con.execute("set threads=1")
+
+    # El guardarrail va ANTES de consultar: si el modelo esta atrasado, todo lo
+    # que se consulte despues es viejo, y publicarlo con la fecha de hoy es peor
+    # que no publicar nada. Paso de verdad: el tablero estuvo una semana
+    # mostrando 88.395 cambios cuando el modelo ya decia 863.951, y nada lo
+    # noto, porque nadie compara la fecha del tablero contra la del modelo.
+    faltan = sin_ingerir(particiones_con_datos(RAW), particiones_del_modelo(con))
+    if faltan and not args.aunque_el_modelo_este_viejo:
+        con.close()
+        print(
+            f"ERROR el modelo esta atrasado respecto de la capa cruda.\n"
+            f"  {len(faltan)} particion(es) de raw todavia no se ingirieron:\n"
+            + "".join(f"      {c}\n" for c in sorted(faltan))
+            + "  El tablero saldria con fecha de hoy y cifras viejas.\n"
+            "  Se arregla construyendo el modelo:\n"
+            "      cd dbt && uv run dbt build\n"
+            "  Y si de verdad querias publicarlo asi:\n"
+            "      uv run python scripts/generar_tablero.py --aunque-el-modelo-este-viejo",
+            file=sys.stderr,
+        )
+        return 3
+
     datos = consultar(con)
     con.close()
 
