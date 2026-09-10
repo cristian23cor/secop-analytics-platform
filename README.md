@@ -340,7 +340,7 @@ Funciona de punta a punta.
 |---|---|
 | Ingesta | los tres flujos, con reintentos y deduplicación por huella |
 | Modelo | 11 tablas, 5 dimensiones, la historia completa y el resultado final |
-| Pruebas | 352 de Python y 46 de dbt, corriendo solas en cada push |
+| Pruebas | 360 de Python y 46 de dbt, corriendo solas en cada push |
 | Tablero | publicado, se regenera desde los datos |
 | Orquestador | escrito y probado; falta levantarlo en algún lado |
 | Vigilancia | una consulta cada tres horas avisa cuando la fuente se mueve |
@@ -399,7 +399,7 @@ portal del Estado está caído enseña a ignorar las pruebas.
 
 | | |
 |---|---|
-| Las 352 pruebas de Python | con imitaciones de la API |
+| Las 360 pruebas de Python | con imitaciones de la API |
 | La lista de columnas contra lo que usa dbt | byte a byte |
 | Que las pruebas del modelo detecten sus defectos | 22 sembrados, 22 detectados |
 | Las 11 tablas y sus 46 pruebas | sobre datos falsos generados al vuelo |
@@ -464,7 +464,7 @@ exploration/                        El razonamiento completo
 
 dags/secop_ingesta.py    El orquestador. Se dispara por la fuente, no por reloj
 docs/index.html          El tablero que publica GitHub Pages
-tests/                   352 pruebas
+tests/                   360 pruebas
 .github/workflows/       Las comprobaciones y el sondeo, corriendo solos
 ```
 ## Licencia y fuente

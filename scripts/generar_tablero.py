@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import csv
 import html
+import json
 import sys
 from datetime import date
 from pathlib import Path
@@ -537,6 +538,68 @@ def particiones_con_datos(raiz: Path) -> set[str]:
     return encontradas
 
 
+def corte_mas_reciente_ingerido(raiz: Path) -> str | None:
+    """El corte mas nuevo que raw ya conoce, leido de los manifiestos.
+
+    Solo el flujo 3 (`refresco_de_vivos`) pregunta por el corte de la fuente
+    (D10, D11): los flujos 1 y 2 preguntan por ventanas de fecha de negocio y sus
+    manifiestos no tienen `corte_al_iniciar`/`corte_al_terminar`.
+
+    Cuenta toda particion **completa**, tenga o no filas escritas. La del
+    28/08/2026 escribio cero filas y aun asi confirmo, con su propio manifiesto,
+    que el corte vivo en ese momento era el del 25. Esa confirmacion vale igual
+    que si hubiera escrito algo: es la razon de ser de D10.
+
+    Los cortes son cadenas ISO 8601 con milisegundos y sufijo `Z`
+    (`2026-09-09T09:55:38.989Z`), de ancho fijo, asi que el orden lexicografico
+    coincide con el cronologico y `max()` sobre las cadenas alcanza.
+    """
+    cortes: list[str] = []
+    for completo in raiz.glob("flujo=refresco_de_vivos/*/*/_COMPLETO"):
+        manifiesto = completo.parent / "_manifiesto.json"
+        if not manifiesto.is_file():
+            continue
+        m = json.loads(manifiesto.read_text(encoding="utf-8"))
+        corte = m.get("corte_al_terminar") or m.get("corte_al_iniciar")
+        if corte:
+            cortes.append(corte)
+    return max(cortes) if cortes else None
+
+
+def registro_de_cadencia_atrasado(corte_del_registro: str, raiz: Path) -> str | None:
+    """Si `cadencia.csv` esta detras de lo que raw YA sabe, el corte que le falta.
+    `None` si esta al dia o mas adelante. Funcion pura sobre lo que le pasan.
+
+    ## El defecto que esto cierra
+
+    `CORTE_VIVO`, el que se muestra en el banner, sale de `cadencia.csv` (ver
+    `leer_cadencia()`) y no de raw: es la unica fuente que trae la cadencia dia
+    por dia. Pero `cadencia.csv` lo escribe GitHub Actions con su propio sondeo,
+    independiente de cuando alguien corre `cargar_raw.py` a mano.
+
+    Paso de verdad el 09/09/2026: se corrio el cargador y **si** ingirio el
+    corte del 9 -esta en el manifiesto de la particion-, pero la copia LOCAL de
+    `cadencia.csv` todavia no tenia la linea que Actions habia commiteado para
+    ese mismo corte. El tablero salio diciendo "corte vivo: 8 de septiembre,
+    lleva 1 dia sin regenerarse" sobre un modelo que ya reflejaba el corte del
+    9. Los numeros de arriba (contratos, versiones, cambios) eran correctos: la
+    inconsistencia era solo en el banner, y solo se veia leyendolo con cuidado.
+
+    ## Por que se compara contra raw y no se corrige leyendo la fuente de nuevo
+
+    Preguntarle otra vez a la API duplicaria una consulta que el cargador ya
+    hizo, y en el peor caso (la fuente regenero justo en el medio) daria un
+    tercer valor que ninguno de los dos archivos tiene. Raw ya sabe la respuesta
+    -esta en el manifiesto de la particion que se acaba de construir- y
+    preguntarle de nuevo a la fuente seria una segunda respuesta a una pregunta
+    que D10 ya contesto.
+    """
+    ingerido = corte_mas_reciente_ingerido(raiz)
+    if ingerido is not None and ingerido > corte_del_registro:
+        return ingerido
+    return None
+
+
 def particiones_del_modelo(con: duckdb.DuckDBPyConnection) -> set[str]:
     """Lo que el modelo ya ingirio, por la misma clave."""
     return {
@@ -594,19 +657,44 @@ def main() -> int:
     # mostrando 88.395 cambios cuando el modelo ya decia 863.951, y nada lo
     # noto, porque nadie compara la fecha del tablero contra la del modelo.
     faltan = sin_ingerir(particiones_con_datos(RAW), particiones_del_modelo(con))
-    if faltan and not args.aunque_el_modelo_este_viejo:
+
+    # Segundo guardarrail, distinto del primero: no compara raw contra el
+    # modelo, compara raw contra `cadencia.csv`. Paso el 09/09/2026: el modelo
+    # ya tenia el corte del 9, pero la copia LOCAL del registro -que GitHub
+    # Actions escribe por su cuenta- todavia no habia llegado, y el banner del
+    # tablero salio diciendo "corte vivo: 8 de septiembre" sobre un modelo que
+    # ya sabia que era el 9.
+    atraso_registro = registro_de_cadencia_atrasado(CORTE_VIVO, RAW)
+
+    if (faltan or atraso_registro) and not args.aunque_el_modelo_este_viejo:
         con.close()
-        print(
-            f"ERROR el modelo esta atrasado respecto de la capa cruda.\n"
-            f"  {len(faltan)} particion(es) de raw todavia no se ingirieron:\n"
-            + "".join(f"      {c}\n" for c in sorted(faltan))
-            + "  El tablero saldria con fecha de hoy y cifras viejas.\n"
-            "  Se arregla construyendo el modelo:\n"
-            "      cd dbt && uv run dbt build\n"
+        mensaje = ""
+        if faltan:
+            mensaje += (
+                f"ERROR el modelo esta atrasado respecto de la capa cruda.\n"
+                f"  {len(faltan)} particion(es) de raw todavia no se ingirieron:\n"
+                + "".join(f"      {c}\n" for c in sorted(faltan))
+                + "  Se arregla construyendo el modelo:\n"
+                "      cd dbt && uv run dbt build\n"
+            )
+        if atraso_registro:
+            mensaje += (
+                f"ERROR el registro de cadencia esta atrasado.\n"
+                f"  Dice que el ultimo corte visto es "
+                f"{CORTE_VIVO!r}, pero raw ya ingirio uno mas nuevo: "
+                f"{atraso_registro!r}.\n"
+                "  El banner del tablero saldria hablando de un corte que ya se "
+                "quedo viejo.\n"
+                "  Se arregla trayendo la version mas reciente del registro:\n"
+                "      git pull\n"
+            )
+        mensaje += (
+            "  El tablero saldria con fecha de hoy y algo adentro que no es lo "
+            "ultimo.\n"
             "  Y si de verdad querias publicarlo asi:\n"
-            "      uv run python scripts/generar_tablero.py --aunque-el-modelo-este-viejo",
-            file=sys.stderr,
+            "      uv run python scripts/generar_tablero.py --aunque-el-modelo-este-viejo"
         )
+        print(mensaje, file=sys.stderr)
         return 3
 
     datos = consultar(con)
