@@ -340,7 +340,7 @@ Funciona de punta a punta.
 |---|---|
 | Ingesta | los tres flujos, con reintentos y deduplicación por huella |
 | Modelo | 11 tablas, 5 dimensiones, la historia completa y el resultado final |
-| Pruebas | 360 de Python y 46 de dbt, corriendo solas en cada push |
+| Pruebas | 360 de Python y 48 de dbt, corriendo solas en cada push |
 | Tablero | publicado, se regenera desde los datos |
 | Orquestador | escrito y probado; falta levantarlo en algún lado |
 | Vigilancia | una consulta cada tres horas avisa cuando la fuente se mueve |
@@ -402,7 +402,7 @@ portal del Estado está caído enseña a ignorar las pruebas.
 | Las 360 pruebas de Python | con imitaciones de la API |
 | La lista de columnas contra lo que usa dbt | byte a byte |
 | Que las pruebas del modelo detecten sus defectos | 22 sembrados, 22 detectados |
-| Las 11 tablas y sus 46 pruebas | sobre datos falsos generados al vuelo |
+| Las 11 tablas y sus 48 pruebas | sobre datos falsos generados al vuelo |
 | Que lo incremental dé lo mismo que rehacer todo | seis etapas comparadas fila por fila |
 | Que el orquestador conserve sus decisiones | sin levantar nada |
 
