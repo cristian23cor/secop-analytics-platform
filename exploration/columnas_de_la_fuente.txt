@@ -14,6 +14,7 @@ codigo_de_categoria_principal
 codigo_entidad
 codigo_proveedor
 condiciones_de_entrega
+criterios_de_sostenibilidad_ambiental
 departamento
 descripcion_del_proceso
 descripcion_documentos_tipo
@@ -71,6 +72,7 @@ recursos_de_credito
 recursos_propios
 recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_
 referencia_del_contrato
+requisitos_ambientales_en_las_especificaciones_t_cnicas
 reversion
 saldo_cdp
 saldo_vigencia
