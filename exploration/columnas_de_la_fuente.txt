@@ -14,6 +14,7 @@ codigo_de_categoria_principal
 codigo_entidad
 codigo_proveedor
 condiciones_de_entrega
+criterios_ambientales_en_la_evaluaci_n_de_las_ofertas
 criterios_de_sostenibilidad_ambiental
 departamento
 descripcion_del_proceso
@@ -36,7 +37,11 @@ fecha_de_firma
 fecha_de_inicio_del_contrato
 fecha_de_notificaci_n_de_prorrogaci_n
 fecha_fin_liquidacion
+fecha_fin_obligaciones_posconsumo
+fecha_fin_reversi_n
 fecha_inicio_liquidacion
+fecha_inicio_obligaciones_posconsumo
+fecha_inicio_reversi_n
 g_nero_representante_legal
 habilita_pago_adelantado
 id_contrato
@@ -59,6 +64,8 @@ nombre_representante_legal
 nombre_supervisor
 objeto_del_contrato
 obligaci_n_ambiental
+obligaciones_contractuales_o_poscontractuales_a_nivel_ambiental
+obligaciones_posconsumo
 obligaciones_postconsumo
 orden
 origen_de_los_recursos
@@ -72,7 +79,7 @@ recursos_de_credito
 recursos_propios
 recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_
 referencia_del_contrato
-requisitos_ambientales_en_las_especificaciones_tecnicas
+requisitos_ambientales_en_las_especificaciones_t_cnicas
 reversion
 saldo_cdp
 saldo_vigencia
@@ -88,6 +95,7 @@ tipo_de_identificaci_n_representante_legal
 tipodocproveedor
 ultima_actualizacion
 urlproceso
+uso_de_etiquetado_ecol_gico
 valor_amortizado
 valor_de_pago_adelantado
 valor_del_contrato
